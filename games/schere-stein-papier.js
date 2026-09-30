@@ -1,17 +1,18 @@
-// Schere, Stein, Papier – Beispiel für geheime, gleichzeitige Züge.
+// Schere, Stein, Papier (Beispiel für geheime, gleichzeitige Züge).
 // Die Funktion view() sorgt dafür, dass man die Wahl des anderen erst sieht,
 // wenn beide gewählt haben.
 
 export const meta = {
   name: 'Schere, Stein, Papier',
-  emoji: '✂️',
-  description: 'Beide wählen gleichzeitig. Wer zuerst 3 Runden gewinnt, gewinnt.',
+  description: 'Beide wählen gleichzeitig. Wer zuerst drei Runden gewinnt, gewinnt.',
   players: [2, 2],
 };
 
-const MOVES = { schere: '✂️', stein: '🪨', papier: '📄' };
+const MOVES = { schere: 'Schere', stein: 'Stein', papier: 'Papier' };
 const BEATS = { schere: 'papier', stein: 'schere', papier: 'stein' };
+const WHY = { schere: 'Schere schneidet Papier.', stein: 'Stein macht Schere stumpf.', papier: 'Papier wickelt Stein ein.' };
 const TARGET = 3;
+const WORD = ['null', 'eins', 'zwei', 'drei'];
 
 export function setup(players) {
   return {
@@ -41,7 +42,7 @@ export function action(state, { player, type, data }) {
 
   if (winner && state.score[winner] >= TARGET) {
     const name = state.players.find((p) => p.id === winner).name;
-    state.result = { winners: [winner], text: `${name} gewinnt ${state.score[a]}:${state.score[b]}!` };
+    state.result = { winners: [winner], text: `${name} gewinnt ${WORD[state.score[winner]]} zu ${WORD[state.score[winner === a ? b : a]]}.` };
   }
 }
 
@@ -56,55 +57,74 @@ export function view(state, me) {
 }
 
 export function render(el, s, game) {
+  const e = game.esc;
   const me = s.players.find((p) => p.id === game.me) ?? s.players[0];
   const other = s.players.find((p) => p.id !== me.id);
   const last = s.rounds.at(-1);
 
-  let lastRound = '<p class="muted center">Wählt gleichzeitig – niemand sieht die Wahl des anderen.</p>';
+  let lastRound = '';
   if (last) {
-    const verdict = !last.winner
-      ? 'Gleichstand'
-      : last.winner === me.id ? '<span class="ok">Runde für dich!</span>' : `<span class="bad">Runde für ${game.esc(other.name)}</span>`;
+    const mine = last.picks[me.id];
+    const theirs = last.picks[other.id];
+    let verdict = 'Gleiche Wahl, kein Punkt.';
+    if (last.winner) {
+      const w = last.winner === me.id ? mine : theirs;
+      verdict = `${WHY[w]} Punkt für ${last.winner === me.id ? 'dich' : e(other.name)}.`;
+    }
     lastRound = `
-      <div class="ssp-reveal">
-        <div><div class="ssp-big">${MOVES[last.picks[me.id]]}</div><div class="muted">Du</div></div>
-        <div class="muted">vs</div>
-        <div><div class="ssp-big">${MOVES[last.picks[other.id]]}</div><div class="muted">${game.esc(other.name)}</div></div>
-      </div>
-      <p class="center big">${verdict}</p>`;
+      <div class="ssp-last">
+        <p class="muted">Runde ${s.rounds.length}</p>
+        <p class="ssp-duel">
+          <span style="color:${game.color(me.id)}">${MOVES[mine]}</span>
+          <span class="ssp-vs">gegen</span>
+          <span style="color:${game.color(other.id)}">${MOVES[theirs]}</span>
+        </p>
+        <p>${verdict}</p>
+      </div>`;
   }
 
   let status = '';
   if (!game.result) {
-    if (s.myPick) status = `Warte auf ${game.esc(other.name)} …`;
-    else if (s.otherPicked) status = `${game.esc(other.name)} hat schon gewählt!`;
-    else status = 'Deine Wahl:';
+    if (s.myPick) status = `Du hast ${MOVES[s.myPick]} gewählt. Warte auf ${e(other.name)}.`;
+    else if (s.otherPicked) status = `${e(other.name)} hat schon gewählt. Jetzt du.`;
+    else if (!last) status = 'Wähle geheim. Aufgedeckt wird, sobald ihr beide gewählt habt.';
+    else status = 'Nächste Runde. Wähle geheim.';
   }
 
   el.innerHTML = `
-    <div class="card center ssp-score">
-      <span>Du <b>${s.score[me.id]}</b></span>
-      <span class="muted">:</span>
-      <span><b>${s.score[other.id]}</b> ${game.esc(other.name)}</span>
+    <div class="ssp-score">
+      <span class="muted">Runden</span>
+      <span class="num ssp-num" style="color:${game.color(me.id)}">${s.score[me.id]}</span>
+      <span class="num ssp-num">:</span>
+      <span class="num ssp-num" style="color:${game.color(other.id)}">${s.score[other.id]}</span>
+      <span class="muted">wer zuerst drei hat, gewinnt</span>
     </div>
     ${lastRound}
-    <p class="status">${status}</p>
-    <div class="row center">
-      ${Object.entries(MOVES)
-        .map(([move, icon]) => `
-          <button class="btn ssp-move ${s.myPick === move ? 'chosen' : ''}" data-action="waehlen" data-value="${move}"
-                  ${s.myPick || game.result ? 'disabled' : ''}>
-            <span class="ssp-big">${icon}</span>
-            <span>${move[0].toUpperCase() + move.slice(1)}</span>
-          </button>`)
-        .join('')}
-    </div>`;
+    ${status ? `<p class="status">${status}</p>` : ''}
+    ${game.result ? '' : `
+      <div class="ssp-moves">
+        ${Object.entries(MOVES)
+          .map(([move, label]) => `
+            <button class="btn ssp-move ${s.myPick === move ? 'chosen' : ''}" data-action="waehlen" data-value="${move}"
+                    ${s.myPick ? 'disabled' : ''} aria-pressed="${s.myPick === move}">${label}</button>`)
+          .join('')}
+      </div>`}`;
 }
 
 export const style = `
-  .ssp-score { display: flex; gap: 12px; justify-content: center; font-size: 1.2rem; }
-  .ssp-reveal { display: flex; align-items: center; justify-content: center; gap: 24px; text-align: center; }
-  .ssp-big { font-size: 3rem; line-height: 1.2; }
-  .ssp-move { display: flex; flex-direction: column; align-items: center; border-radius: var(--radius); min-width: 96px; }
-  .ssp-move.chosen { opacity: 1; border-color: var(--accent); background: var(--accent-soft); }
+  .ssp-score { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 8px; }
+  .ssp-num { font-size: var(--t-2xl); line-height: 1; }
+  .ssp-last { border-top: 1px solid var(--hairline); padding-top: 14px; }
+  .ssp-duel {
+    font-family: var(--font-display); font-weight: 800; font-size: var(--t-2xl); line-height: 1.05;
+    margin: 4px 0 6px;
+  }
+  .ssp-vs { font-family: var(--font-body); font-weight: 400; font-size: var(--t-base); color: var(--muted); margin: 0 6px; }
+  .ssp-moves { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-width: 520px; }
+  .ssp-move {
+    min-height: 80px; padding: 8px 4px;
+    font-family: var(--font-display); font-weight: 800; font-size: var(--t-lg);
+  }
+  .ssp-move.chosen:disabled { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  @media (min-width: 600px) { .ssp-move { font-size: var(--t-xl); min-height: 96px; } }
 `;

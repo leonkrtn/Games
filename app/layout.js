@@ -1,15 +1,17 @@
+import '@fontsource-variable/big-shoulders/opsz.css';
+import '@fontsource-variable/atkinson-hyperlegible-next';
 import './globals.css';
 
 export const metadata = {
   title: 'Spielzimmer',
-  description: 'Eure eigenen Spiele – live zusammen spielen.',
+  description: 'Selbst ausgedachte Spiele zu zweit live spielen.',
 };
 
 export const viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: '#e0457b',
+  themeColor: '#ffffff',
 };
 
 export default function RootLayout({ children }) {

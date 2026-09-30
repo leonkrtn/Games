@@ -1,8 +1,7 @@
-// Tic-Tac-Toe – Beispiel für ein Spiel, bei dem man abwechselnd zieht.
+// Tic-Tac-Toe (Beispiel für ein Spiel, bei dem man abwechselnd zieht).
 
 export const meta = {
   name: 'Tic-Tac-Toe',
-  emoji: '⭕',
   description: 'Drei in einer Reihe gewinnt.',
   players: [2, 2],
 };
@@ -18,7 +17,7 @@ export function setup(players) {
   const [first, second] = Math.random() < 0.5 ? players : [players[1], players[0]];
   return {
     players,
-    marks: { [first.id]: '✕', [second.id]: '◯' },
+    marks: { [first.id]: 'X', [second.id]: 'O' },
     board: Array(9).fill(null),
     turn: first.id,
     line: null,
@@ -36,9 +35,9 @@ export function action(state, { player, type, data }) {
   if (line) {
     state.line = line;
     const name = state.players.find((p) => p.id === player).name;
-    state.result = { winners: [player], text: `${name} gewinnt!` };
+    state.result = { winners: [player], text: `${name} gewinnt.` };
   } else if (state.board.every(Boolean)) {
-    state.result = { winners: [], text: 'Unentschieden!' };
+    state.result = { winners: [], text: 'Unentschieden.' };
   } else {
     state.turn = state.players.find((p) => p.id !== player).id;
   }
@@ -46,37 +45,45 @@ export function action(state, { player, type, data }) {
 
 export function render(el, s, game) {
   const myTurn = s.turn === game.me && !game.result;
-  const status = game.result
-    ? ''
-    : myTurn
-      ? `Du bist dran (${s.marks[game.me]})`
-      : `${game.esc(game.name(s.turn))} ist dran …`;
+  const status = myTurn ? `Du bist dran. Du setzt ${s.marks[game.me]}.` : `${game.esc(game.name(s.turn))} ist dran.`;
 
   el.innerHTML = `
-    <p class="status">${status}</p>
+    ${game.result ? '' : `<p class="status"><span class="marker" style="color:${game.color(s.turn)}"></span> ${status}</p>`}
     <div class="ttt">
       ${s.board
-        .map((owner, i) => `
-          <button class="ttt-cell ${owner ? (s.marks[owner] === '✕' ? 'x' : 'o') : ''} ${s.line?.includes(i) ? 'win' : ''}"
-                  data-action="setzen" data-value="${i}" ${owner || !myTurn ? 'disabled' : ''}
-                  aria-label="Feld ${i + 1}">${owner ? s.marks[owner] : ''}</button>`)
+        .map((owner, i) => {
+          const win = s.line?.includes(i);
+          const color = owner ? game.color(owner) : 'inherit';
+          return `<button class="ttt-cell ${win ? 'win' : ''}" style="--mark:${color}"
+                    data-action="setzen" data-value="${i}" ${owner || !myTurn ? 'disabled' : ''}
+                    aria-label="Feld ${i + 1}${owner ? `, ${s.marks[owner]}` : ''}">${owner ? s.marks[owner] : ''}</button>`;
+        })
         .join('')}
     </div>`;
 }
 
 export const style = `
   .ttt {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
-    width: min(100%, 360px); margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    width: min(100%, 360px);
   }
   .ttt-cell {
-    aspect-ratio: 1; font-size: clamp(2rem, 12vw, 3.5rem); font-weight: 700;
-    border: 1px solid var(--border); border-radius: var(--radius);
-    background: var(--surface); color: var(--text); cursor: pointer;
+    aspect-ratio: 1;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: var(--mark);
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: clamp(3rem, 18vw, 5rem);
+    line-height: 1;
+    cursor: pointer;
   }
+  /* Nur die inneren Linien, wie auf Papier gezeichnet */
+  .ttt-cell:nth-child(3n + 1), .ttt-cell:nth-child(3n + 2) { border-right: 3px solid var(--ink); }
+  .ttt-cell:nth-child(-n + 6) { border-bottom: 3px solid var(--ink); }
   .ttt-cell:disabled { cursor: default; }
-  .ttt-cell:not(:disabled):hover { background: var(--surface-2); }
-  .ttt-cell.x { color: var(--accent); }
-  .ttt-cell.o { color: var(--second); }
-  .ttt-cell.win { background: var(--accent-soft); border-color: var(--accent); }
+  .ttt-cell:not(:disabled):hover { background: var(--wash); }
+  .ttt-cell.win { background: color-mix(in srgb, var(--mark) 12%, white); }
 `;

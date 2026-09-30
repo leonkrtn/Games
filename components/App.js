@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getSupabase } from '@/lib/supabase-browser';
 import GameView from './GameView';
+import { playerColor } from '@/lib/colors';
 
 const storage = {
   get: (k) => {
@@ -45,7 +46,7 @@ async function callServer(msg) {
       body: JSON.stringify(msg),
     });
   } catch {
-    throw Object.assign(new Error('Keine Verbindung – versuche es gleich nochmal.'), { offline: true });
+    throw Object.assign(new Error('Keine Verbindung. Versuch es gleich nochmal.'), { offline: true });
   }
   const data = await res.json().catch(() => ({ error: 'Der Server hat nicht geantwortet.' }));
   if (!res.ok) throw Object.assign(new Error(data.error), { status: res.status });
@@ -195,7 +196,7 @@ export default function App() {
 
   return (
     <>
-      <main className="app">
+      <main className="shell">
         {snap ? (
           <Room snap={snap} online={online} send={send} onAction={onAction} leave={leave} showToast={showToast} />
         ) : (
@@ -209,6 +210,18 @@ export default function App() {
 }
 
 // ---------------------------------------------------------------------------
+
+function Wordmark() {
+  return (
+    <div className="wordmark">
+      <span className="pieces" aria-hidden="true">
+        <i />
+        <i />
+      </span>
+      Spielzimmer
+    </div>
+  );
+}
 
 function Start({ enter, showToast }) {
   const [name, setName] = useState(() => storage.get('spielzimmer.name') ?? '');
@@ -224,19 +237,24 @@ function Start({ enter, showToast }) {
   };
 
   return (
-    <section>
-      <h1 className="logo">🎲 Spielzimmer</h1>
-      <p className="muted">Eure eigenen Spiele – live zusammen spielen.</p>
+    <section className="start">
+      <div>
+        <h1 className="start-title">Spielzimmer</h1>
+        <p className="start-intro">
+          Hier spielt ihr zu zweit die Spiele, die ihr euch selbst ausdenkt. Erstelle einen Raum und schick der
+          anderen Person den Link.
+        </p>
+      </div>
+
       <form
-        className="card stack"
-        style={{ marginTop: 16 }}
+        className="start-form"
         onSubmit={(e) => {
           e.preventDefault();
           go(code.trim() || null);
         }}
       >
-        <label className="stack small-gap">
-          <span>Dein Name</span>
+        <div>
+          <label htmlFor="name">Dein Name</label>
           <input
             id="name"
             value={name}
@@ -245,26 +263,26 @@ function Start({ enter, showToast }) {
             autoComplete="nickname"
             autoFocus={!name}
           />
-        </label>
-        <button type="button" className="btn primary" id="create" disabled={busy} onClick={() => go(null)}>
-          Neuen Raum erstellen
-        </button>
-        <div className="divider">
-          <span>oder</span>
         </div>
-        <div className="row nowrap">
-          <input
-            id="code"
-            value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
-            placeholder="Raum-Code"
-            maxLength={4}
-            autoCapitalize="characters"
-            autoComplete="off"
-          />
-          <button type="button" className="btn" id="join" disabled={busy} onClick={() => go(code.trim())}>
-            Beitreten
-          </button>
+        <button type="button" className="btn primary" id="create" disabled={busy} onClick={() => go(null)}>
+          Raum erstellen
+        </button>
+        <div className="join">
+          <label htmlFor="code">Oder mit Raum-Code beitreten</label>
+          <div className="join-row">
+            <input
+              id="code"
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              maxLength={4}
+              autoCapitalize="characters"
+              autoComplete="off"
+              inputMode="text"
+            />
+            <button type="button" className="btn" id="join" disabled={busy} onClick={() => go(code.trim())}>
+              Beitreten
+            </button>
+          </div>
         </div>
       </form>
     </section>
@@ -279,7 +297,7 @@ function Room({ snap, online, send, onAction, leave, showToast }) {
     try {
       if (navigator.share) return await navigator.share({ title: 'Spielzimmer', text: 'Komm spielen!', url });
       await navigator.clipboard.writeText(url);
-      showToast('Link kopiert!');
+      showToast('Link kopiert.');
     } catch (err) {
       if (err?.name !== 'AbortError') prompt('Diesen Link schicken:', url);
     }
@@ -288,108 +306,132 @@ function Room({ snap, online, send, onAction, leave, showToast }) {
   const players = snap.players.map(({ id, name }) => ({ id, name }));
 
   return (
-    <section>
-      <header className="top">
-        {snap.game && (
-          <button id="to-lobby" className="btn ghost small" onClick={() => send({ t: 'lobby' })}>
-            ← Spiele
-          </button>
-        )}
-        <div className="players">
-          {snap.players.map((p) => (
-            <span
-              key={p.id}
-              className={`player ${online?.has(p.id) ?? true ? 'online' : ''} ${p.id === snap.me ? 'me' : ''}`}
-            >
-              <span className="dot" />
-              {p.name}
-              {p.id === snap.me && <span className="muted"> (du)</span>}
-              <span className="score" title="Gewonnene Spiele">
-                {p.score}
-              </span>
+    <>
+      <Wordmark />
+      <div className="room">
+        <aside className="side">
+          <p className="board-caption">Gewonnene Spiele</p>
+          <Scoreboard snap={snap} online={online} />
+          <div className="side-meta">
+            <span>
+              Raum <span className="room-code">{snap.room}</span>
             </span>
-          ))}
-        </div>
-        <button id="share" className="code-chip" title="Link zum Raum teilen" onClick={share}>
-          Raum <b id="room-code">{snap.room}</b> · Einladen
-        </button>
-      </header>
+            {snap.players.length > 1 && (
+              <button className="link" id="share" onClick={share}>
+                Link teilen
+              </button>
+            )}
+          </div>
+        </aside>
 
-      {snap.game ? (
-        <div id="game-wrap">
-          {snap.game.result && <Result result={snap.game.result} me={snap.me} send={send} />}
-          <GameView game={snap.game} players={players} me={snap.me} onAction={onAction} />
+        <div>
+          {snap.game ? (
+            <div id="game-wrap">
+              <div className="game-head">
+                <h2 className="section-title">{snap.game.name}</h2>
+                <button id="to-lobby" className="link" onClick={() => send({ t: 'lobby' })}>
+                  Alle Spiele
+                </button>
+              </div>
+              {snap.game.result && <Result result={snap.game.result} players={players} me={snap.me} send={send} />}
+              <GameView game={snap.game} players={players} me={snap.me} onAction={onAction} />
+            </div>
+          ) : (
+            <Lobby snap={snap} send={send} leave={leave} share={share} />
+          )}
         </div>
-      ) : (
-        <Lobby snap={snap} send={send} leave={leave} />
-      )}
-    </section>
+      </div>
+    </>
   );
 }
 
-function Result({ result, me, send }) {
-  const won = result.winners?.includes(me);
+// Anzeigetafel: Namen und Punkte in den Spielerfarben.
+function Scoreboard({ snap, online }) {
   return (
-    <div id="result">
-      <div className={`card result ${won ? 'won' : ''}`}>
-        <div className="result-text">
-          {won ? '🎉 ' : ''}
-          {result.text ?? 'Spiel vorbei'}
-        </div>
-        <div className="row center">
-          <button className="btn primary" data-cmd="restart" onClick={() => send({ t: 'restart' })}>
-            Nochmal
-          </button>
-          <button className="btn" data-cmd="lobby" onClick={() => send({ t: 'lobby' })}>
-            Anderes Spiel
-          </button>
-        </div>
+    <div className="scoreboard" aria-label="Punktestand">
+      {snap.players.map((p) => {
+        const away = online && !online.has(p.id);
+        return (
+          <div className="team" key={p.id}>
+            <div>
+              <div className="team-name">
+                <span className="marker" style={{ color: playerColor(snap.players, p.id) }} aria-hidden="true" />
+                {p.name}
+                {p.id === snap.me && <small>du</small>}
+              </div>
+              {away && <span className="team-away">gerade nicht da</span>}
+            </div>
+            <div className="team-score" style={{ color: playerColor(snap.players, p.id) }}>
+              {p.score}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Result({ result, players, me, send }) {
+  const single = result.winners?.length === 1 ? result.winners[0] : null;
+  return (
+    <div id="result" className="result">
+      <p className="result-text" style={{ color: single ? playerColor(players, single) : 'var(--ink)' }}>
+        {result.text ?? 'Spiel vorbei.'}
+      </p>
+      <div className="row">
+        <button className="btn primary" data-cmd="restart" onClick={() => send({ t: 'restart' })}>
+          Nochmal
+        </button>
+        <button className="btn" data-cmd="lobby" onClick={() => send({ t: 'lobby' })}>
+          Anderes Spiel
+        </button>
       </div>
     </div>
   );
 }
 
-function Lobby({ snap, send, leave }) {
+function Lobby({ snap, send, leave, share }) {
   const n = snap.players.length;
   return (
     <div id="lobby">
-      {!getSupabase() && (
-        <p className="dev-note">Lokaler Testmodus ohne Supabase – Räume verschwinden beim Neustart.</p>
-      )}
+      {!getSupabase() && <p className="dev-note">Lokaler Testmodus ohne Supabase. Räume verschwinden beim Neustart.</p>}
+
       {n < 2 && (
-        <div className="card lobby-hint">
-          👋 Du bist noch allein hier. Tippe oben auf <b>Einladen</b> und schick den Link – dann könnt ihr loslegen.
+        <div className="alone">
+          <p>Du bist noch allein im Raum. Schick der anderen Person den Link, dann geht es los.</p>
+          <button className="btn primary" id="share" onClick={share}>
+            Link teilen
+          </button>
         </div>
       )}
-      <div className="game-grid">
+
+      <h2 className="section-title">Spiele</h2>
+      <ul className="game-list">
         {snap.games.map((g) => {
           const [min, max] = g.players;
+          const fits = n >= min && n <= max;
+          const count = min === max ? `${min} Spieler` : `${min} bis ${max} Spieler`;
           return (
-            <button
-              key={g.id}
-              className="card game-card"
-              data-game={g.id}
-              disabled={n < min || n > max}
-              onClick={() => send({ t: 'choose', game: g.id })}
-            >
-              <span className="emoji">{g.emoji}</span>
-              <span className="title">{g.name}</span>
-              <span className="desc">{g.description}</span>
-              <span className="tag">{min === max ? `${min} Spieler` : `${min}–${max} Spieler`}</span>
-            </button>
+            <li key={g.id}>
+              <button className="game-row" data-game={g.id} disabled={!fits} onClick={() => send({ t: 'choose', game: g.id })}>
+                <span className="game-name">{g.name}</span>
+                <span className="game-desc">{g.description}</span>
+                <span className="game-meta">{fits ? count : n < min ? `braucht ${min} Spieler` : `höchstens ${max}`}</span>
+              </button>
+            </li>
           );
         })}
-      </div>
+      </ul>
 
       {snap.history?.length > 0 && <History items={snap.history} />}
 
-      <div className="lobby-foot muted">
-        <span>
-          Neues Spiel erfinden? Einfach eine Datei in <code>games/</code> anlegen.
-        </span>
-        <button className="btn ghost small" id="leave" onClick={leave}>
+      <div className="room-foot">
+        <button className="link" id="leave" onClick={leave}>
           Raum verlassen
         </button>
+        <span>
+          Neue Spiele kommen als Datei in den Ordner <code>games/</code>.
+        </span>
       </div>
     </div>
   );
@@ -398,26 +440,27 @@ function Lobby({ snap, send, leave }) {
 function History({ items }) {
   const format = (iso) => {
     const d = new Date(iso);
-    const today = d.toDateString() === new Date().toDateString();
-    return today
+    return d.toDateString() === new Date().toDateString()
       ? d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
       : d.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' });
   };
   return (
-    <div className="history card">
-      <h2>Zuletzt gespielt</h2>
-      <ul>
-        {items.map((r, i) => (
-          <li key={i}>
-            <span>{r.winners.length === 1 ? '🏆' : '🤝'}</span>
-            <span>
-              <b>{r.game_name}</b> – {r.text}
-            </span>
-            <time dateTime={r.finished_at}>{format(r.finished_at)}</time>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <section className="history">
+      <h2 className="section-title">Zuletzt gespielt</h2>
+      <table>
+        <tbody>
+          {items.map((r, i) => (
+            <tr key={i}>
+              <td>
+                <time dateTime={r.finished_at}>{format(r.finished_at)}</time>
+              </td>
+              <td>{r.game_name}</td>
+              <td>{r.text}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }
 
@@ -430,7 +473,11 @@ function ConnectionNote({ show }) {
     const timer = setTimeout(() => setVisible(true), 1500); // kurze Aussetzer nicht anzeigen
     return () => clearTimeout(timer);
   }, [show]);
-  return visible ? <div id="conn">Verbindung wird hergestellt…</div> : null;
+  return visible ? (
+    <div className="conn" id="conn" role="status">
+      Verbindung wird hergestellt
+    </div>
+  ) : null;
 }
 
 function Toast({ toast }) {
@@ -441,5 +488,9 @@ function Toast({ toast }) {
     const timer = setTimeout(() => setVisible(null), 3500);
     return () => clearTimeout(timer);
   }, [toast]);
-  return visible ? <div id="toast">{visible}</div> : null;
+  return visible ? (
+    <div className="toast" id="toast" role="status">
+      {visible}
+    </div>
+  ) : null;
 }

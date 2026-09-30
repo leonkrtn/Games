@@ -1,15 +1,15 @@
-// Wie gut kennst du mich? – Beispiel für ein Spiel mit eigenen Texten und mehreren Phasen.
+// Wie gut kennst du mich? Beispiel für ein Spiel mit eigenen Texten und mehreren Phasen.
 // Abwechselnd denkt sich einer eine Frage über sich aus (mit geheimer Antwort),
 // der andere rät, und der Fragende entscheidet, ob es stimmt.
 
 export const meta = {
   name: 'Wie gut kennst du mich?',
-  emoji: '💞',
-  description: 'Stellt euch Fragen über euch selbst – wer rät öfter richtig?',
+  description: 'Abwechselnd schreibt ihr eine Frage über euch selbst, die andere Person rät.',
   players: [2, 2],
 };
 
 const ROUNDS = 6;
+const WORD = ['null', 'eins', 'zwei', 'drei', 'vier', 'fünf', 'sechs'];
 
 const IDEAS = [
   'Was ist mein Lieblingsessen?',
@@ -89,10 +89,10 @@ function finish(state) {
   const sa = state.score[a.id];
   const sb = state.score[b.id];
   if (sa === sb) {
-    state.result = { winners: [a.id, b.id], text: `Gleichstand ${sa}:${sb} – ihr kennt euch gleich gut! 💞` };
+    state.result = { winners: [a.id, b.id], text: `Gleichstand, ${WORD[sa]} zu ${WORD[sb]}. Ihr kennt euch gleich gut.` };
   } else {
     const winner = sa > sb ? a : b;
-    state.result = { winners: [winner.id], text: `${winner.name} hat öfter richtig geraten! (${Math.max(sa, sb)}:${Math.min(sa, sb)})` };
+    state.result = { winners: [winner.id], text: `${winner.name} hat öfter richtig geraten, ${WORD[Math.max(sa, sb)]} zu ${WORD[Math.min(sa, sb)]}.` };
   }
 }
 
@@ -105,61 +105,76 @@ export function view(state, me) {
 export function render(el, s, game) {
   const e = game.esc;
   const isSubject = s.subject === game.me;
+  const guesserId = other(s, s.subject).id;
   const subjectName = e(game.name(s.subject));
-  const guesserName = e(other(s, s.subject).name);
+  const guesserName = e(game.name(guesserId));
+  const who = (id) => `<span class="marker" style="color:${game.color(id)}"></span> ${id === game.me ? 'Du' : e(game.name(id))}`;
+
   const header = `
-    <div class="row kdm-head">
+    <div class="kdm-head">
       <span class="muted">Runde ${Math.min(s.round, ROUNDS)} von ${ROUNDS}</span>
-      <span>${s.players.map((p) => `${p.id === game.me ? 'Du' : e(p.name)} <b>${s.score[p.id]}</b>`).join(' · ')}</span>
+      <span class="kdm-points">${s.players.map((p) => `${who(p.id)} <b class="num kdm-num">${s.score[p.id]}</b>`).join('<span class="muted">·</span>')}</span>
     </div>`;
-  const questionCard = s.question ? `<div class="card kdm-question">„${e(s.question)}“</div>` : '';
+  const question = s.question
+    ? `<div><p class="muted kdm-asker">${isSubject ? 'Deine Frage' : `Frage von ${subjectName}`}</p><p class="kdm-question">${e(s.question)}</p></div>`
+    : '';
 
   let body = '';
   switch (s.phase) {
     case 'fragen':
       body = isSubject
-        ? `<form class="card stack" data-action="fragen">
-             <p class="big">Du bist dran! Stell eine Frage über dich.</p>
-             <div class="row nowrap">
-               <input name="question" id="kdm-q" placeholder="z.B. Was ist mein Lieblingsessen?" maxlength="200" required>
-               <button type="button" class="btn" id="kdm-idea" title="Zufällige Idee">🎲</button>
+        ? `<form class="kdm-form" data-action="fragen">
+             <p class="status">Du bist dran. Schreib eine Frage über dich und deine Antwort.</p>
+             <div>
+               <div class="kdm-label-row">
+                 <label for="kdm-q">Frage</label>
+                 <button type="button" class="link kdm-idea" id="kdm-idea">Vorschlag nehmen</button>
+               </div>
+               <input name="question" id="kdm-q" maxlength="200" required>
              </div>
-             <input name="answer" placeholder="Deine Antwort (bleibt geheim)" maxlength="200" required>
-             <button class="btn primary">Frage stellen</button>
+             <div>
+               <label for="kdm-a">Deine Antwort</label>
+               <input name="answer" id="kdm-a" maxlength="200" required aria-describedby="kdm-a-hint">
+               <p class="muted kdm-hint" id="kdm-a-hint">${guesserName} sieht sie erst nach dem Raten.</p>
+             </div>
+             <div><button class="btn primary">Frage stellen</button></div>
            </form>`
-        : `<p class="status">${subjectName} denkt sich eine Frage aus …</p>`;
+        : `<p class="status">${subjectName} schreibt gerade eine Frage.</p>`;
       break;
     case 'raten':
       body = isSubject
-        ? `${questionCard}<p class="status">${guesserName} rät gerade …</p>`
-        : `${questionCard}
-           <form class="card stack" data-action="raten">
-             <input name="guess" placeholder="Deine Vermutung" maxlength="200" required autofocus>
-             <button class="btn primary">Raten</button>
+        ? `${question}<p class="status">${guesserName} rät gerade.</p>`
+        : `${question}
+           <form class="kdm-form" data-action="raten">
+             <div>
+               <label for="kdm-g">Deine Vermutung</label>
+               <input name="guess" id="kdm-g" maxlength="200" required autofocus>
+             </div>
+             <div><button class="btn primary">Raten</button></div>
            </form>`;
       break;
     case 'pruefen':
-      body = `${questionCard}
-        <div class="card stack">
-          <p>${isSubject ? `${guesserName} sagt` : 'Du hast gesagt'}: <b>${e(s.guess)}</b></p>
-          <p>${isSubject ? 'Deine Antwort' : `Antwort von ${subjectName}`}: <b>${e(s.answer)}</b></p>
-        </div>
+      body = `${question}
+        <dl class="kdm-compare">
+          <dt>${isSubject ? `${guesserName} hat geraten` : 'Du hast geraten'}</dt><dd>${e(s.guess)}</dd>
+          <dt>${isSubject ? 'Deine Antwort' : `Antwort von ${subjectName}`}</dt><dd>${e(s.answer)}</dd>
+        </dl>
         ${isSubject
-          ? `<p class="status">Hat ${guesserName} recht?</p>
-             <div class="row center">
-               <button class="btn primary" data-action="pruefen" data-value="true">Richtig ✓</button>
-               <button class="btn" data-action="pruefen" data-value="false">Daneben ✗</button>
+          ? `<p class="status">Zählt das als richtig?</p>
+             <div class="row">
+               <button class="btn primary" data-action="pruefen" data-value="true">Richtig</button>
+               <button class="btn" data-action="pruefen" data-value="false">Daneben</button>
              </div>`
-          : `<p class="status">${subjectName} entscheidet, ob das zählt …</p>`}`;
+          : `<p class="status">${subjectName} entscheidet, ob das zählt.</p>`}`;
       break;
     case 'aufgedeckt':
-      body = `${questionCard}
-        <div class="card stack">
-          <p>Antwort: <b>${e(s.answer)}</b></p>
-          <p>Geraten: <b>${e(s.guess)}</b></p>
-          <p class="big ${s.correct ? 'ok' : 'bad'}">${s.correct ? 'Richtig! +1 für ' + guesserName : 'Leider daneben'}</p>
-        </div>
-        ${game.result ? '' : '<div class="row center"><button class="btn primary" data-action="weiter">Nächste Runde</button></div>'}`;
+      body = `${question}
+        <dl class="kdm-compare">
+          <dt>Antwort</dt><dd>${e(s.answer)}</dd>
+          <dt>Geraten</dt><dd>${e(s.guess)}</dd>
+        </dl>
+        <p class="big ${s.correct ? 'ok' : ''}">${s.correct ? `Richtig. Ein Punkt für ${guesserId === game.me ? 'dich' : guesserName}.` : 'Daneben. Kein Punkt.'}</p>
+        ${game.result ? '' : '<div><button class="btn primary" data-action="weiter">Nächste Runde</button></div>'}`;
       break;
   }
 
@@ -167,11 +182,27 @@ export function render(el, s, game) {
 
   // Kleiner Helfer, der nur im eigenen Browser passiert (kein Spielzug).
   el.querySelector('#kdm-idea')?.addEventListener('click', () => {
-    el.querySelector('#kdm-q').value = IDEAS[Math.floor(Math.random() * IDEAS.length)];
+    const input = el.querySelector('#kdm-q');
+    input.value = IDEAS[Math.floor(Math.random() * IDEAS.length)];
+    input.focus();
   });
 }
 
 export const style = `
-  .kdm-head { justify-content: space-between; }
-  .kdm-question { font-size: 1.3rem; font-weight: 650; text-align: center; }
+  .kdm-head {
+    display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px;
+    border-bottom: 1px solid var(--hairline); padding-bottom: 10px;
+  }
+  .kdm-points { display: inline-flex; gap: 10px; align-items: baseline; }
+  .kdm-num { font-size: var(--t-md); }
+  .kdm-asker { font-size: var(--t-sm); }
+  .kdm-question { font-size: var(--t-lg); font-weight: 700; line-height: 1.25; max-width: 30ch; }
+  .kdm-form { display: grid; gap: 18px; max-width: 480px; }
+  .kdm-label-row { display: flex; justify-content: space-between; align-items: baseline; }
+  .kdm-idea { font-size: var(--t-sm); }
+  .kdm-hint { font-size: var(--t-sm); margin-top: 6px; }
+  .kdm-compare { display: grid; grid-template-columns: auto 1fr; gap: 8px 20px; border-top: 2px solid var(--ink); padding-top: 12px; }
+  .kdm-compare dt { color: var(--muted); }
+  .kdm-compare dd { font-weight: 700; }
+  @media (max-width: 420px) { .kdm-compare { grid-template-columns: 1fr; gap: 2px; } .kdm-compare dd { margin-bottom: 8px; } }
 `;

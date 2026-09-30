@@ -1,6 +1,6 @@
-# 🎲 Spielzimmer
+# Spielzimmer
 
-Eure eigenen Spiele – live zusammen spielen, am Handy oder Laptop.
+Selbst ausgedachte Spiele zu zweit live spielen, am Handy oder Laptop.
 
 Einer erstellt einen Raum, schickt den Link, und schon seid ihr beide drin. Züge erscheinen sofort beim anderen. Punktestand und Verlauf („Zuletzt gespielt“) bleiben dauerhaft gespeichert.
 
@@ -8,9 +8,9 @@ Dabei sind drei Beispielspiele:
 
 | Spiel | Zeigt, wie man … |
 | --- | --- |
-| ⭕ Tic-Tac-Toe | abwechselnd zieht |
-| ✂️ Schere, Stein, Papier | gleichzeitig und geheim wählt |
-| 💞 Wie gut kennst du mich? | eigene Fragen stellt, rät und bewertet |
+| Tic-Tac-Toe | abwechselnd zieht |
+| Schere, Stein, Papier | gleichzeitig und geheim wählt |
+| Wie gut kennst du mich? | eigene Fragen stellt, rät und bewertet |
 
 ## So funktioniert es
 
@@ -63,10 +63,10 @@ Mit echter Datenbank: `.env.example` nach `.env.local` kopieren und die Werte ei
 
 Jedes Spiel ist **eine einzige Datei** im Ordner `games/`. Mehr ist nicht nötig, die Lobby findet sie automatisch.
 
-**Weg 1 – beschreiben lassen:** Erzähl Claude einfach deine Idee, z.B.:
+**Weg 1, beschreiben lassen:** Erzähl Claude einfach deine Idee, z.B.:
 
 > Bau ein neues Spiel: Jeder schreibt heimlich 3 Wörter auf, dann werden sie gemischt und der andere muss raten, welche von mir sind.
 
 Die Datei `CLAUDE.md` erklärt Claude, wie Spiele hier aufgebaut sind.
 
-**Weg 2 – selbst schreiben:** Kopiere `games/_vorlage.js` nach z.B. `games/mein-spiel.js` und passe sie an. Die Vorlage ist ein kleines, fertiges Spiel mit Erklärungen zu jedem Teil. Mit `npm run check` prüfst du, ob alles passt. Nach dem Anlegen einer neuen Datei `npm run dev` einmal neu starten.
+**Weg 2, selbst schreiben:** Kopiere `games/_vorlage.js` nach z.B. `games/mein-spiel.js` und passe sie an. Die Vorlage ist ein kleines, fertiges Spiel mit Erklärungen zu jedem Teil. Mit `npm run check` prüfst du, ob alles passt. Nach dem Anlegen einer neuen Datei `npm run dev` einmal neu starten.
