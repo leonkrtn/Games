@@ -7,15 +7,18 @@
   "scripts": {
     "games": "node scripts/generate-games.js",
     "dev": "npm run games && next dev",
-    "build": "npm run games && next build",
+    "build": "npm run games && node scripts/migrate.js --build && next build",
     "start": "next start",
-    "check": "node scripts/check-games.js"
+    "check": "node scripts/check-games.js",
+    "migrate": "node scripts/migrate.js --strict",
+    "migration": "node scripts/new-migration.js"
   },
   "dependencies": {
     "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
     "@fontsource-variable/big-shoulders": "^5.3.0",
     "@supabase/supabase-js": "^2.117.2",
     "next": "^16.3.8",
+    "pg": "^8.23.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "web-push": "^3.6.7"

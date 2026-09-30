@@ -6,6 +6,8 @@ Kleine Web-Plattform, um selbst erfundene Spiele mit Freunden live gegeneinander
 
 Änderungen immer direkt auf `master` committen und pushen (Vercel stellt `master` automatisch online). Keine Feature-Branches und keine Pull Requests, außer der Nutzer bittet ausdrücklich darum. Vor dem Push `npm run check` und `npm run build` laufen lassen.
 
+**Datenbank nur über Migrationen ändern.** Jede Änderung am Schema ist eine neue Datei in `supabase/migrations/` (anlegen mit `npm run migration -- kurze-beschreibung`, Name `JJJJMMTTHHMMSS_beschreibung.sql`). Bereits vorhandene Migrationen nie bearbeiten, auch nicht für Korrekturen: dafür eine weitere Migration schreiben. Neue Tabellen mit `enable row level security` (ohne Policies). Der Production-Build führt fehlende Migrationen automatisch aus (`scripts/migrate.js`, braucht `DATABASE_URL`); es gibt keine `schema.sql` mehr zum Einfügen. Nach einer Schema-Änderung auch `lib/store/memory.js` anpassen, damit der lokale Testmodus gleich funktioniert. Keine Befehle, die nicht in einer Transaktion laufen (z.B. `create index concurrently`).
+
 ## Aufbau
 
 Ablauf für Nutzer: Konto erstellen (Benutzername + Passwort, keine E-Mail) → Freunde hinzufügen → jede Freundschaft hat ein eigenes Spielzimmer mit Punktestand und Verlauf → darin Spiele starten.
@@ -18,7 +20,7 @@ Ablauf für Nutzer: Konto erstellen (Benutzername + Passwort, keine E-Mail) → 
 - Nach einer Änderung per Supabase Realtime Broadcast Bescheid sagen: `room:<CODE>` (Payload `{ version }`, die Browser holen sich dann ihre eigene Ansicht mit `t: 'state'`) und `user:<ID>` (Freundesliste neu laden).
 - `lib/store/`: Datenbankzugriff: `supabase.js` (Secret Key, nur Server), `memory.js` (lokaler Testmodus ohne Supabase; die Browser fragen dann regelmäßig nach). Beide müssen dieselben Funktionen haben.
 - `components/App.js` (Anmeldestatus, Wechsel zwischen Startseite und Spielzimmer, Benachrichtigungen fürs Gerät), `Auth.js` (Anmelden/Registrieren), `Home.js` (Freundesliste, Anfragen, Freund hinzufügen, Einladungslink), `Room.js` (Anzeigetafel, Lobby, Verlauf, Realtime und Presence), `GameView.js` (ruft `render()` des Spiels auf).
-- `supabase/schema.sql`: `rooms` (ein Raum = eine Zeile, alles in `data` jsonb, `version` für die Konfliktprüfung), `results` (Verlauf), `users`, `sessions`, `friendships` (ein Eintrag pro Paar, `room_code` nach dem Annehmen), `devices` (Push-Abos). RLS an, keine Policies: nur der Server liest und schreibt. Die Datei ist wiederholbar (`if not exists`).
+- `supabase/migrations/`: das Datenbankschema als Folge von Migrationen, ausgeführt von `scripts/migrate.js` (protokolliert in `supabase_migrations.schema_migrations`, wie die Supabase CLI). Tabellen: `rooms` (ein Raum = eine Zeile, alles in `data` jsonb, `version` für die Konfliktprüfung), `results` (Verlauf), `users`, `sessions`, `friendships` (ein Eintrag pro Paar, `room_code` nach dem Annehmen), `devices` (Push-Abos). RLS an, keine Policies: nur der Server liest und schreibt.
 
 Sicherheit: API-Routen nehmen nur `application/json` an (Schutz vor fremden Formularen), das Sitzungs-Cookie ist `httpOnly`, `SameSite=Lax` und in Produktion `Secure`. Passwort-Hashes und Sitzungs-Tokens dürfen nie in einer Antwort landen (`publicUser()` benutzen).
 

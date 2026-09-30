@@ -24,8 +24,8 @@ Dabei sind drei Beispielspiele:
 ### 1. Supabase einrichten
 
 1. Auf [supabase.com](https://supabase.com) ein neues Projekt anlegen. Als Region **Central EU (Frankfurt)** wählen, denn dort laufen auch die Vercel-Funktionen (`vercel.json`), und das macht die Züge schneller.
-2. Im Dashboard **SQL Editor** öffnen, den Inhalt von [`supabase/schema.sql`](supabase/schema.sql) einfügen und auf **Run** klicken.
-3. Unter **Project Settings → API Keys** (bzw. über den Button **Connect**) diese drei Werte heraussuchen: die Project URL, den **Publishable key** und einen **Secret key**.
+2. Unter **Project Settings → API Keys** (bzw. über den Button **Connect**) diese drei Werte heraussuchen: die Project URL, den **Publishable key** und einen **Secret key**.
+3. Über den Button **Connect** die Verbindungsadresse der Datenbank kopieren, und zwar die unter **Session pooler** (die funktioniert auch von Vercel aus). `[YOUR-PASSWORD]` darin durch das Datenbank-Passwort des Projekts ersetzen. Damit legt der Deploy die Tabellen selbst an.
 
 ### 2. Vercel einrichten
 
@@ -37,12 +37,23 @@ Dabei sind drei Beispielspiele:
    | `NEXT_PUBLIC_SUPABASE_URL` | Project URL, z.B. `https://abcd1234.supabase.co` |
    | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Publishable key (`sb_publishable_…`) |
    | `SUPABASE_SECRET_KEY` | Secret key (`sb_secret_…`), **niemals weitergeben** |
+   | `DATABASE_URL` | Verbindungsadresse aus Schritt 1.3 (`postgresql://postgres.…@…pooler.supabase.com:5432/postgres`), **niemals weitergeben** |
 
 3. **Deploy** klicken. Danach habt ihr eine Adresse wie `https://spielzimmer.vercel.app`.
 
-Wer Supabase über die Vercel-Integration verbindet, bekommt die Variablen automatisch. Die dort verwendeten älteren Namen (`NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`) funktionieren ebenfalls.
+Wer Supabase über die Vercel-Integration verbindet, bekommt die Variablen automatisch. Die dort verwendeten älteren Namen (`NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`) funktionieren ebenfalls, und statt `DATABASE_URL` wird dann `POSTGRES_URL_NON_POOLING` benutzt.
 
 Jede Änderung auf dem Hauptzweig wird automatisch online gestellt. Andere Zweige bekommen eine eigene Vorschau-Adresse.
+
+### Datenbank-Änderungen (Migrationen)
+
+Die Tabellen entstehen aus den Dateien in `supabase/migrations/`, eine Datei pro Änderung, sortiert nach Datum im Dateinamen. Bei jedem Production-Deploy führt der Build die noch fehlenden Migrationen aus (`scripts/migrate.js`). Man muss also nie selbst SQL einfügen.
+
+- Jede Migration läuft ganz oder gar nicht. Schlägt eine fehl, wird sie zurückgenommen und der Deploy bricht ab, die Online-Version bleibt die alte.
+- Welche Migrationen gelaufen sind, steht in `supabase_migrations.schema_migrations`, derselben Tabelle, die die Supabase CLI benutzt. `supabase db push` funktioniert also auch.
+- Vorschau-Deploys (andere Zweige) ändern die Datenbank nicht.
+- Neue Migration anlegen: `npm run migration -- kurze-beschreibung`. Von Hand ausführen (mit `DATABASE_URL` in `.env.local`): `npm run migrate`.
+- Einmal gelaufene Migrationen nicht mehr ändern, sondern eine neue schreiben.
 
 **Hinweis:** Kostenlose Supabase-Projekte werden nach etwa einer Woche ohne Nutzung pausiert. Dann im Supabase-Dashboard auf „Restore“ klicken. Die Daten bleiben erhalten.
 
@@ -55,7 +66,7 @@ Damit das Handy meldet „Du bist dran“, braucht der Server ein Schlüsselpaar
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | öffentlicher Schlüssel |
 | `VAPID_PRIVATE_KEY` | privater Schlüssel, **niemals weitergeben** |
 
-Ein neues Paar erzeugt `npx web-push generate-vapid-keys`. Danach `supabase/schema.sql` noch einmal im SQL Editor ausführen (legt die Tabelle für die Benachrichtigungen an, Vorhandenes bleibt unverändert) und neu deployen.
+Ein neues Paar erzeugt `npx web-push generate-vapid-keys`. Danach neu deployen.
 
 Auf der Startseite erscheint dann „Benachrichtigen, wenn ich dran bin“. Auf dem iPhone geht das nur in der App vom Home-Bildschirm (ab iOS 16.4). Benachrichtigt wird nur, wer die App gerade nicht offen hat.
 

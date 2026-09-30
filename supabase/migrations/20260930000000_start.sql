@@ -1,5 +1,6 @@
--- Spielzimmer: Datenbank-Schema für Supabase.
--- Einmal im Supabase-Dashboard unter "SQL Editor" einfügen und ausführen.
+-- Ausgangsstand des Spielzimmers (Räume, Verlauf, Konten, Freunde, Geräte).
+-- Absichtlich mit "if not exists": läuft auch auf einer Datenbank, in der schema.sql schon ausgeführt wurde.
+
 
 -- Ein Raum mit Spielern, Punktestand und laufendem Spiel.
 -- Alles steckt in `data`, damit ein Zug immer in einem Schritt gespeichert wird.
