@@ -1,0 +1,18 @@
+{
+  "name": "spielzimmer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Eigene Spiele erfinden und live zusammen spielen",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch-path=server.js server.js",
+    "check": "node scripts/check-games.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  }
+}

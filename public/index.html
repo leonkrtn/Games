@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#e0457b">
+  <title>Spielzimmer</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <main class="app">
+    <section id="start" hidden>
+      <h1 class="logo">🎲 Spielzimmer</h1>
+      <p class="muted">Eure eigenen Spiele – live zusammen spielen.</p>
+      <form id="start-form" class="card stack">
+        <label class="stack small-gap">
+          <span>Dein Name</span>
+          <input id="name" maxlength="20" autocomplete="nickname" required>
+        </label>
+        <button type="button" class="btn primary" id="create">Neuen Raum erstellen</button>
+        <div class="divider"><span>oder</span></div>
+        <div class="row nowrap">
+          <input id="code" placeholder="Raum-Code" maxlength="4" autocapitalize="characters" autocomplete="off">
+          <button type="button" class="btn" id="join">Beitreten</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="room" hidden>
+      <header class="top">
+        <button id="to-lobby" class="btn ghost small" hidden>← Spiele</button>
+        <div id="players" class="players"></div>
+        <button id="share" class="code-chip" title="Link zum Raum teilen">Raum <b id="room-code"></b> · Einladen</button>
+      </header>
+
+      <div id="lobby" hidden></div>
+
+      <div id="game-wrap" hidden>
+        <div id="result" hidden></div>
+        <div id="game"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="conn" hidden>Verbindung wird hergestellt…</div>
+  <div id="toast" hidden></div>
+</body>
+</html>
