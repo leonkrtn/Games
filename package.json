@@ -5,14 +5,19 @@
   "description": "Eigene Spiele erfinden und live zusammen spielen",
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch-path=server.js server.js",
+    "games": "node scripts/generate-games.js",
+    "dev": "npm run games && next dev",
+    "build": "npm run games && next build",
+    "start": "next start",
     "check": "node scripts/check-games.js"
   },
-  "engines": {
-    "node": ">=20"
-  },
   "dependencies": {
-    "ws": "^8.22.0"
+    "@supabase/supabase-js": "^2.117.2",
+    "next": "^16.3.8",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "engines": {
+    "node": ">=20.9"
   }
 }

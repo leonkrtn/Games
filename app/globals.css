@@ -222,3 +222,20 @@ input:focus, textarea:focus, select:focus, .btn:focus-visible {
 }
 #conn { top: 12px; background: var(--text); color: var(--bg); }
 #toast { bottom: calc(20px + env(safe-area-inset-bottom)); background: var(--text); color: var(--bg); }
+
+/* ---------- Verlauf ---------- */
+
+.history { margin-top: 24px; }
+.history h2 { font-size: 1rem; margin-bottom: 8px; }
+.history ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.history li { display: flex; gap: 10px; align-items: baseline; font-size: .9rem; }
+.history time { color: var(--muted); font-size: .8rem; white-space: nowrap; margin-left: auto; }
+
+.dev-note {
+  font-size: .8rem;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  margin-bottom: 12px;
+}
