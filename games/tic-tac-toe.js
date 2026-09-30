@@ -71,7 +71,7 @@ export function render(el, s, game) {
       const fresh = owner && !before[i]; // gerade gesetzt → einzeichnen
       const content = owner ? MARK[s.marks[owner]] : myTurn ? `<span class="ttt-ghost">${MARK[s.marks[game.me]]}</span>` : '';
       return `<button class="ttt-cell ${fresh ? 'enter' : ''} ${s.line?.includes(i) ? 'win' : ''}"
-                style="--mark:${owner ? game.color(owner) : game.color(game.me)}"
+                style="--mark:${owner ? game.color(owner) : game.color(game.me)};--col:${i % 3};--row:${Math.floor(i / 3)}"
                 data-action="setzen" data-value="${i}" ${owner || !myTurn ? 'disabled' : ''}
                 aria-label="Feld ${i + 1}${owner ? `, ${s.marks[owner]}` : ''}">${content}</button>`;
     })
@@ -108,34 +108,43 @@ export function render(el, s, game) {
 }
 
 export const style = `
+  /* Felder absolut statt per Grid: Safari hat Spalten mit Zeichen sonst breiter gemacht,
+     und die Zeichen lagen neben den Linien. So teilen Linien und Felder dasselbe Raster. */
   .ttt {
     position: relative;
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
     width: min(100%, 360px);
+    aspect-ratio: 1;
   }
   .ttt-grid, .ttt-win {
     position: absolute; inset: 0; width: 100%; height: 100%;
     pointer-events: none; overflow: visible;
   }
-  .ttt-grid line { stroke: var(--ink); stroke-width: 3; vector-effect: non-scaling-stroke; }
-  .ttt-win line { stroke-width: 7; stroke-linecap: square; vector-effect: non-scaling-stroke; }
-  .ttt-win .ttt-win-halo { stroke: var(--paper); stroke-width: 15; }
+  /* Strichstärken in viewBox-Einheiten: mit non-scaling-stroke rechnet Chrome pathLength falsch,
+     und die Linien blieben nach dem Einzeichnen zu kurz. */
+  .ttt-grid line { stroke: var(--ink); stroke-width: 2.6; }
+  .ttt-win line { stroke-width: 6; stroke-linecap: square; }
+  .ttt-win .ttt-win-halo { stroke: var(--paper); stroke-width: 13; }
 
   .ttt-cell {
-    position: relative;
-    aspect-ratio: 1;
-    padding: 12%;
+    position: absolute;
+    left: calc(var(--col) * 100% / 3); top: calc(var(--row) * 100% / 3);
+    width: calc(100% / 3); height: calc(100% / 3);
+    margin: 0; padding: 0;
+    -webkit-appearance: none; appearance: none;
     border: 0; border-radius: 0; background: none;
     color: var(--mark);
     cursor: pointer;
   }
   .ttt-cell:disabled { cursor: default; }
-  .ttt-cell svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .ttt-cell > svg, .ttt-ghost { position: absolute; left: 12%; top: 12%; width: 76%; height: 76%; }
+  .ttt-cell svg { display: block; overflow: visible; }
+  .ttt-ghost svg { width: 100%; height: 100%; }
   .ttt-cell path, .ttt-cell circle { fill: none; stroke: currentColor; stroke-width: 11; stroke-linecap: square; }
+  /* Beim O stehen eckige Strichenden oben als Kante über den Kreis hinaus */
+  .ttt-cell circle { stroke-linecap: butt; }
 
   /* Vorschau des eigenen Zeichens beim Darüberfahren */
-  .ttt-ghost { display: block; width: 100%; height: 100%; opacity: 0; transform: scale(.86);
+  .ttt-ghost { opacity: 0; transform: scale(.86);
     transition: opacity 140ms ease-out, transform 180ms cubic-bezier(.2,.8,.2,1); }
   .ttt-cell:hover .ttt-ghost, .ttt-cell:focus-visible .ttt-ghost { opacity: .14; transform: scale(1); }
   .ttt-cell:active .ttt-ghost { opacity: .3; transform: scale(.96); }
