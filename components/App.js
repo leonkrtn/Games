@@ -49,7 +49,7 @@ async function callServer(msg) {
     throw Object.assign(new Error('Keine Verbindung. Versuch es gleich nochmal.'), { offline: true });
   }
   const data = await res.json().catch(() => ({ error: 'Der Server hat nicht geantwortet.' }));
-  if (!res.ok) throw Object.assign(new Error(data.error), { status: res.status });
+  if (!res.ok) throw Object.assign(new Error(data.error), { status: res.status, code: data.code });
   return data;
 }
 
@@ -60,6 +60,7 @@ export default function App() {
   const [online, setOnline] = useState(null); // Set von Spieler-IDs, null = unbekannt
   const [connected, setConnected] = useState(true);
   const [toast, setToast] = useState(null);
+  const [claim, setClaim] = useState(null); // Name schon im Raum: { room, name, message }
 
   const me = useRef(null);
   const roomRef = useRef(null);
@@ -75,7 +76,8 @@ export default function App() {
   }, []);
 
   const call = useCallback(
-    (msg) => callServer({ ...msg, room: msg.room ?? roomRef.current, playerId: me.current.id, token: me.current.token }),
+    (msg) =>
+      callServer({ ...msg, room: msg.room ?? roomRef.current, playerId: me.current.id, token: me.current.token }),
     [],
   );
 
@@ -89,10 +91,16 @@ export default function App() {
   }, []);
 
   const enter = useCallback(
-    async (code, name) => {
+    async (code, name, takeover = false) => {
       storage.set('spielzimmer.name', name);
       try {
-        const s = await call({ t: 'join', room: code, name });
+        const s = await call({ t: 'join', room: code, name, takeover });
+        // Platz übernommen: ab jetzt ist dieses Gerät dieser Spieler.
+        if (s.me !== me.current.id) {
+          me.current.id = s.me;
+          storage.set('spielzimmer.id', s.me);
+        }
+        setClaim(null);
         roomRef.current = s.room;
         versionRef.current = -1;
         storage.set('spielzimmer.room', s.room);
@@ -100,7 +108,8 @@ export default function App() {
         setRoomCode(s.room);
         accept(s);
       } catch (err) {
-        showToast(err.message);
+        if (err.code === 'name_taken') setClaim({ room: code, name, message: err.message });
+        else showToast(err.message);
       } finally {
         setReady(true);
       }
@@ -200,7 +209,7 @@ export default function App() {
         {snap ? (
           <Room snap={snap} online={online} send={send} onAction={onAction} leave={leave} showToast={showToast} />
         ) : (
-          <Start enter={enter} showToast={showToast} />
+          <Start enter={enter} claim={claim} setClaim={setClaim} showToast={showToast} />
         )}
       </main>
       <ConnectionNote show={!!roomCode && !connected} />
@@ -224,16 +233,16 @@ function Wordmark() {
   );
 }
 
-function Start({ enter, showToast }) {
+function Start({ enter, claim, setClaim, showToast }) {
   const [name, setName] = useState(() => storage.get('spielzimmer.name') ?? '');
   const [code, setCode] = useState(() => new URLSearchParams(location.search).get('raum')?.toUpperCase() ?? '');
   const [busy, setBusy] = useState(false);
 
-  const go = async (room) => {
+  const go = async (room, takeover = false) => {
     if (!name.trim()) return showToast('Wie heißt du?');
     if (room !== null && !/^[A-Za-z]{4}$/.test(room)) return showToast('Der Raum-Code hat 4 Buchstaben.');
     setBusy(true);
-    await enter(room?.toUpperCase() ?? null, name.trim());
+    await enter(room?.toUpperCase() ?? null, name.trim(), takeover);
     setBusy(false);
   };
 
@@ -242,50 +251,81 @@ function Start({ enter, showToast }) {
       <div>
         <h1 className="start-title">Spielzimmer</h1>
         <p className="start-intro">
-          Hier spielt ihr zu zweit die Spiele, die ihr euch selbst ausdenkt. Erstelle einen Raum und schick der
-          anderen Person den Link.
+          Hier spielt ihr zu zweit die Spiele, die ihr euch selbst ausdenkt. Erstelle einen Raum und schick der anderen
+          Person den Link.
         </p>
       </div>
 
-      <form
-        className="start-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          go(code.trim() || null);
-        }}
-      >
-        <div>
-          <label htmlFor="name">Dein Name</label>
-          <input
-            id="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={20}
-            autoComplete="nickname"
-            autoFocus={!name}
-          />
-        </div>
-        <button type="button" className="btn primary" id="create" disabled={busy} onClick={() => go(null)}>
-          Raum erstellen
-        </button>
-        <div className="join">
-          <label htmlFor="code">Oder mit Raum-Code beitreten</label>
-          <div className="join-row">
-            <input
-              id="code"
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-              maxLength={4}
-              autoCapitalize="characters"
-              autoComplete="off"
-              inputMode="text"
-            />
-            <button type="button" className="btn" id="join" disabled={busy} onClick={() => go(code.trim())}>
-              Beitreten
+      {claim ? (
+        <div className="start-form claim" role="alertdialog" aria-labelledby="claim-title">
+          <p id="claim-title" className="big">
+            {claim.message}
+          </p>
+          <p>
+            Bist du das, zum Beispiel auf einem anderen Gerät oder in der App auf dem Home-Bildschirm? Dann spielst du
+            auf diesem Platz mit allen Punkten weiter. Das andere Gerät wird dabei abgemeldet.
+          </p>
+          <div className="row">
+            <button className="btn primary" id="claim-yes" disabled={busy} onClick={() => go(claim.room, true)}>
+              Ja, das bin ich
+            </button>
+            <button
+              className="btn"
+              id="claim-no"
+              onClick={() => {
+                setClaim(null);
+                setName('');
+              }}
+            >
+              Anderen Namen wählen
             </button>
           </div>
         </div>
-      </form>
+      ) : (
+        <form
+          className="start-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            go(code.trim() || null);
+          }}
+        >
+          <div>
+            <label htmlFor="name">Dein Name</label>
+            <input
+              id="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={20}
+              autoComplete="nickname"
+              autoCapitalize="words"
+              enterKeyHint="go"
+              autoFocus={!name}
+            />
+          </div>
+          <button type="button" className="btn primary" id="create" disabled={busy} onClick={() => go(null)}>
+            Raum erstellen
+          </button>
+          <div className="join">
+            <label htmlFor="code">Oder mit Raum-Code beitreten</label>
+            <div className="join-row">
+              <input
+                id="code"
+                value={code}
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                maxLength={4}
+                autoCapitalize="characters"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+                enterKeyHint="go"
+              />
+              <button type="button" className="btn" id="join" disabled={busy} onClick={() => go(code.trim())}>
+                Beitreten
+              </button>
+            </div>
+          </div>
+        </form>
+      )}
     </section>
   );
 }
@@ -406,6 +446,8 @@ function Lobby({ snap, send, leave, share }) {
         </div>
       )}
 
+      <InstallHint room={snap.room} />
+
       <h2 className="section-title">Spiele</h2>
       <ul className="game-list">
         {snap.games.map((g) => {
@@ -414,10 +456,17 @@ function Lobby({ snap, send, leave, share }) {
           const count = min === max ? `${min} Spieler` : `${min} bis ${max} Spieler`;
           return (
             <li key={g.id}>
-              <button className="game-row" data-game={g.id} disabled={!fits} onClick={() => send({ t: 'choose', game: g.id })}>
+              <button
+                className="game-row"
+                data-game={g.id}
+                disabled={!fits}
+                onClick={() => send({ t: 'choose', game: g.id })}
+              >
                 <span className="game-name">{g.name}</span>
                 <span className="game-desc">{g.description}</span>
-                <span className="game-meta">{fits ? count : n < min ? `braucht ${min} Spieler` : `höchstens ${max}`}</span>
+                <span className="game-meta">
+                  {fits ? count : n < min ? `braucht ${min} Spieler` : `höchstens ${max}`}
+                </span>
               </button>
             </li>
           );
@@ -434,6 +483,36 @@ function Lobby({ snap, send, leave, share }) {
           Neue Spiele kommen als Datei in den Ordner <code>games/</code>.
         </span>
       </div>
+    </div>
+  );
+}
+
+// Auf dem iPhone gibt es keinen Installieren-Knopf, deshalb ein kurzer Hinweis (nur in Safari & Co., nicht in der App selbst).
+function InstallHint({ room }) {
+  const [show, setShow] = useState(() => {
+    const ios =
+      /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    return ios && !standalone && storage.get('spielzimmer.installHint') !== 'aus';
+  });
+  if (!show) return null;
+  return (
+    <div className="install-hint" id="install-hint">
+      <p>
+        <strong>Als App auf dem Home-Bildschirm:</strong> Tippe im Browser auf Teilen und dann auf „Zum
+        Home-Bildschirm“. Das Spielzimmer startet dann ohne Browserleiste. Beim ersten Öffnen gibst du dort deinen Namen
+        und den Raum-Code <span className="room-code">{room}</span> ein, deine Punkte bleiben erhalten.
+      </p>
+      <button
+        className="link"
+        onClick={() => {
+          storage.set('spielzimmer.installHint', 'aus');
+          setShow(false);
+        }}
+      >
+        Ausblenden
+      </button>
     </div>
   );
 }

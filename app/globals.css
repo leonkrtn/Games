@@ -50,6 +50,9 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  background: var(--paper);
+  /* Kein Zoom bei Doppeltipp, keine Verzögerung beim Tippen */
+  touch-action: manipulation;
 }
 
 body {
@@ -60,6 +63,15 @@ body {
   font-size: var(--t-base);
   line-height: 1.5;
   -webkit-tap-highlight-color: transparent;
+  /* Als Web-App soll die Seite nicht über den Rand hinaus federn */
+  overscroll-behavior-y: none;
+}
+
+/* Knöpfe beim langen Drücken nicht markieren und kein Kontextmenü zeigen */
+button {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 [hidden] {
@@ -263,7 +275,9 @@ textarea:focus {
 .shell {
   max-width: 1040px;
   margin: 0 auto;
-  padding: 20px 16px 64px;
+  /* Abstand zu Notch, Dynamic Island und Home-Leiste auf dem iPhone */
+  padding: max(20px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    calc(64px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
 }
 
 .wordmark {
@@ -560,6 +574,24 @@ textarea:focus {
   font-size: var(--t-sm);
   color: var(--muted);
 }
+.install-hint {
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  padding: 12px 0;
+  margin-bottom: 28px;
+  max-width: 52ch;
+}
+.install-hint p {
+  margin-bottom: 6px;
+}
+
+.claim {
+  align-content: start;
+  gap: 16px;
+  border-top: 3px solid var(--line);
+  padding-top: 16px;
+}
+
 .dev-note {
   font-size: var(--t-sm);
   color: var(--muted);
@@ -613,8 +645,8 @@ textarea:focus {
 
 .toast {
   position: fixed;
-  left: 16px;
-  right: 16px;
+  left: max(16px, env(safe-area-inset-left));
+  right: max(16px, env(safe-area-inset-right));
   bottom: calc(16px + env(safe-area-inset-bottom));
   max-width: 480px;
   margin: 0 auto;
@@ -628,7 +660,7 @@ textarea:focus {
 .conn {
   position: fixed;
   inset: 0 0 auto 0;
-  padding: 8px 16px;
+  padding: calc(8px + env(safe-area-inset-top)) 16px 8px;
   background: var(--ink);
   color: var(--paper);
   font-size: var(--t-sm);

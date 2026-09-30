@@ -14,6 +14,10 @@ Kleine Web-Plattform, um selbst erfundene Spiele zu zweit live gegeneinander zu 
 
 Spieler identifizieren sich mit `playerId` (öffentlich) und `token` (geheim, beides im `localStorage`). Der Token steht in `rooms.data.players` und darf nie in einer Antwort an den Browser landen.
 
+Tritt jemand mit einem Namen bei, den es im Raum schon gibt (Groß-/Kleinschreibung egal), antwortet der Server mit 409 `name_taken`. Nach „Ja, das bin ich“ (`join` mit `takeover: true`) bekommt der bestehende Platz den neuen Token, und der Browser übernimmt dessen `playerId`. Das alte Gerät bekommt danach 403. Wichtig vor allem fürs iPhone: Web-Apps auf dem Home-Bildschirm haben einen eigenen Speicher, getrennt von Safari.
+
+iPhone-Web-App: `app/manifest.js`, `appleWebApp` und `apple-mobile-web-app-capable` in `app/layout.js`, Abstände über `env(safe-area-inset-*)` in `app/globals.css`, Installationshinweis `InstallHint` in `components/App.js` (nur iOS, nicht im Vollbildmodus).
+
 ## Ein neues Spiel bauen
 
 Wenn der Nutzer ein Spiel beschreibt: neue Datei `games/<kurzer-name>.js` anlegen (Kleinbuchstaben, Bindestriche). Sonst nichts ändern, außer das Spiel braucht wirklich eine neue Plattform-Funktion. `games/_vorlage.js` und die drei Beispielspiele zeigen die Muster:

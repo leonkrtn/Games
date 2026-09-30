@@ -16,7 +16,7 @@ export async function POST(request) {
     if (changed) after(() => getStore().notify(snapshot.room, snapshot.version));
     return NextResponse.json(snapshot);
   } catch (err) {
-    if (err instanceof UserError) return NextResponse.json({ error: err.message }, { status: err.status });
+    if (err instanceof UserError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
     // Ein Spiel wirft `new Error('…')` für ungültige Züge – das ist ein Hinweis für den Spieler.
     if (err?.constructor === Error && !err.cause) return NextResponse.json({ error: err.message }, { status: 400 });
     console.error(`Fehler bei "${msg?.t}":`, err);

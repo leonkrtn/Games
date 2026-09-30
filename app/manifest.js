@@ -4,8 +4,12 @@ export default function manifest() {
     name: 'Spielzimmer',
     short_name: 'Spielzimmer',
     description: 'Selbst ausgedachte Spiele zu zweit live spielen.',
+    id: '/',
     start_url: '/',
+    scope: '/',
+    lang: 'de',
     display: 'standalone',
+    orientation: 'portrait',
     background_color: '#ffffff',
     theme_color: '#ffffff',
     icons: [

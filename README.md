@@ -46,6 +46,12 @@ Jede Änderung auf dem Hauptzweig wird automatisch online gestellt. Andere Zweig
 
 **Hinweis:** Kostenlose Supabase-Projekte werden nach etwa einer Woche ohne Nutzung pausiert. Dann im Supabase-Dashboard auf „Restore“ klicken. Die Daten bleiben erhalten.
 
+## Auf dem iPhone als App
+
+In Safari (oder einem anderen Browser) auf **Teilen** tippen und **Zum Home-Bildschirm** wählen. Das Spielzimmer startet dann mit eigenem Icon im Vollbild, ohne Browserleiste. Die Seite zeigt dazu auf dem iPhone selbst einen kurzen Hinweis.
+
+Die App auf dem Home-Bildschirm hat einen eigenen Speicher, getrennt von Safari. Beim ersten Öffnen gibt man deshalb einmal Namen und Raum-Code ein. Ist der Name im Raum schon vergeben, fragt die Seite „Bist du das?“ und übernimmt den Platz mit allen Punkten. So entsteht kein doppelter Spieler. Das gleiche gilt beim Wechsel auf ein neues Handy.
+
 ## Lokal ausprobieren
 
 Du brauchst [Node.js](https://nodejs.org) (Version 20.9 oder neuer).
