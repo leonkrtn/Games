@@ -214,10 +214,11 @@ export default function App() {
 function Wordmark() {
   return (
     <div className="wordmark">
-      <span className="pieces" aria-hidden="true">
-        <i />
-        <i />
-      </span>
+      {/* Gleiches Zeichen wie das Favicon (app/icon.svg): roter und schwarzer Stein über Eck */}
+      <svg className="mark" viewBox="0 0 32 32" aria-hidden="true" shapeRendering="crispEdges">
+        <rect width="16" height="16" fill="var(--p1)" />
+        <rect x="16" y="16" width="16" height="16" fill="var(--p2)" />
+      </svg>
       Spielzimmer
     </div>
   );

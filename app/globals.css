@@ -275,19 +275,10 @@ textarea:focus {
   font-size: var(--t-md);
   line-height: 1;
 }
-.wordmark .pieces {
-  display: inline-flex;
-  gap: 3px;
-}
-.wordmark .pieces i {
-  width: 12px;
-  height: 12px;
-}
-.wordmark .pieces i:first-child {
-  background: var(--p1);
-}
-.wordmark .pieces i:last-child {
-  background: var(--p2);
+.wordmark .mark {
+  width: 24px;
+  height: 24px;
+  flex: none;
 }
 
 /* ---------- Startseite ---------- */
