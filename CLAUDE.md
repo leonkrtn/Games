@@ -2,6 +2,10 @@
 
 Kleine Web-Plattform, um selbst erfundene Spiele zu zweit live gegeneinander zu spielen (Handy oder Laptop). Oberfläche und Texte sind **auf Deutsch**. Next.js (App Router, JavaScript) auf Vercel, Supabase als Datenbank und für Live-Updates.
 
+## Arbeitsweise
+
+Änderungen immer direkt auf `master` committen und pushen (Vercel stellt `master` automatisch online). Keine Feature-Branches und keine Pull Requests, außer der Nutzer bittet ausdrücklich darum. Vor dem Push `npm run check` und `npm run build` laufen lassen.
+
 ## Aufbau
 
 - `games/*.js`: **ein Spiel = eine Datei.** Dateien mit `_` am Anfang erscheinen nicht in der Lobby (`_vorlage.js` ist die kommentierte Vorlage).
