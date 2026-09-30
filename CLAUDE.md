@@ -1,20 +1,28 @@
 # Spielzimmer
 
-Kleine Web-Plattform, um selbst erfundene Spiele zu zweit live gegeneinander zu spielen (Handy oder Laptop). Oberfläche und Texte sind **auf Deutsch**.
+Kleine Web-Plattform, um selbst erfundene Spiele zu zweit live gegeneinander zu spielen (Handy oder Laptop). Oberfläche und Texte sind **auf Deutsch**. Next.js (App Router, JavaScript) auf Vercel, Supabase als Datenbank und für Live-Updates.
 
-- `server.js` – Node-Server: liefert Dateien aus, verwaltet Räume (4-Buchstaben-Code) und Spielstände per WebSocket (`ws`). Lädt alle Dateien aus `games/` und lädt sie bei Änderungen automatisch neu.
-- `public/` – Browser-Seite (Startseite, Lobby, Punktestand, Rahmen um das Spiel). Kein Build-Schritt.
+## Aufbau
+
 - `games/*.js` – **ein Spiel = eine Datei.** Dateien mit `_` am Anfang erscheinen nicht in der Lobby (`_vorlage.js` ist die kommentierte Vorlage).
+- `scripts/generate-games.js` – erzeugt `lib/games.generated.js` (gitignored) mit allen Spielen; läuft automatisch in `npm run dev`/`npm run build`.
+- `lib/room.js` – Räume, Spieler, Züge. Lädt den Raum, wendet die Anfrage an und speichert mit Versionsprüfung (optimistisches Sperren, bei Konflikt neu laden und wiederholen).
+- `app/api/room/route.js` – eine POST-Route für alles (`t: join | state | choose | restart | lobby | action | leave`). Nach einer Änderung wird per Supabase Realtime Broadcast (`room:<CODE>`, Event `update`, Payload `{ version }`) Bescheid gesagt; die Browser holen sich dann ihre eigene Ansicht (`t: 'state'`).
+- `lib/store/` – Datenbankzugriff: `supabase.js` (Secret Key, nur Server), `memory.js` (lokaler Testmodus ohne Supabase; die Browser fragen dann jede Sekunde nach).
+- `components/App.js` – Startseite, Raum, Lobby, Verlauf, Realtime-Abo und Presence (wer online ist). `components/GameView.js` ruft `render()` des Spiels auf.
+- `supabase/schema.sql` – Tabellen `rooms` (ein Raum = eine Zeile, alles in `data` jsonb, `version` für die Konfliktprüfung) und `results` (Verlauf). RLS an, keine Policies: nur der Server liest und schreibt.
+
+Spieler identifizieren sich mit `playerId` (öffentlich) und `token` (geheim, beides im `localStorage`). Der Token steht in `rooms.data.players` und darf nie in einer Antwort an den Browser landen.
 
 ## Ein neues Spiel bauen
 
-Wenn der Nutzer ein Spiel beschreibt: neue Datei `games/<kurzer-name>.js` anlegen (Kleinbuchstaben, Bindestriche). Nichts an `server.js` oder `public/` ändern, außer das Spiel braucht wirklich eine neue Plattform-Funktion. `games/_vorlage.js` und die drei Beispielspiele zeigen die Muster:
+Wenn der Nutzer ein Spiel beschreibt: neue Datei `games/<kurzer-name>.js` anlegen (Kleinbuchstaben, Bindestriche). Sonst nichts ändern, außer das Spiel braucht wirklich eine neue Plattform-Funktion. `games/_vorlage.js` und die drei Beispielspiele zeigen die Muster:
 
 - `tic-tac-toe.js` – abwechselnd ziehen
 - `schere-stein-papier.js` – gleichzeitige geheime Züge (`view`)
 - `kennst-du-mich.js` – Phasen, Texteingaben per Formular, geheime Antwort
 
-Die Datei läuft **sowohl im Server (Node) als auch im Browser**: keine `import`s von Node-Modulen oder npm-Paketen, keine Browser-Globals außerhalb von `render`.
+Die Datei läuft **sowohl auf dem Server als auch im Browser** und wird von Next.js gebündelt: keine `import`s von Node-Modulen oder npm-Paketen, kein React, keine Browser-Globals außerhalb von `render`.
 
 ```js
 export const meta = { name, emoji, description, players: [min, max] };
@@ -25,7 +33,7 @@ export function setup(players) { return state; }
 // Server: ein Zug. state direkt verändern (oder neuen Zustand zurückgeben).
 // Ungültig → throw new Error('Text für den Spieler')   (wird als Hinweis angezeigt)
 // Ende    → state.result = { winners: [playerId, ...], text: 'X gewinnt!' }
-//           (winners bekommen je einen Punkt; [] = niemand; alle = Unentschieden mit Punkt für alle)
+//           (winners bekommen je einen Punkt und es gibt einen Eintrag im Verlauf; [] = niemand)
 export function action(state, { player, type, data }) {}
 
 // Optional, Server: was `me` sehen darf (versteckte Infos entfernen). Standard: ganzer state.
@@ -40,8 +48,9 @@ export const style = `...`;
 ```
 
 Regeln und Tipps:
-- `state` muss reines JSON sein (keine Funktionen, `Map`, `Set`, `Date`-Objekte).
-- Zufall (`Math.random`) nur in `setup`/`action`, **nie in `render`** (sonst sieht jeder etwas anderes / es ändert sich bei jedem Update).
+- `state` muss reines JSON sein (keine Funktionen, `Map`, `Set`, `Date`-Objekte) und klein bleiben – er wird bei jedem Zug komplett in Postgres gespeichert.
+- `action` kann bei gleichzeitigen Zügen mehrmals auf einer frischen Kopie laufen: keine Nebenwirkungen außerhalb von `state`.
+- Zufall (`Math.random`) nur in `setup`/`action`, **nie in `render`**.
 - Jede Aktion prüfen: ist der Spieler dran, ist er Teil des Spiels, ist die Phase richtig, sind die Daten gültig.
 - Geheimes (Handkarten, Antworten, Wahl des Gegners) immer in `view` für die anderen entfernen – der Browser bekommt nur, was `view` liefert.
 - Texte von Spielern und Spielernamen in `render` immer mit `game.esc()` einsetzen.
@@ -49,10 +58,11 @@ Regeln und Tipps:
 - Rein lokale Interaktion (z.B. Vorschlag in ein Feld schreiben) per `el.querySelector(...).addEventListener` nach dem Setzen von `innerHTML`.
 - Vorhandene CSS-Klassen: `card`, `btn`, `btn primary`, `btn ghost`, `btn small`, `row`, `stack`, `center`, `muted`, `big`, `status`, `ok`, `bad`. CSS-Variablen: `--accent`, `--accent-soft`, `--second`, `--surface`, `--surface-2`, `--border`, `--text`, `--muted`, `--ok`, `--bad`, `--radius` (hell/dunkel automatisch).
 - Auf Handy-Breite (~360px) muss alles passen.
-- Das Ergebnis-Banner mit „Nochmal“/„Anderes Spiel“ zeigt die Plattform selbst an, das Spiel muss es nicht zeichnen.
-- Timer/Countdowns gibt es noch nicht als Plattform-Funktion.
+- Das Ergebnis-Banner mit „Nochmal“/„Anderes Spiel“ zeigt die Plattform selbst an.
+- Ein Zug dauert einen Server-Aufruf plus eine Realtime-Nachricht (einige hundert Millisekunden): gut für Runden- und Rate-Spiele, nicht für Reaktions- oder Echtzeit-Action. Timer/Countdowns gibt es noch nicht als Plattform-Funktion.
 
 ## Prüfen
 
 - `npm run check` – lädt alle Spiele, ruft `setup` und `view` auf und prüft, ob der Zustand verschickt werden kann.
-- `npm start` (Port 3000, oder `PORT=...`) und mit zwei Browser-Fenstern bzw. getrennten Profilen spielen (die Spieler-ID liegt im `localStorage`, zwei Tabs im selben Profil sind also derselbe Spieler).
+- `npm run build` – muss fehlerfrei durchlaufen (Vercel baut genauso).
+- `npm run dev` ohne `.env.local` startet den Testmodus ohne Supabase. Zum Spielen zwei getrennte Browser-Profile bzw. ein privates Fenster nutzen (die Spieler-ID liegt im `localStorage`). Nach dem Anlegen einer neuen Spieldatei `npm run dev` neu starten.

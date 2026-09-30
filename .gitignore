@@ -1,2 +1,6 @@
 node_modules/
+.next/
+lib/games.generated.js
+.env*.local
+.vercel
 .DS_Store

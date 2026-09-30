@@ -1,6 +1,6 @@
 // VORLAGE für ein neues Spiel.
 // Kopiere diese Datei, z.B. nach games/mein-spiel.js (ohne _ am Anfang),
-// dann taucht das Spiel automatisch in der Lobby auf.
+// dann taucht das Spiel automatisch in der Lobby auf (lokal: `npm run dev` neu starten).
 //
 // Beispiel-Spiel "Bis 10": Abwechselnd zählt jeder 1 oder 2 weiter.
 // Wer die 10 erreicht, gewinnt.
@@ -23,7 +23,7 @@ export function setup(players) {
   };
 }
 
-// 3) Ein Spielzug. Läuft auf dem Server.
+// 3) Ein Spielzug. Läuft auf dem Server (kann bei gleichzeitigen Zügen wiederholt werden).
 //    - Zustand einfach direkt ändern.
 //    - Ungültiger Zug? → throw new Error('Text für den Spieler')
 //    - Spiel vorbei? → state.result = { winners: [id, ...], text: 'Wer gewonnen hat' }
