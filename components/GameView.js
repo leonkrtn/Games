@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { games } from '@/lib/games';
+import { playerColor } from '@/lib/colors';
 
 export const esc = (text) =>
   String(text ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -46,6 +47,7 @@ export default function GameView({ game, players, me, onAction }) {
       me,
       players,
       name: (id) => players.find((p) => p.id === id)?.name ?? '?',
+      color: (id) => playerColor(players, id),
       send: (type, data) => onAction(type, data),
       esc,
       result: game.result,
@@ -79,7 +81,7 @@ export default function GameView({ game, players, me, onAction }) {
 
   return (
     <>
-      {error && <div className="card game-error">{error}</div>}
+      {error && <div className="game-error">{error}</div>}
       <div id="game" ref={ref} onClick={onClick} onSubmit={onSubmit} hidden={!!game.error || !entry} />
     </>
   );

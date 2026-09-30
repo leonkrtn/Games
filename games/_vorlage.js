@@ -5,10 +5,9 @@
 // Beispiel-Spiel "Bis 10": Abwechselnd zählt jeder 1 oder 2 weiter.
 // Wer die 10 erreicht, gewinnt.
 
-// 1) Name, Emoji, Beschreibung und erlaubte Spielerzahl [min, max]
+// 1) Name, Beschreibung und erlaubte Spielerzahl [min, max]
 export const meta = {
   name: 'Bis 10',
-  emoji: '🔟',
   description: 'Zählt abwechselnd 1 oder 2 weiter. Wer die 10 sagt, gewinnt.',
   players: [2, 2],
 };
@@ -35,7 +34,7 @@ export function action(state, { player, type, data }) {
   state.count = Math.min(10, state.count + data);
   if (state.count === 10) {
     const name = state.players.find((p) => p.id === player).name;
-    state.result = { winners: [player], text: `${name} hat die 10!` };
+    state.result = { winners: [player], text: `${name} hat die 10.` };
   } else {
     state.turn = state.players.find((p) => p.id !== player).id;
   }
@@ -48,22 +47,26 @@ export function action(state, { player, type, data }) {
 // }
 
 // 5) Anzeige. Läuft im Browser und wird bei jeder Änderung neu aufgerufen.
-//    game.me = eigene id, game.players, game.name(id), game.send(type, data),
-//    game.esc(text) (für Texte von Spielern!), game.result
+//    game.me = eigene id, game.players, game.name(id), game.color(id) (Spielerfarbe),
+//    game.send(type, data), game.esc(text) (für Texte von Spielern!), game.result
 //
 //    Abkürzung: <button data-action="zaehlen" data-value="2"> sendet den Zug automatisch.
-//    Formulare: <form data-action="x"><input name="text"></form> sendet { text: '...' }.
+//    Formulare: <form data-action="x"><label for="t">…</label><input id="t" name="text"></form>
+//    sendet { text: '...' }.
 export function render(el, s, game) {
   const myTurn = s.turn === game.me && !game.result;
   el.innerHTML = `
-    <p class="center" style="font-size:4rem;font-weight:800">${s.count}</p>
-    <p class="status">${game.result ? '' : myTurn ? 'Du bist dran' : `${game.esc(game.name(s.turn))} ist dran …`}</p>
-    <div class="row center">
-      <button class="btn primary" data-action="zaehlen" data-value="1" ${myTurn ? '' : 'disabled'}>+1</button>
-      <button class="btn primary" data-action="zaehlen" data-value="2" ${myTurn ? '' : 'disabled'}>+2</button>
+    <p class="display bis10-count">${s.count}</p>
+    ${game.result ? '' : `<p class="status"><span class="marker" style="color:${game.color(s.turn)}"></span>
+      ${myTurn ? 'Du bist dran.' : `${game.esc(game.name(s.turn))} ist dran.`}</p>`}
+    <div class="row">
+      <button class="btn primary" data-action="zaehlen" data-value="1" ${myTurn ? '' : 'disabled'}>1 weiter</button>
+      <button class="btn" data-action="zaehlen" data-value="2" ${myTurn ? '' : 'disabled'}>2 weiter</button>
     </div>`;
 }
 
-// 6) Optional: eigenes CSS für dieses Spiel.
-//    Vorhandene Klassen: card, btn, btn primary, row, stack, center, muted, big, status, ok, bad
-// export const style = `.mein-spiel { ... }`;
+// 6) Optional: eigenes CSS für dieses Spiel (Klassen mit dem Spielnamen beginnen).
+//    Gestaltungsregeln und vorhandene Klassen stehen in CLAUDE.md.
+export const style = `
+  .bis10-count { font-size: var(--t-4xl); font-variant-numeric: tabular-nums; }
+`;
