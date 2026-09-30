@@ -56,6 +56,8 @@ export function waitingFor(state) {
 // 5) Anzeige. Läuft im Browser und wird bei jeder Änderung neu aufgerufen.
 //    game.me = eigene id, game.players, game.name(id), game.color(id) (Spielerfarbe),
 //    game.send(type, data), game.esc(text) (für Texte von Spielern!), game.result
+//    Für Animationen: game.prev (Stand vor der Änderung), game.first, game.signal, game.reducedMotion.
+//    Jedes Spiel soll hochwertige Animationen haben, siehe CLAUDE.md, Abschnitt „Motion und Optik“.
 //
 //    Abkürzung: <button data-action="zaehlen" data-value="2"> sendet den Zug automatisch.
 //    Formulare: <form data-action="x"><label for="t">…</label><input id="t" name="text"></form>
@@ -63,7 +65,7 @@ export function waitingFor(state) {
 export function render(el, s, game) {
   const myTurn = s.turn === game.me && !game.result;
   el.innerHTML = `
-    <p class="display bis10-count">${s.count}</p>
+    <p class="display bis10-count ${game.prev && game.prev.count !== s.count ? 'bump' : ''}">${s.count}</p>
     ${game.result ? '' : `<p class="status"><span class="marker" style="color:${game.color(s.turn)}"></span>
       ${myTurn ? 'Du bist dran.' : `${game.esc(game.name(s.turn))} ist dran.`}</p>`}
     <div class="row">
@@ -74,6 +76,10 @@ export function render(el, s, game) {
 
 // 6) Optional: eigenes CSS für dieses Spiel (Klassen mit dem Spielnamen beginnen).
 //    Gestaltungsregeln und vorhandene Klassen stehen in CLAUDE.md.
+//    Die Zahl springt beim Weiterzählen kurz von unten herein (nur wenn sie sich geändert hat).
 export const style = `
   .bis10-count { font-size: var(--t-4xl); font-variant-numeric: tabular-nums; }
+  .bis10-count.bump { animation: bis10-bump 320ms cubic-bezier(.2,.8,.2,1); }
+  @keyframes bis10-bump { from { opacity: 0; transform: translateY(24px) scale(.9); } }
+  @media (prefers-reduced-motion: reduce) { .bis10-count.bump { animation: none; } }
 `;

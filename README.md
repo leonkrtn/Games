@@ -2,7 +2,7 @@
 
 Selbst ausgedachte Spiele zu zweit live spielen, am Handy oder Laptop.
 
-Einer erstellt einen Raum, schickt den Link, und schon seid ihr beide drin. Züge erscheinen sofort beim anderen. Punktestand und Verlauf („Zuletzt gespielt“) bleiben dauerhaft gespeichert.
+Jeder legt ein Konto an (Benutzername und Passwort), dann fügt ihr euch als Freunde hinzu. Jede Freundschaft hat ein eigenes Spielzimmer mit Punktestand und Verlauf. Züge erscheinen sofort beim anderen.
 
 Dabei sind drei Beispielspiele:
 
@@ -15,7 +15,7 @@ Dabei sind drei Beispielspiele:
 ## So funktioniert es
 
 - **Next.js auf Vercel** liefert die Seite aus und rechnet jeden Spielzug aus (`app/api/room`).
-- **Supabase (Postgres)** speichert Räume, Punktestände und den Verlauf.
+- **Supabase (Postgres)** speichert Konten, Freundschaften, Spielzimmer, Punktestände und den Verlauf.
 - **Supabase Realtime** sagt allen im Raum sofort Bescheid, wenn sich etwas geändert hat, und zeigt an, wer gerade online ist.
 - Jedes Spiel ist eine einzelne Datei in `games/`.
 
@@ -57,13 +57,13 @@ Damit das Handy meldet „Du bist dran“, braucht der Server ein Schlüsselpaar
 
 Ein neues Paar erzeugt `npx web-push generate-vapid-keys`. Danach `supabase/schema.sql` noch einmal im SQL Editor ausführen (legt die Tabelle für die Benachrichtigungen an, Vorhandenes bleibt unverändert) und neu deployen.
 
-Im Raum erscheint dann „Benachrichtigen, wenn ich dran bin“. Auf dem iPhone geht das nur in der App vom Home-Bildschirm (ab iOS 16.4). Benachrichtigt wird nur, wer die App gerade nicht offen hat.
+Auf der Startseite erscheint dann „Benachrichtigen, wenn ich dran bin“. Auf dem iPhone geht das nur in der App vom Home-Bildschirm (ab iOS 16.4). Benachrichtigt wird nur, wer die App gerade nicht offen hat.
 
 ## Auf dem iPhone als App
 
 In Safari (oder einem anderen Browser) auf **Teilen** tippen und **Zum Home-Bildschirm** wählen. Das Spielzimmer startet dann mit eigenem Icon im Vollbild, ohne Browserleiste. Die Seite zeigt dazu auf dem iPhone selbst einen kurzen Hinweis.
 
-Die App auf dem Home-Bildschirm hat einen eigenen Speicher, getrennt von Safari. Beim ersten Öffnen gibt man deshalb einmal Namen und Raum-Code ein. Ist der Name im Raum schon vergeben, fragt die Seite „Bist du das?“ und übernimmt den Platz mit allen Punkten. So entsteht kein doppelter Spieler. Das gleiche gilt beim Wechsel auf ein neues Handy.
+Die App auf dem Home-Bildschirm hat einen eigenen Speicher, getrennt von Safari. Beim ersten Öffnen meldet man sich dort einmal an; Freunde und Punkte hängen am Konto.
 
 ## Lokal ausprobieren
 
@@ -78,6 +78,13 @@ Dann <http://localhost:3000> öffnen. Ohne Supabase-Zugangsdaten läuft ein **Te
 
 Mit echter Datenbank: `.env.example` nach `.env.local` kopieren und die Werte eintragen.
 
+## Konten und Freunde
+
+- **Konto erstellen** mit Benutzername und Passwort. Es gibt keine E-Mail, also auch kein Zurücksetzen des Passworts per Mail.
+- **Freund hinzufügen** per Benutzername: Die andere Person bekommt eine Anfrage und nimmt sie an.
+- **Einladungslink teilen**: Wer den Link öffnet und sich anmeldet, ist sofort befreundet.
+- Auf der Startseite steht bei jedem Freund der Punktestand und wer gerade dran ist. Antippen öffnet euer Spielzimmer.
+
 ## Ein neues Spiel erfinden
 
 Jedes Spiel ist **eine einzige Datei** im Ordner `games/`. Mehr ist nicht nötig, die Lobby findet sie automatisch.
@@ -86,6 +93,6 @@ Jedes Spiel ist **eine einzige Datei** im Ordner `games/`. Mehr ist nicht nötig
 
 > Bau ein neues Spiel: Jeder schreibt heimlich 3 Wörter auf, dann werden sie gemischt und der andere muss raten, welche von mir sind.
 
-Die Datei `CLAUDE.md` erklärt Claude, wie Spiele hier aufgebaut sind.
+Die Datei `CLAUDE.md` erklärt Claude, wie Spiele hier aufgebaut sind, und verlangt für jedes Spiel hochwertige Animationen und eine ansprechende Optik.
 
 **Weg 2, selbst schreiben:** Kopiere `games/_vorlage.js` nach z.B. `games/mein-spiel.js` und passe sie an. Die Vorlage ist ein kleines, fertiges Spiel mit Erklärungen zu jedem Teil. Mit `npm run check` prüfst du, ob alles passt. Nach dem Anlegen einer neuen Datei `npm run dev` einmal neu starten.

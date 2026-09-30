@@ -144,6 +144,13 @@ code {
   gap: 12px;
   align-items: center;
 }
+.row.nowrap {
+  flex-wrap: nowrap;
+}
+.row.nowrap > .btn {
+  flex: none;
+  white-space: nowrap;
+}
 .status {
   font-weight: 700;
   min-height: 1.5em;
@@ -432,23 +439,11 @@ textarea:focus {
   color: var(--muted);
   margin-top: 4px;
 }
-.side-meta {
-  margin-top: 14px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
-  align-items: baseline;
-}
 .notify {
-  margin-top: 12px;
   font-size: var(--t-sm);
-  max-width: 40ch;
+  max-width: 52ch;
 }
 
-.room-code {
-  font-weight: 700;
-  letter-spacing: 0.15em;
-}
 
 .section-title {
   font-family: var(--font-display);
@@ -458,13 +453,6 @@ textarea:focus {
   margin-bottom: 12px;
 }
 
-.alone {
-  margin-bottom: 28px;
-  max-width: 46ch;
-}
-.alone p {
-  margin-bottom: 12px;
-}
 
 /* Spieleliste: Zeilen auf einem Blatt, keine Kärtchen */
 .game-list {
@@ -591,17 +579,168 @@ textarea:focus {
   margin-bottom: 6px;
 }
 
-.claim {
-  align-content: start;
-  gap: 16px;
-  border-top: 3px solid var(--line);
-  padding-top: 16px;
-}
 
 .dev-note {
   font-size: var(--t-sm);
   color: var(--muted);
   margin-bottom: 20px;
+}
+
+/* ---------- Anmelden ---------- */
+
+.tabs {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid var(--hairline);
+}
+.tabs button {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0 0 10px;
+  margin-bottom: -1px;
+  font: 700 var(--t-base) / 1.2 var(--font-body);
+  color: var(--muted);
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+}
+.tabs button.active {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+.field-hint {
+  font-size: var(--t-sm);
+  margin-top: 6px;
+}
+
+/* ---------- Startseite: Freunde ---------- */
+
+.home {
+  max-width: 720px;
+  display: grid;
+  gap: 40px;
+}
+.home-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+}
+.home-user {
+  font-weight: 700;
+}
+
+.rows {
+  border-top: 2px solid var(--line);
+}
+.rows > li {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.request-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px 16px;
+}
+.small-btn {
+  min-height: 40px;
+  padding: 6px 14px;
+}
+
+.friend-list {
+  border-top: 2px solid var(--line);
+}
+.friend-row {
+  appearance: none;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: 'name score' 'status score';
+  gap: 2px 16px;
+  align-items: center;
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  padding: 14px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+.friend-row:hover {
+  background: var(--wash);
+}
+.friend-name {
+  grid-area: name;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--t-lg);
+  line-height: 1.05;
+}
+.friend-status {
+  grid-area: status;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+.friend-row.my-turn .friend-status {
+  color: var(--ink);
+  font-weight: 700;
+}
+.friend-score {
+  grid-area: score;
+  font-size: var(--t-2xl);
+  line-height: 1;
+  display: flex;
+  gap: 4px;
+}
+.empty {
+  color: var(--muted);
+  max-width: 46ch;
+}
+
+.add-form label {
+  margin-bottom: 6px;
+}
+.add-form .row {
+  max-width: 480px;
+}
+.invite {
+  margin-top: 16px;
+  max-width: 52ch;
+}
+.outgoing {
+  margin-top: 16px;
+  font-size: var(--t-sm);
+}
+
+.home-foot {
+  border-top: 1px solid var(--hairline);
+  padding-top: 16px;
+  display: grid;
+  gap: 10px;
+  font-size: var(--t-sm);
+}
+.home-foot .notify {
+  margin: 0;
+}
+
+.back {
+  display: inline-block;
+  margin-bottom: 18px;
+}
+.back::before {
+  content: '\2190\00a0';
 }
 
 /* ---------- Spiel ---------- */

@@ -1,6 +1,6 @@
 # Spielzimmer
 
-Kleine Web-Plattform, um selbst erfundene Spiele zu zweit live gegeneinander zu spielen (Handy oder Laptop). Oberfläche und Texte sind **auf Deutsch**. Next.js (App Router, JavaScript) auf Vercel, Supabase als Datenbank und für Live-Updates.
+Kleine Web-Plattform, um selbst erfundene Spiele mit Freunden live gegeneinander zu spielen (Handy oder Laptop). Oberfläche und Texte sind **auf Deutsch**. Next.js (App Router, JavaScript) auf Vercel, Supabase als Datenbank und für Live-Updates.
 
 ## Arbeitsweise
 
@@ -8,27 +8,29 @@ Kleine Web-Plattform, um selbst erfundene Spiele zu zweit live gegeneinander zu 
 
 ## Aufbau
 
+Ablauf für Nutzer: Konto erstellen (Benutzername + Passwort, keine E-Mail) → Freunde hinzufügen → jede Freundschaft hat ein eigenes Spielzimmer mit Punktestand und Verlauf → darin Spiele starten.
+
 - `games/*.js`: **ein Spiel = eine Datei.** Dateien mit `_` am Anfang erscheinen nicht in der Lobby (`_vorlage.js` ist die kommentierte Vorlage).
 - `scripts/generate-games.js`: erzeugt `lib/games.generated.js` (gitignored) mit allen Spielen; läuft automatisch in `npm run dev`/`npm run build`.
-- `lib/room.js`: Räume, Spieler, Züge. Lädt den Raum, wendet die Anfrage an und speichert mit Versionsprüfung (optimistisches Sperren, bei Konflikt neu laden und wiederholen).
-- `app/api/room/route.js`: eine POST-Route für alles (`t: join | state | choose | restart | lobby | action | leave`). Nach einer Änderung wird per Supabase Realtime Broadcast (`room:<CODE>`, Event `update`, Payload `{ version }`) Bescheid gesagt; die Browser holen sich dann ihre eigene Ansicht (`t: 'state'`).
-- `lib/store/`: Datenbankzugriff: `supabase.js` (Secret Key, nur Server), `memory.js` (lokaler Testmodus ohne Supabase; die Browser fragen dann jede Sekunde nach).
-- `components/App.js`: Startseite, Raum, Lobby, Verlauf, Realtime-Abo und Presence (wer online ist). `components/GameView.js` ruft `render()` des Spiels auf.
-- `supabase/schema.sql`: Tabellen `rooms` (ein Raum = eine Zeile, alles in `data` jsonb, `version` für die Konfliktprüfung) und `results` (Verlauf). RLS an, keine Policies: nur der Server liest und schreibt.
+- `lib/auth.js`: Passwörter (scrypt), Sitzungen (zufälliger Token im httpOnly-Cookie `sz_session`, in der Datenbank nur als SHA-256-Hash), Sperre nach mehreren Fehlversuchen.
+- `lib/account.js` + `app/api/account/route.js`: Konto (`me`, `signup`, `login`, `logout`, `invite-info`), Startseite (`home`: Freunde mit Punkten und wer dran ist, Anfragen), Freunde (`friend-add` per Benutzername → die andere Person muss annehmen; `friend-invite` per Einladungslink → sofort befreundet; `friend-accept`; `friend-remove` löscht auch das Spielzimmer), Benachrichtigungen pro Gerät (`push-subscribe`, `push-unsubscribe`, `seen`).
+- `lib/room.js` + `app/api/room/route.js`: Spielzimmer und Züge (`t: state | choose | restart | lobby | action`). Lädt den Raum, wendet die Anfrage an und speichert mit Versionsprüfung (optimistisches Sperren, bei Konflikt neu laden und wiederholen). Spieler-IDs sind Konto-IDs; wer nicht im Raum ist, bekommt 403.
+- Nach einer Änderung per Supabase Realtime Broadcast Bescheid sagen: `room:<CODE>` (Payload `{ version }`, die Browser holen sich dann ihre eigene Ansicht mit `t: 'state'`) und `user:<ID>` (Freundesliste neu laden).
+- `lib/store/`: Datenbankzugriff: `supabase.js` (Secret Key, nur Server), `memory.js` (lokaler Testmodus ohne Supabase; die Browser fragen dann regelmäßig nach). Beide müssen dieselben Funktionen haben.
+- `components/App.js` (Anmeldestatus, Wechsel zwischen Startseite und Spielzimmer, Benachrichtigungen fürs Gerät), `Auth.js` (Anmelden/Registrieren), `Home.js` (Freundesliste, Anfragen, Freund hinzufügen, Einladungslink), `Room.js` (Anzeigetafel, Lobby, Verlauf, Realtime und Presence), `GameView.js` (ruft `render()` des Spiels auf).
+- `supabase/schema.sql`: `rooms` (ein Raum = eine Zeile, alles in `data` jsonb, `version` für die Konfliktprüfung), `results` (Verlauf), `users`, `sessions`, `friendships` (ein Eintrag pro Paar, `room_code` nach dem Annehmen), `devices` (Push-Abos). RLS an, keine Policies: nur der Server liest und schreibt. Die Datei ist wiederholbar (`if not exists`).
 
-Spieler identifizieren sich mit `playerId` (öffentlich) und `token` (geheim, beides im `localStorage`). Der Token steht in `rooms.data.players` und darf nie in einer Antwort an den Browser landen.
+Sicherheit: API-Routen nehmen nur `application/json` an (Schutz vor fremden Formularen), das Sitzungs-Cookie ist `httpOnly`, `SameSite=Lax` und in Produktion `Secure`. Passwort-Hashes und Sitzungs-Tokens dürfen nie in einer Antwort landen (`publicUser()` benutzen).
 
-Tritt jemand mit einem Namen bei, den es im Raum schon gibt (Groß-/Kleinschreibung egal), antwortet der Server mit 409 `name_taken`. Nach „Ja, das bin ich“ (`join` mit `takeover: true`) bekommt der bestehende Platz den neuen Token, und der Browser übernimmt dessen `playerId`. Das alte Gerät bekommt danach 403. Wichtig vor allem fürs iPhone: Web-Apps auf dem Home-Bildschirm haben einen eigenen Speicher, getrennt von Safari.
+Benachrichtigungen (Web Push): `lib/push.js` verschickt (nur an bekannte Push-Dienste, `PUSH_ALLOWED_HOSTS` erlaubt zusätzliche Hosts für Tests), `lib/push-client.js` und `usePushDevice` in `components/App.js` für Erlaubnis und Abo, `public/sw.js` zeigt sie an (ohne Caching). Solange die App sichtbar ist, meldet sie alle 30 s mit `t: 'seen'`, welche Ansicht offen ist (`home` oder Raum-Code); für genau diese Ansicht gibt es dann keine Benachrichtigung. Wer benachrichtigt wird: bei Spielstart und Spielende die anderen, nach einem Zug die Spieler aus `waitingFor()` außer dem, der gezogen hat, außerdem bei Freundschaftsanfragen. Der Service Worker zeigt pro Raum nur die neueste Nachricht (Raum-Version als `seq`).
 
-Benachrichtigungen (Web Push): `lib/push.js` verschickt (nur an bekannte Push-Dienste, `PUSH_ALLOWED_HOSTS` erlaubt zusätzliche Hosts für Tests), `lib/push-client.js` und `Notifications` in `components/App.js` für Erlaubnis und Abo, `public/sw.js` zeigt sie an (ohne Caching). Abos stehen in der Tabelle `push_subscriptions` (eins pro Gerät). Solange die App sichtbar ist, schickt sie alle 30 s `t: 'seen'`; Geräte mit `active_until` in der Zukunft bekommen keine Benachrichtigung. Wer benachrichtigt wird, entscheidet `lib/room.js`: bei Beitritt die anderen, bei Spielstart die anderen, nach einem Zug die Spieler aus `waitingFor()` außer dem, der gezogen hat, bei Spielende die anderen. Der Service Worker zeigt pro Raum nur die neueste Nachricht (Raum-Version als `seq`).
-
-iPhone-Web-App: `app/manifest.js`, `appleWebApp` und `apple-mobile-web-app-capable` in `app/layout.js`, Abstände über `env(safe-area-inset-*)` in `app/globals.css`, Installationshinweis `InstallHint` in `components/App.js` (nur iOS, nicht im Vollbildmodus).
+iPhone-Web-App: `app/manifest.js`, `appleWebApp` und `apple-mobile-web-app-capable` in `app/layout.js`, Abstände über `env(safe-area-inset-*)` in `app/globals.css`, Installationshinweis `InstallHint` in `components/Home.js` (nur iOS, nicht im Vollbildmodus). Die App vom Home-Bildschirm hat einen eigenen Speicher, man meldet sich dort einmal an.
 
 ## Ein neues Spiel bauen
 
 Wenn der Nutzer ein Spiel beschreibt: neue Datei `games/<kurzer-name>.js` anlegen (Kleinbuchstaben, Bindestriche). Sonst nichts ändern, außer das Spiel braucht wirklich eine neue Plattform-Funktion. `games/_vorlage.js` und die drei Beispielspiele zeigen die Muster:
 
-- `tic-tac-toe.js`: abwechselnd ziehen
+- `tic-tac-toe.js`: abwechselnd ziehen, **und das Vorbild für Animationen** (Striche einzeichnen, Gewinnlinie, Vergleich mit `game.prev`)
 - `schere-stein-papier.js`: gleichzeitige geheime Züge (`view`)
 - `kennst-du-mich.js`: Phasen, Texteingaben per Formular, geheime Antwort
 
@@ -42,7 +44,7 @@ export function setup(players) { return state; }
 
 // Server: ein Zug. state direkt verändern (oder neuen Zustand zurückgeben).
 // Ungültig → throw new Error('Text für den Spieler')   (wird als Hinweis angezeigt)
-// Ende    → state.result = { winners: [playerId, ...], text: 'X gewinnt!' }
+// Ende    → state.result = { winners: [playerId, ...], text: 'X gewinnt.' }
 //           (winners bekommen je einen Punkt und es gibt einen Eintrag im Verlauf; [] = niemand)
 export function action(state, { player, type, data }) {}
 
@@ -50,11 +52,12 @@ export function action(state, { player, type, data }) {}
 export function view(state, me) { return state; }
 
 // Optional, Server: auf wen das Spiel gerade wartet (Spieler-IDs). Diese bekommen nach einem Zug
-// die Benachrichtigung "Du bist dran". Ohne waitingFor werden bei jedem Zug alle anderen benachrichtigt.
+// die Benachrichtigung "Du bist dran", und die Freundesliste zeigt es an. Ohne waitingFor: alle.
 export function waitingFor(state) { return [state.turn]; }
 
-// Browser: zeichnet die Ansicht, wird bei jeder Änderung neu aufgerufen (innerHTML neu setzen ist ok).
-// game = { me, players, name(id), color(id), send(type, data), esc(text), result }
+// Browser: zeichnet die Ansicht, wird bei jeder Änderung neu aufgerufen.
+// game = { me, players, name(id), color(id), send(type, data), esc(text), result,
+//          prev, first, signal, reducedMotion }   (letzte vier: siehe "Motion")
 export function render(el, view, game) {}
 
 // Optional: CSS nur für dieses Spiel (Klassen mit Spielnamen präfixen).
@@ -74,15 +77,36 @@ Regeln und Tipps:
 - Das Ergebnis-Banner mit „Nochmal“/„Anderes Spiel“ zeigt die Plattform selbst an.
 - Ein Zug dauert einen Server-Aufruf plus eine Realtime-Nachricht (einige hundert Millisekunden): gut für Runden- und Rate-Spiele, nicht für Reaktions- oder Echtzeit-Action. Timer/Countdowns gibt es noch nicht als Plattform-Funktion.
 
-## Gestaltung
+## Spiele: Motion und Optik
 
-Vorbild ist ein gedruckter Spielblock: weißes Papier, schwarze Schrift, Linien statt Kästen, eine einzige Farbe. Die Seite soll nicht nach KI-Standard-Design aussehen. Deshalb gilt, auch für neue Spiele:
+**Jedes neue Spiel muss optisch sehr ansprechend sein und hochwertige Motion Graphics haben.** Ein Spiel ist erst fertig, wenn es sich lebendig und hochwertig anfühlt: wie ein gut gemachtes Brettspiel, das sich bewegt. Statisches Umschalten von Zuständen reicht nicht. Die ruhige, zurückhaltende Gestaltung der Plattform (Startseite, Lobby, Anzeigetafel) bleibt davon unberührt; die Bühne für Bewegung ist das Spielfeld.
 
-- **Farben:** Hintergrund immer Weiß (`--paper`), Schrift `--ink`, Nebentext `--muted`, Linien `--line` (kräftig) und `--hairline` (fein), Hover-Fläche `--wash`. Spielerfarben nur über `game.color(id)` (Rot `--p1` gegen Schwarz `--p2`, in Beitrittsreihenfolge). Keine weiteren Farben, keine Verläufe, keine Violett-/Indigo-Töne, kein Leuchten.
+Was jedes Spiel haben soll:
+- **Jede Zustandsänderung wird animiert**, nicht nur umgeschaltet: Züge, aufgedeckte Karten, Punkte, Phasenwechsel, wer dran ist. Gezeichnete Formen (SVG) zeichnen sich ein (`pathLength="1"` + `stroke-dashoffset`), Figuren gleiten an ihren Platz, Karten drehen sich um (3D-`rotateY` mit `backface-visibility`), Zahlen zählen hoch.
+- **Ein Höhepunkt beim Spielende**: eine choreografierte Sequenz (z.B. Gewinnlinie ziehen, Siegerzüge hervorheben, der Rest tritt zurück), zeitlich gestaffelt statt alles gleichzeitig.
+- **Ein Auftakt**: Beim Start einer Partie (`game.first`) baut sich das Spielfeld sichtbar auf, gestaffelt (`animation-delay` in Schritten von 60–120 ms).
+- **Rückmeldung auf Eingaben**: Vorschau beim Darüberfahren (z.B. blasses eigenes Zeichen), spürbarer Druck beim Tippen (`:active` mit `scale(.96)`), klare Zustände für „nicht dran“.
+- **Die Spielerfarben als Bühne**: Rot und Schwarz tragen die Bewegung; Flächen und Hervorhebungen über `color-mix(in srgb, <Spielerfarbe> 12%, white)`.
+- Eigene Illustration statt Standardformen: SVG mit Charakter (z.B. Spielsteine mit Kante, Papier-Anmutung, Karten mit Rahmen). Keine Emojis, keine Clipart.
+
+Technik:
+- **Nur animieren, was sich geändert hat**: `game.prev` ist der Stand vor der Änderung (null beim ersten Zeichnen einer Partie), `game.first` ist `true` beim ersten Zeichnen. Neue Elemente bekommen eine Klasse (z.B. `enter`), deren CSS-Animation beim Einfügen startet. Vorbild: `games/tic-tac-toe.js`.
+- Animieren mit **CSS-Keyframes, Transitions oder `element.animate()`** (Web Animations API); für Partikel oder viele Objekte ein `<canvas>` mit `requestAnimationFrame`.
+- **Nur `transform`, `opacity` und SVG-Strichlängen animieren** (flüssige 60 fps auch auf dem Handy), nie `width`, `height`, `top`, `left`, `margin`.
+- Laufende Animationen, Timer und Listener an `game.signal` hängen (`{ signal: game.signal }` bzw. `game.signal.addEventListener('abort', ...)`): das Signal wird abgebrochen, wenn die Partie endet oder die Ansicht verschwindet.
+- Dauer: Rückmeldungen 120–200 ms, Züge 250–450 ms, Höhepunkte bis ca. 1,2 s insgesamt. Kurven: `cubic-bezier(.2,.8,.2,1)` zum Ankommen, `cubic-bezier(.6,0,.2,1)` für Wege; kein Hüpfen/Federn (`bounce`/`elastic`).
+- **`prefers-reduced-motion` respektieren**: eigener Block `@media (prefers-reduced-motion: reduce)` im Spiel-CSS, der Animationen abschaltet und den Endzustand zeigt (`game.reducedMotion` gibt es auch in JavaScript). Das Spiel muss ohne Animation genauso verständlich sein.
+- `render` wird bei jeder Änderung neu aufgerufen; wer ein Element über mehrere Züge hinweg bewegen will, kann das DOM behalten und gezielt ändern (z.B. `el.querySelector('.brett') ?? aufbauen()`), statt `innerHTML` neu zu setzen.
+
+## Gestaltung der Plattform
+
+Vorbild ist ein gedruckter Spielblock: weißes Papier, schwarze Schrift, Linien statt Kästen, eine einzige Farbe. Die Seite soll nicht nach KI-Standard-Design aussehen. Deshalb gilt überall, auch in Spielen:
+
+- **Farben:** Hintergrund immer Weiß (`--paper`), Schrift `--ink`, Nebentext `--muted`, Linien `--line` (kräftig) und `--hairline` (fein), Hover-Fläche `--wash`. Spielerfarben nur über `game.color(id)` (Rot `--p1` gegen Schwarz `--p2`, in Beitrittsreihenfolge). Keine Verläufe, keine Violett-/Indigo-Töne, kein Leuchten.
 - **Schrift:** `--font-display` (Big Shoulders, schmal) für Namen, Überschriften und große Zahlen; `--font-body` (Atkinson Hyperlegible Next) für Text. Die Textschrift hat eine durchgestrichene Null: Zahlen im Fließtext als Wort schreiben („drei zu null“), Zahlenanzeigen mit Klasse `num` oder in `--font-display`. Größen über `--t-sm`, `--t-base`, `--t-md`, `--t-lg`, `--t-xl`, `--t-2xl`, `--t-3xl`, `--t-4xl`.
-- **Keine Emojis** als Icons, Spielfiguren, Deko oder in Ergebnistexten. Wörter, Buchstaben (X/O) oder die Klasse `marker` (Quadrat in Spielerfarbe) verwenden.
-- **Formen:** Ecken `--radius` (2px) bzw. `--radius-m` (4px), keine Pillen, keine Schatten, keine farbigen Seitenränder an Kästen. Gruppieren mit Linien und Abstand; ein Kasten (`panel`) nur, wenn er wirklich etwas zusammenhält.
-- **Bewegung:** keine Einblend- oder Hüpf-Animationen, kein Vergrößern beim Hover. Erlaubt: Hintergrundwechsel beim Hover, 1px Eindrücken beim Klick.
+- **Keine Emojis** als Icons, Spielfiguren, Deko oder in Ergebnistexten. Wörter, Buchstaben (X/O), eigene SVG-Formen oder die Klasse `marker` (Quadrat in Spielerfarbe) verwenden.
+- **Formen:** Ecken `--radius` (2px) bzw. `--radius-m` (4px), keine Pillen, keine Schatten auf Kästen, keine farbigen Seitenränder an Kästen. Gruppieren mit Linien und Abstand.
+- **Bewegung außerhalb des Spielfelds:** zurückhaltend. Hintergrundwechsel beim Hover, 1px Eindrücken beim Klick; keine Einblend-Animationen für ganze Abschnitte.
 - **Texte:** kurz und konkret, ganze Sätze mit Punkt, keine Gedankenstriche als Satzverbindung, keine Ausrufezeichen-Häufung, keine Werbesprache. Jede Information nur einmal pro Ansicht.
 - **Eingaben** haben immer ein sichtbares `<label>`, nicht nur einen Platzhalter. Pro Ansicht höchstens ein `btn primary`.
 - Vorhandene Klassen: `btn`, `btn primary`, `link` (Textknopf), `panel`, `row`, `stack`, `center`, `muted`, `big`, `status`, `num`, `display`, `marker`, `ok`, `bad`.
@@ -91,4 +115,4 @@ Vorbild ist ein gedruckter Spielblock: weißes Papier, schwarze Schrift, Linien 
 
 - `npm run check`: lädt alle Spiele, ruft `setup` und `view` auf und prüft, ob der Zustand verschickt werden kann.
 - `npm run build`: muss fehlerfrei durchlaufen (Vercel baut genauso).
-- `npm run dev` ohne `.env.local` startet den Testmodus ohne Supabase. Zum Spielen zwei getrennte Browser-Profile bzw. ein privates Fenster nutzen (die Spieler-ID liegt im `localStorage`). Nach dem Anlegen einer neuen Spieldatei `npm run dev` neu starten.
+- `npm run dev` ohne `.env.local` startet den Testmodus ohne Supabase (Konten und Räume nur im Arbeitsspeicher). Zum Spielen zwei Konten in zwei getrennten Browser-Profilen bzw. einem privaten Fenster anlegen und befreunden. Nach dem Anlegen einer neuen Spieldatei `npm run dev` neu starten.

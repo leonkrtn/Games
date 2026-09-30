@@ -5,7 +5,10 @@ import { games } from '@/lib/games';
 import { playerColor } from '@/lib/colors';
 
 export const esc = (text) =>
-  String(text ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  String(text ?? '').replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+  );
 
 // Kurzschreibweise für Spiele: data-value wird als JSON gelesen, sonst als Text.
 const parseValue = (v) => {
@@ -39,10 +42,22 @@ export default function GameView({ game, players, me, onAction }) {
   }, [entry, game.id]);
 
   // Nur neu zeichnen, wenn sich wirklich etwas geändert hat (sonst gehen z.B. Eingaben verloren).
-  const key = JSON.stringify([game.id, game.view, game.result, players]);
+  const instance = `${game.id}:${game.started ?? 0}`; // eine Partie; „Nochmal“ ergibt eine neue
+  const key = JSON.stringify([instance, game.view, game.result, players]);
+  const partie = useRef(null); // { instance, controller, prev }
+
+  // Beim Verlassen laufende Animationen und Timer des Spiels beenden.
+  useEffect(() => () => partie.current?.controller.abort(), []);
 
   useEffect(() => {
     if (!entry || game.error) return;
+    // Neue Partie: leeres Spielfeld, frisches Abbruch-Signal, kein vorheriger Stand.
+    if (partie.current?.instance !== instance) {
+      partie.current?.controller.abort();
+      partie.current = { instance, controller: new AbortController(), prev: null };
+      ref.current.replaceChildren();
+    }
+    const { controller, prev } = partie.current;
     const api = {
       me,
       players,
@@ -51,6 +66,11 @@ export default function GameView({ game, players, me, onAction }) {
       send: (type, data) => onAction(type, data),
       esc,
       result: game.result,
+      // Für Animationen:
+      prev, // Stand vor dieser Änderung (null beim ersten Zeichnen einer Partie)
+      first: prev === null,
+      signal: controller.signal, // wird abgebrochen, wenn die Partie endet oder die Ansicht verschwindet
+      reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     };
     try {
       entry.mod.render(ref.current, game.view, api);
@@ -58,6 +78,7 @@ export default function GameView({ game, players, me, onAction }) {
       console.error(err);
       setFailure({ key, message: `Fehler beim Anzeigen von „${game.name}“:\n${err.message}` });
     }
+    partie.current.prev = game.view;
     // Absichtlich nur `key`: das ist der komplette sichtbare Stand.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
