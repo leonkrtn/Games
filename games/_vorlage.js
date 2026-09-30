@@ -46,6 +46,13 @@ export function action(state, { player, type, data }) {
 //   return { ...state, geheim: undefined };
 // }
 
+// 4b) Optional: Auf wen wartet das Spiel gerade? (Liste von Spieler-IDs)
+//     Diese Spieler bekommen eine Benachrichtigung "Du bist dran", wenn sie die App nicht offen haben.
+//     Ohne waitingFor() werden bei jedem Zug alle anderen benachrichtigt.
+export function waitingFor(state) {
+  return [state.turn];
+}
+
 // 5) Anzeige. Läuft im Browser und wird bei jeder Änderung neu aufgerufen.
 //    game.me = eigene id, game.players, game.name(id), game.color(id) (Spielerfarbe),
 //    game.send(type, data), game.esc(text) (für Texte von Spielern!), game.result

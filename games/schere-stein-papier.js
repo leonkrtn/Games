@@ -46,6 +46,11 @@ export function action(state, { player, type, data }) {
   }
 }
 
+// Für Benachrichtigungen: wer hat in dieser Runde noch nicht gewählt?
+export function waitingFor(state) {
+  return state.players.map((p) => p.id).filter((id) => !state.picks[id]);
+}
+
 // Was jeder Spieler sehen darf: nur die eigene Wahl, vom Gegner nur ob er schon gewählt hat.
 export function view(state, me) {
   return {

@@ -96,6 +96,14 @@ function finish(state) {
   }
 }
 
+// Für Benachrichtigungen: auf wen wartet das Spiel gerade?
+export function waitingFor(state) {
+  const guesser = other(state, state.subject).id;
+  if (state.phase === 'fragen' || state.phase === 'pruefen') return [state.subject];
+  if (state.phase === 'raten') return [guesser];
+  return state.players.map((p) => p.id); // aufgedeckt: jeder darf weiter
+}
+
 // Die geheime Antwort sieht der Ratende erst, nachdem er geraten hat.
 export function view(state, me) {
   if (state.phase === 'raten' && me !== state.subject) return { ...state, answer: null };

@@ -4,6 +4,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getSupabase } from '@/lib/supabase-browser';
 import GameView from './GameView';
 import { playerColor } from '@/lib/colors';
+import {
+  pushSupport,
+  registerServiceWorker,
+  currentSubscription,
+  subscribe,
+  clearNotifications,
+  isIos,
+  isStandalone,
+} from '@/lib/push-client';
 
 const storage = {
   get: (k) => {
@@ -81,6 +90,12 @@ export default function App() {
     [],
   );
 
+  // Für Meldungen beim Schließen/Wegwechseln: sendBeacon kommt auch dann noch an.
+  const beacon = useCallback((msg) => {
+    const body = JSON.stringify({ ...msg, room: roomRef.current, playerId: me.current.id, token: me.current.token });
+    navigator.sendBeacon?.('/api/room', new Blob([body], { type: 'application/json' }));
+  }, []);
+
   const resetRoom = useCallback(() => {
     roomRef.current = null;
     versionRef.current = -1;
@@ -153,6 +168,8 @@ export default function App() {
 
   // Beim Öffnen: direkt zurück in den letzten Raum (oder den aus dem Link).
   useEffect(() => {
+    registerServiceWorker();
+    clearNotifications();
     me.current = loadIdentity();
     const urlRoom = new URLSearchParams(location.search).get('raum')?.toUpperCase() ?? null;
     const name = storage.get('spielzimmer.name');
@@ -207,7 +224,16 @@ export default function App() {
     <>
       <main className="shell">
         {snap ? (
-          <Room snap={snap} online={online} send={send} onAction={onAction} leave={leave} showToast={showToast} />
+          <Room
+            snap={snap}
+            online={online}
+            send={send}
+            onAction={onAction}
+            leave={leave}
+            showToast={showToast}
+            call={call}
+            beacon={beacon}
+          />
         ) : (
           <Start enter={enter} claim={claim} setClaim={setClaim} showToast={showToast} />
         )}
@@ -332,7 +358,7 @@ function Start({ enter, claim, setClaim, showToast }) {
 
 // ---------------------------------------------------------------------------
 
-function Room({ snap, online, send, onAction, leave, showToast }) {
+function Room({ snap, online, send, onAction, leave, showToast, call, beacon }) {
   const share = async () => {
     const url = `${location.origin}${location.pathname}?raum=${snap.room}`;
     try {
@@ -363,6 +389,7 @@ function Room({ snap, online, send, onAction, leave, showToast }) {
               </button>
             )}
           </div>
+          <Notifications room={snap.room} call={call} beacon={beacon} showToast={showToast} />
         </aside>
 
         <div>
@@ -487,22 +514,123 @@ function Lobby({ snap, send, leave, share }) {
   );
 }
 
+// Benachrichtigungen ein- und ausschalten. Solange die App offen ist, meldet sie sich regelmäßig,
+// damit der Server weiß: hier schaut gerade jemand zu, keine Benachrichtigung nötig.
+function Notifications({ room, call, beacon, showToast }) {
+  const [support, setSupport] = useState(() => pushSupport());
+  const [endpoint, setEndpoint] = useState(null); // gesetzt = an
+  const [busy, setBusy] = useState(false);
+
+  // Vorhandenes Abo dieses Geräts mit dem aktuellen Raum verknüpfen.
+  useEffect(() => {
+    if (support !== 'ok') return;
+    let cancelled = false;
+    currentSubscription()
+      .then(async (sub) => {
+        if (!sub || cancelled) return;
+        await call({ t: 'push-subscribe', subscription: sub.toJSON() });
+        if (!cancelled) setEndpoint(sub.endpoint);
+      })
+      .catch((err) => console.error('Benachrichtigungen:', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [support, room, call]);
+
+  // Lebenszeichen, solange die Seite sichtbar ist; beim Wegwechseln sofort abmelden.
+  useEffect(() => {
+    if (!endpoint) return;
+    const seen = () => {
+      if (document.visibilityState === 'visible') call({ t: 'seen', endpoint, visible: true }).catch(() => {});
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        seen();
+        clearNotifications();
+      } else {
+        beacon({ t: 'seen', endpoint, visible: false });
+      }
+    };
+    const timer = setInterval(seen, 30_000);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', onVisibility);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', onVisibility);
+    };
+  }, [endpoint, call, beacon]);
+
+  const turnOn = async () => {
+    setBusy(true);
+    try {
+      const sub = await subscribe(); // fragt nach der Erlaubnis
+      if (!sub) {
+        setSupport(pushSupport());
+        return;
+      }
+      await call({ t: 'push-subscribe', subscription: sub.toJSON() });
+      setEndpoint(sub.endpoint);
+    } catch (err) {
+      showToast(`Benachrichtigungen gehen gerade nicht: ${err.message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const turnOff = async () => {
+    setBusy(true);
+    try {
+      const sub = await currentSubscription();
+      await call({ t: 'push-unsubscribe', endpoint }).catch(() => {});
+      await sub?.unsubscribe();
+      setEndpoint(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (support === 'off' || support === 'unsupported') return null;
+  return (
+    <div className="notify" id="notify">
+      {support === 'ios-browser' && (
+        <p className="muted">Benachrichtigungen gibt es auf dem iPhone nur in der App vom Home-Bildschirm.</p>
+      )}
+      {support === 'denied' && (
+        <p className="muted">
+          Benachrichtigungen sind für das Spielzimmer blockiert. Du kannst sie in den Einstellungen erlauben.
+        </p>
+      )}
+      {support === 'ok' &&
+        (endpoint ? (
+          <p>
+            Benachrichtigungen sind an.{' '}
+            <button className="link" id="notify-off" disabled={busy} onClick={turnOff}>
+              Ausschalten
+            </button>
+          </p>
+        ) : (
+          <button className="link" id="notify-on" disabled={busy} onClick={turnOn}>
+            Benachrichtigen, wenn ich dran bin
+          </button>
+        ))}
+    </div>
+  );
+}
+
 // Auf dem iPhone gibt es keinen Installieren-Knopf, deshalb ein kurzer Hinweis (nur in Safari & Co., nicht in der App selbst).
 function InstallHint({ room }) {
-  const [show, setShow] = useState(() => {
-    const ios =
-      /iPhone|iPad|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-    return ios && !standalone && storage.get('spielzimmer.installHint') !== 'aus';
-  });
+  const [show, setShow] = useState(
+    () => isIos() && !isStandalone() && storage.get('spielzimmer.installHint') !== 'aus',
+  );
   if (!show) return null;
   return (
     <div className="install-hint" id="install-hint">
       <p>
         <strong>Als App auf dem Home-Bildschirm:</strong> Tippe im Browser auf Teilen und dann auf „Zum
-        Home-Bildschirm“. Das Spielzimmer startet dann ohne Browserleiste. Beim ersten Öffnen gibst du dort deinen Namen
-        und den Raum-Code <span className="room-code">{room}</span> ein, deine Punkte bleiben erhalten.
+        Home-Bildschirm“. Das Spielzimmer startet dann ohne Browserleiste und kann dich benachrichtigen, wenn du dran
+        bist. Beim ersten Öffnen gibst du dort deinen Namen und den Raum-Code <span className="room-code">{room}</span>{' '}
+        ein, deine Punkte bleiben erhalten.
       </p>
       <button
         className="link"

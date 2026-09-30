@@ -439,6 +439,12 @@ textarea:focus {
   gap: 4px 16px;
   align-items: baseline;
 }
+.notify {
+  margin-top: 12px;
+  font-size: var(--t-sm);
+  max-width: 40ch;
+}
+
 .room-code {
   font-weight: 700;
   letter-spacing: 0.15em;

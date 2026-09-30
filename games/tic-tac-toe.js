@@ -43,6 +43,11 @@ export function action(state, { player, type, data }) {
   }
 }
 
+// Für Benachrichtigungen: auf wen wartet das Spiel gerade?
+export function waitingFor(state) {
+  return [state.turn];
+}
+
 export function render(el, s, game) {
   const myTurn = s.turn === game.me && !game.result;
   const status = myTurn ? `Du bist dran. Du setzt ${s.marks[game.me]}.` : `${game.esc(game.name(s.turn))} ist dran.`;

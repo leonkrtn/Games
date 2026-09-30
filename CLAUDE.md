@@ -20,6 +20,8 @@ Spieler identifizieren sich mit `playerId` (öffentlich) und `token` (geheim, be
 
 Tritt jemand mit einem Namen bei, den es im Raum schon gibt (Groß-/Kleinschreibung egal), antwortet der Server mit 409 `name_taken`. Nach „Ja, das bin ich“ (`join` mit `takeover: true`) bekommt der bestehende Platz den neuen Token, und der Browser übernimmt dessen `playerId`. Das alte Gerät bekommt danach 403. Wichtig vor allem fürs iPhone: Web-Apps auf dem Home-Bildschirm haben einen eigenen Speicher, getrennt von Safari.
 
+Benachrichtigungen (Web Push): `lib/push.js` verschickt (nur an bekannte Push-Dienste, `PUSH_ALLOWED_HOSTS` erlaubt zusätzliche Hosts für Tests), `lib/push-client.js` und `Notifications` in `components/App.js` für Erlaubnis und Abo, `public/sw.js` zeigt sie an (ohne Caching). Abos stehen in der Tabelle `push_subscriptions` (eins pro Gerät). Solange die App sichtbar ist, schickt sie alle 30 s `t: 'seen'`; Geräte mit `active_until` in der Zukunft bekommen keine Benachrichtigung. Wer benachrichtigt wird, entscheidet `lib/room.js`: bei Beitritt die anderen, bei Spielstart die anderen, nach einem Zug die Spieler aus `waitingFor()` außer dem, der gezogen hat, bei Spielende die anderen. Der Service Worker zeigt pro Raum nur die neueste Nachricht (Raum-Version als `seq`).
+
 iPhone-Web-App: `app/manifest.js`, `appleWebApp` und `apple-mobile-web-app-capable` in `app/layout.js`, Abstände über `env(safe-area-inset-*)` in `app/globals.css`, Installationshinweis `InstallHint` in `components/App.js` (nur iOS, nicht im Vollbildmodus).
 
 ## Ein neues Spiel bauen
@@ -46,6 +48,10 @@ export function action(state, { player, type, data }) {}
 
 // Optional, Server: was `me` sehen darf (versteckte Infos entfernen). Standard: ganzer state.
 export function view(state, me) { return state; }
+
+// Optional, Server: auf wen das Spiel gerade wartet (Spieler-IDs). Diese bekommen nach einem Zug
+// die Benachrichtigung "Du bist dran". Ohne waitingFor werden bei jedem Zug alle anderen benachrichtigt.
+export function waitingFor(state) { return [state.turn]; }
 
 // Browser: zeichnet die Ansicht, wird bei jeder Änderung neu aufgerufen (innerHTML neu setzen ist ok).
 // game = { me, players, name(id), color(id), send(type, data), esc(text), result }

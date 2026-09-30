@@ -46,6 +46,19 @@ Jede Änderung auf dem Hauptzweig wird automatisch online gestellt. Andere Zweig
 
 **Hinweis:** Kostenlose Supabase-Projekte werden nach etwa einer Woche ohne Nutzung pausiert. Dann im Supabase-Dashboard auf „Restore“ klicken. Die Daten bleiben erhalten.
 
+### 3. Benachrichtigungen einrichten
+
+Damit das Handy meldet „Du bist dran“, braucht der Server ein Schlüsselpaar (VAPID). Zusätzlich in Vercel eintragen:
+
+| Name | Wert |
+| --- | --- |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | öffentlicher Schlüssel |
+| `VAPID_PRIVATE_KEY` | privater Schlüssel, **niemals weitergeben** |
+
+Ein neues Paar erzeugt `npx web-push generate-vapid-keys`. Danach `supabase/schema.sql` noch einmal im SQL Editor ausführen (legt die Tabelle für die Benachrichtigungen an, Vorhandenes bleibt unverändert) und neu deployen.
+
+Im Raum erscheint dann „Benachrichtigen, wenn ich dran bin“. Auf dem iPhone geht das nur in der App vom Home-Bildschirm (ab iOS 16.4). Benachrichtigt wird nur, wer die App gerade nicht offen hat.
+
 ## Auf dem iPhone als App
 
 In Safari (oder einem anderen Browser) auf **Teilen** tippen und **Zum Home-Bildschirm** wählen. Das Spielzimmer startet dann mit eigenem Icon im Vollbild, ohne Browserleiste. Die Seite zeigt dazu auf dem iPhone selbst einen kurzen Hinweis.

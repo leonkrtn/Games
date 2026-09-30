@@ -29,3 +29,18 @@ create index if not exists results_room_idx on public.results (room_code, finish
 -- Ohne Policies kommt der öffentliche Schlüssel aus dem Browser nicht an die Daten.
 alter table public.rooms enable row level security;
 alter table public.results enable row level security;
+
+-- Benachrichtigungen: ein Eintrag pro Gerät (Push-Abo des Browsers).
+-- active_until: solange das Gerät die Seite offen hat, bekommt es keine Benachrichtigungen.
+create table if not exists public.push_subscriptions (
+  endpoint text primary key,
+  room_code text not null references public.rooms (code) on delete cascade,
+  player_id text not null,
+  subscription jsonb not null,
+  active_until timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists push_room_idx on public.push_subscriptions (room_code);
+
+alter table public.push_subscriptions enable row level security;
