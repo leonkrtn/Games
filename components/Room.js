@@ -12,13 +12,16 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
   const [online, setOnline] = useState(null); // Set von Konto-IDs, null = unbekannt
   const [connected, setConnected] = useState(true);
   const versionRef = useRef(-1);
+  const clockRef = useRef(0); // Serverzeit minus eigene Uhr
 
   // Nur neuere Stände übernehmen (Antworten können in anderer Reihenfolge ankommen).
   const accept = useCallback((s) => {
+    if (typeof s.now === 'number') clockRef.current = s.now - Date.now();
     if (s.version < versionRef.current) return;
     versionRef.current = s.version;
     setSnap(s);
   }, []);
+  const now = useCallback(() => Date.now() + clockRef.current, []);
 
   const fail = useCallback(
     (err) => {
@@ -142,7 +145,15 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
                 </button>
               </div>
               {snap.game.result && <Result result={snap.game.result} players={players} send={send} />}
-              <GameView game={snap.game} players={players} me={snap.me} onAction={onAction} />
+              <GameView
+                game={snap.game}
+                players={players}
+                me={snap.me}
+                room={code}
+                now={now}
+                onAction={onAction}
+                onRefresh={refresh}
+              />
             </div>
           ) : (
             <Lobby snap={snap} send={send} unfriend={unfriend} />

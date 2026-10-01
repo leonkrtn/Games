@@ -53,10 +53,27 @@ export function waitingFor(state) {
   return [state.turn];
 }
 
+// 4c) Optional: Zeitlimit. Läuft auf dem Server vor jeder Anfrage im Raum (auch beim bloßen Nachschauen),
+//     now = Serverzeit in ms. Zustand ändern, wenn eine Frist abgelaufen ist (z.B. Phase weiterschalten).
+//     Die Frist selbst in action() mit Date.now() setzen; im Browser zeigt game.now() die passende Zeit,
+//     und game.refresh() fragt nach, sobald der Countdown abgelaufen ist. Beispiel: racker-jagd.js
+// export function tick(state, now) {
+//   if (state.phase === 'suchen' && now >= state.deadline) state.phase = 'bewerten';
+// }
+
+// 4d) Optional: eigene Benachrichtigungen statt „Du bist dran“ (z.B. nicht bei jedem Zug, andere Texte).
+//     before = Zustand vor der Änderung, player = wer sie ausgelöst hat. Wer selbst gezogen hat, bekommt nichts.
+//     Beim Spielende verschickt die Plattform das Ergebnis selbst.
+// export function notices(state, before, player) {
+//   return [{ to: playerId, text: 'Die Zeit ist um.' }];
+// }
+
 // 5) Anzeige. Läuft im Browser und wird bei jeder Änderung neu aufgerufen.
 //    game.me = eigene id, game.players, game.name(id), game.color(id) (Spielerfarbe),
 //    game.send(type, data), game.esc(text) (für Texte von Spielern!), game.result
 //    Für Animationen: game.prev (Stand vor der Änderung), game.first, game.signal, game.reducedMotion.
+//    Bilder: await game.upload(datei oder canvas) → { id, width, height }, anzeigen mit game.imageUrl(id).
+//    Zeit: game.now() (Serverzeit in ms), game.refresh() (Stand neu laden).
 //    Jedes Spiel soll hochwertige Animationen haben, siehe CLAUDE.md, Abschnitt „Motion und Optik“.
 //
 //    Abkürzung: <button data-action="zaehlen" data-value="2"> sendet den Zug automatisch.

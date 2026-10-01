@@ -1,6 +1,6 @@
 // Gemeinsames für die Browser-Seite: Server-Aufrufe und lokaler Speicher.
 
-async function post(path, msg) {
+export async function post(path, msg) {
   let res;
   try {
     res = await fetch(path, {

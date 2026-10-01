@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { games } from '@/lib/games';
 import { playerColor } from '@/lib/colors';
+import { uploadImage } from './images';
 
 export const esc = (text) =>
   String(text ?? '').replace(
@@ -25,7 +26,7 @@ const parseValue = (v) => {
  * Die Spieldateien arbeiten direkt mit HTML (nicht mit React), damit sie einfach
  * zu schreiben sind und auf Server und im Browser laufen.
  */
-export default function GameView({ game, players, me, onAction }) {
+export default function GameView({ game, players, me, room, now, onAction, onRefresh }) {
   const ref = useRef(null);
   const [failure, setFailure] = useState(null); // { key, message }
   const entry = games.get(game.id);
@@ -66,6 +67,12 @@ export default function GameView({ game, players, me, onAction }) {
       send: (type, data) => onAction(type, data),
       esc,
       result: game.result,
+      // Bilder: hochladen (Datei, Blob oder Canvas) → { id, width, height }; anzeigen über imageUrl(id)
+      upload: (source) => uploadImage(room, source),
+      imageUrl: (id) => `/api/image?id=${encodeURIComponent(id)}`,
+      // Zeit: Serverzeit in ms (für Countdowns), refresh() fragt neu nach (z.B. wenn eine Frist abläuft)
+      now,
+      refresh: onRefresh,
       // Für Animationen:
       prev, // Stand vor dieser Änderung (null beim ersten Zeichnen einer Partie)
       first: prev === null,

@@ -16,11 +16,12 @@ Ablauf für Nutzer: Konto erstellen (Benutzername + Passwort, keine E-Mail) → 
 - `scripts/generate-games.js`: erzeugt `lib/games.generated.js` (gitignored) mit allen Spielen; läuft automatisch in `npm run dev`/`npm run build`.
 - `lib/auth.js`: Passwörter (scrypt), Sitzungen (zufälliger Token im httpOnly-Cookie `sz_session`, in der Datenbank nur als SHA-256-Hash), Sperre nach mehreren Fehlversuchen.
 - `lib/account.js` + `app/api/account/route.js`: Konto (`me`, `signup`, `login`, `logout`, `invite-info`), Startseite (`home`: Freunde mit Punkten und wer dran ist, Anfragen), Freunde (`friend-add` per Benutzername → die andere Person muss annehmen; `friend-invite` per Einladungslink → sofort befreundet; `friend-accept`; `friend-remove` löscht auch das Spielzimmer), Benachrichtigungen pro Gerät (`push-subscribe`, `push-unsubscribe`, `seen`).
-- `lib/room.js` + `app/api/room/route.js`: Spielzimmer und Züge (`t: state | choose | restart | lobby | action`). Lädt den Raum, wendet die Anfrage an und speichert mit Versionsprüfung (optimistisches Sperren, bei Konflikt neu laden und wiederholen). Spieler-IDs sind Konto-IDs; wer nicht im Raum ist, bekommt 403.
+- `lib/room.js` + `app/api/room/route.js`: Spielzimmer und Züge (`t: state | choose | restart | lobby | action`). Lädt den Raum, ruft `tick()` des Spiels auf (abgelaufene Fristen), wendet die Anfrage an und speichert mit Versionsprüfung (optimistisches Sperren, bei Konflikt neu laden und wiederholen). Züge, die den Zustand nicht ändern, werden nicht gespeichert. Spieler-IDs sind Konto-IDs; wer nicht im Raum ist, bekommt 403. Der Snapshot enthält `now` (Serverzeit) für Countdowns.
+- `lib/uploads.js` + `app/api/image/route.js` + `components/images.js`: Bilder aus Spielen (`game.upload`). Der Browser verkleinert auf höchstens 1600 px und schickt JPEG als Base64 (POST, JSON); gespeichert in der Tabelle `uploads`. `GET /api/image?id=…` liefert fremde Bilder nur, wenn die id in der `view()` des Anfragenden vorkommt. Gelöscht werden die Bilder eines Zimmers bei `choose`, `restart` und `lobby`, spätestens nach drei Tagen.
 - Nach einer Änderung per Supabase Realtime Broadcast Bescheid sagen: `room:<CODE>` (Payload `{ version }`, die Browser holen sich dann ihre eigene Ansicht mit `t: 'state'`) und `user:<ID>` (Freundesliste neu laden).
 - `lib/store/`: Datenbankzugriff: `supabase.js` (Secret Key, nur Server), `memory.js` (lokaler Testmodus ohne Supabase; die Browser fragen dann regelmäßig nach). Beide müssen dieselben Funktionen haben.
 - `components/App.js` (Anmeldestatus, Wechsel zwischen Startseite und Spielzimmer, Benachrichtigungen fürs Gerät), `Auth.js` (Anmelden/Registrieren), `Home.js` (Freundesliste, Anfragen, Freund hinzufügen, Einladungslink), `Room.js` (Anzeigetafel, Lobby, Verlauf, Realtime und Presence), `GameView.js` (ruft `render()` des Spiels auf).
-- `supabase/migrations/`: das Datenbankschema als Folge von Migrationen, ausgeführt von `scripts/migrate.js` (protokolliert in `supabase_migrations.schema_migrations`, wie die Supabase CLI). Tabellen: `rooms` (ein Raum = eine Zeile, alles in `data` jsonb, `version` für die Konfliktprüfung), `results` (Verlauf), `users`, `sessions`, `friendships` (ein Eintrag pro Paar, `room_code` nach dem Annehmen), `devices` (Push-Abos). RLS an, keine Policies: nur der Server liest und schreibt.
+- `supabase/migrations/`: das Datenbankschema als Folge von Migrationen, ausgeführt von `scripts/migrate.js` (protokolliert in `supabase_migrations.schema_migrations`, wie die Supabase CLI). Tabellen: `rooms` (ein Raum = eine Zeile, alles in `data` jsonb, `version` für die Konfliktprüfung), `results` (Verlauf), `users`, `sessions`, `friendships` (ein Eintrag pro Paar, `room_code` nach dem Annehmen), `devices` (Push-Abos), `uploads` (Bilder aus Spielen, Base64). RLS an, keine Policies: nur der Server liest und schreibt.
 
 Sicherheit: API-Routen nehmen nur `application/json` an (Schutz vor fremden Formularen), das Sitzungs-Cookie ist `httpOnly`, `SameSite=Lax` und in Produktion `Secure`. Passwort-Hashes und Sitzungs-Tokens dürfen nie in einer Antwort landen (`publicUser()` benutzen).
 
@@ -30,11 +31,12 @@ iPhone-Web-App: `app/manifest.js`, `appleWebApp` und `apple-mobile-web-app-capab
 
 ## Ein neues Spiel bauen
 
-Wenn der Nutzer ein Spiel beschreibt: neue Datei `games/<kurzer-name>.js` anlegen (Kleinbuchstaben, Bindestriche). Sonst nichts ändern, außer das Spiel braucht wirklich eine neue Plattform-Funktion. `games/_vorlage.js` und die drei Beispielspiele zeigen die Muster:
+Wenn der Nutzer ein Spiel beschreibt: neue Datei `games/<kurzer-name>.js` anlegen (Kleinbuchstaben, Bindestriche). Sonst nichts ändern, außer das Spiel braucht wirklich eine neue Plattform-Funktion. `games/_vorlage.js` und die Beispielspiele zeigen die Muster:
 
 - `tic-tac-toe.js`: abwechselnd ziehen, **und das Vorbild für Animationen** (Striche einzeichnen, Gewinnlinie, Vergleich mit `game.prev`)
 - `schere-stein-papier.js`: gleichzeitige geheime Züge (`view`)
 - `kennst-du-mich.js`: Phasen, Texteingaben per Formular, geheime Antwort
+- `racker-jagd.js`: Bilder hochladen mit Zuschnitt, Zeitlimit (`tick`, `game.now`), eigene Benachrichtigungen (`notices`), lokaler Zustand, der neues Zeichnen übersteht
 
 Die Datei läuft **sowohl auf dem Server als auch im Browser** und wird von Next.js gebündelt: keine `import`s von Node-Modulen oder npm-Paketen, kein React, keine Browser-Globals außerhalb von `render`.
 
@@ -57,9 +59,18 @@ export function view(state, me) { return state; }
 // die Benachrichtigung "Du bist dran", und die Freundesliste zeigt es an. Ohne waitingFor: alle.
 export function waitingFor(state) { return [state.turn]; }
 
+// Optional, Server: eigene Benachrichtigungen statt "Du bist dran" nach einem Zug oder tick.
+// before = Zustand vorher, player = wer es ausgelöst hat (bekommt selbst nichts). Spielende: macht die Plattform.
+export function notices(state, before, player) { return [{ to: playerId, text: '...' }]; }
+
+// Optional, Server: Fristen. Läuft vor jeder Anfrage im Raum, now = Serverzeit in ms.
+export function tick(state, now) { if (now >= state.deadline) state.phase = 'weiter'; }
+
 // Browser: zeichnet die Ansicht, wird bei jeder Änderung neu aufgerufen.
 // game = { me, players, name(id), color(id), send(type, data), esc(text), result,
-//          prev, first, signal, reducedMotion }   (letzte vier: siehe "Motion")
+//          prev, first, signal, reducedMotion,   (siehe "Motion")
+//          upload(datei|canvas) → Promise<{ id, width, height }>, imageUrl(id),
+//          now() (Serverzeit in ms), refresh() (Stand neu laden) }
 export function render(el, view, game) {}
 
 // Optional: CSS nur für dieses Spiel (Klassen mit Spielnamen präfixen).
@@ -77,7 +88,9 @@ Regeln und Tipps:
 - Rein lokale Interaktion (z.B. Vorschlag in ein Feld schreiben) per `el.querySelector(...).addEventListener` nach dem Setzen von `innerHTML`.
 - Auf Handy-Breite (360px) muss alles passen, ohne seitliches Scrollen.
 - Das Ergebnis-Banner mit „Nochmal“/„Anderes Spiel“ zeigt die Plattform selbst an.
-- Ein Zug dauert einen Server-Aufruf plus eine Realtime-Nachricht (einige hundert Millisekunden): gut für Runden- und Rate-Spiele, nicht für Reaktions- oder Echtzeit-Action. Timer/Countdowns gibt es noch nicht als Plattform-Funktion.
+- Ein Zug dauert einen Server-Aufruf plus eine Realtime-Nachricht (einige hundert Millisekunden): gut für Runden- und Rate-Spiele, nicht für Reaktions- oder Echtzeit-Action.
+- Zeitlimits: Frist in `action` mit `Date.now()` in den `state` schreiben, `tick(state, now)` schaltet weiter, wenn sie abgelaufen ist. Im Browser den Countdown mit `game.now()` rechnen (nicht `Date.now()`, die Handy-Uhr kann falsch gehen) und bei null `game.refresh()` aufrufen. `tick` läuft nur, wenn jemand den Raum lädt: Ist niemand da, schaltet das Spiel beim nächsten Öffnen weiter.
+- Bilder: `await game.upload(datei)` (oder ein `<canvas>`, z.B. nach dem Zuschneiden) und nur die `id` mit `send` in den `state`, nie die Bilddaten selbst. Anzeigen mit `<img src="${game.esc(game.imageUrl(id))}">`. Geheime Bilder in `view` weglassen: Der Server liefert fremde Bilder nur aus, wenn ihre id in der `view` des Anfragenden steht. Nach der Partie werden sie gelöscht.
 
 ## Spiele: Motion und Optik
 
