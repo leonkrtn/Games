@@ -68,7 +68,7 @@ Damit das Handy meldet „Du bist dran“, braucht der Server ein Schlüsselpaar
 
 Ein neues Paar erzeugt `npx web-push generate-vapid-keys`. Danach neu deployen.
 
-Auf der Startseite erscheint dann „Benachrichtigen, wenn ich dran bin“. Auf dem iPhone geht das nur in der App vom Home-Bildschirm (ab iOS 16.4). Benachrichtigt wird nur, wer die App gerade nicht offen hat.
+Danach lässt sich das auf der Startseite unter **Benachrichtigungen** pro Gerät einschalten. Dort stellt jeder auch ein, worüber und von wem er benachrichtigt wird. Auf dem iPhone geht das nur in der App vom Home-Bildschirm (ab iOS 16.4). Benachrichtigt wird nur, wer die App gerade nicht offen hat.
 
 ## Auf dem iPhone als App
 

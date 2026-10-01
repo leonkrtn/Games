@@ -76,7 +76,14 @@ export default function NotifySettings({ goHome, showToast, push, onUnauthorized
       </header>
 
       {off ? (
-        <p className="empty">Benachrichtigungen sind auf dem Server nicht eingerichtet.</p>
+        <section className="setup-note" id="notify-setup">
+          <p>Benachrichtigungen sind für das Spielzimmer noch nicht eingerichtet.</p>
+          <p className="page-intro">
+            Für alle, die das Spielzimmer betreiben: In Vercel unter Settings, Environment Variables die Schlüssel{' '}
+            <code>NEXT_PUBLIC_VAPID_PUBLIC_KEY</code> und <code>VAPID_PRIVATE_KEY</code> eintragen und neu deployen. Wie
+            man das Schlüsselpaar erzeugt, steht im README.
+          </p>
+        </section>
       ) : (
         <>
           <section>

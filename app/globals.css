@@ -827,9 +827,13 @@ textarea:focus {
   font-weight: 700;
   vertical-align: 0.1em;
 }
-.device-state {
+.device-state,
+.setup-note {
   display: grid;
   gap: 12px;
+}
+.setup-note code {
+  overflow-wrap: anywhere;
 }
 
 /* Ankreuzen: ganze Zeile tippbar, eckiges Kästchen */

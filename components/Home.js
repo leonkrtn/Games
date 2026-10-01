@@ -230,6 +230,7 @@ function Menu({ data, push, openPage }) {
     : 'Hinzufügen, einladen, entfernen';
   const notify = {
     ok: push.endpoint ? 'Auf diesem Gerät an' : 'Auf diesem Gerät aus',
+    off: 'Noch nicht eingerichtet',
     'ios-browser': 'Nur in der App vom Home-Bildschirm',
     denied: 'Auf diesem Gerät blockiert',
     unsupported: 'Kann dieser Browser nicht',
@@ -240,12 +241,10 @@ function Menu({ data, push, openPage }) {
         <span className="menu-title">Freunde verwalten</span>
         <span className="menu-status">{friends}</span>
       </button>
-      {notify && (
-        <button className="menu-row" id="menu-notify" onClick={() => openPage('benachrichtigungen')}>
-          <span className="menu-title">Benachrichtigungen</span>
-          <span className="menu-status">{notify}</span>
-        </button>
-      )}
+      <button className="menu-row" id="menu-notify" onClick={() => openPage('benachrichtigungen')}>
+        <span className="menu-title">Benachrichtigungen</span>
+        <span className="menu-status">{notify}</span>
+      </button>
     </nav>
   );
 }
