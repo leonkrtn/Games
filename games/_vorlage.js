@@ -10,9 +10,15 @@ export const meta = {
   name: 'Bis 10',
   description: 'Zählt abwechselnd 1 oder 2 weiter. Wer die 10 sagt, gewinnt.',
   players: [2, 2],
+  // Optional: Einstellungen, die man in der Lobby vor dem Start wählt (erste Wahl = Vorgabe).
+  // „Nochmal“ startet mit denselben Einstellungen. Beispiel: qwixx.js
+  // options: [
+  //   { id: 'ziel', label: 'Ziel', choices: [{ value: 10, label: 'Bis zehn' }, { value: 20, label: 'Bis zwanzig' }] },
+  // ],
 };
 
 // 2) Startzustand. players = [{ id, name }, ...]
+//    options = die in der Lobby gewählten Einstellungen, z.B. { ziel: 10 } ({} ohne meta.options).
 //    Der Zustand muss aus einfachen Daten bestehen (Zahlen, Texte, Listen, Objekte).
 export function setup(players) {
   return {

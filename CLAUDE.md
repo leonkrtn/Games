@@ -16,7 +16,7 @@ Ablauf für Nutzer: Konto erstellen (Benutzername + Passwort, keine E-Mail) → 
 - `scripts/generate-games.js`: erzeugt `lib/games.generated.js` (gitignored) mit allen Spielen; läuft automatisch in `npm run dev`/`npm run build`.
 - `lib/auth.js`: Passwörter (scrypt), Sitzungen (zufälliger Token im httpOnly-Cookie `sz_session`, in der Datenbank nur als SHA-256-Hash), Sperre nach mehreren Fehlversuchen.
 - `lib/account.js` + `app/api/account/route.js`: Konto (`me`, `signup`, `login`, `logout`, `invite-info`), Startseite (`home`: Freunde mit Punkten und wer dran ist, Anfragen), Freunde (`friend-add` per Benutzername → die andere Person muss annehmen; `friend-invite` per Einladungslink → sofort befreundet; `friend-accept`; `friend-remove` löscht auch das Spielzimmer; `invite-reset` macht den alten Einladungslink ungültig), Benachrichtigungen pro Gerät (`push-subscribe`, `push-unsubscribe`, `seen`, `push-test`, `push-remove`) und pro Konto (`notify-get`, `notify-set`).
-- `lib/room.js` + `app/api/room/route.js`: Spielzimmer und Züge (`t: state | choose | restart | lobby | action`). Lädt den Raum, ruft `tick()` des Spiels auf (abgelaufene Fristen), wendet die Anfrage an und speichert mit Versionsprüfung (optimistisches Sperren, bei Konflikt neu laden und wiederholen). Züge, die den Zustand nicht ändern, werden nicht gespeichert. Spieler-IDs sind Konto-IDs; wer nicht im Raum ist, bekommt 403. Der Snapshot enthält `now` (Serverzeit) für Countdowns.
+- `lib/room.js` + `app/api/room/route.js`: Spielzimmer und Züge (`t: state | choose | restart | lobby | action`). `choose` nimmt die in der Lobby gewählten Spieloptionen mit (`options`, geprüft mit `resolveOptions` aus `lib/games.js`), `restart` startet mit denselben, und `lastOptions` im Raum merkt sich die letzte Wahl pro Spiel für die Lobby. Lädt den Raum, ruft `tick()` des Spiels auf (abgelaufene Fristen), wendet die Anfrage an und speichert mit Versionsprüfung (optimistisches Sperren, bei Konflikt neu laden und wiederholen). Züge, die den Zustand nicht ändern, werden nicht gespeichert. Spieler-IDs sind Konto-IDs; wer nicht im Raum ist, bekommt 403. Der Snapshot enthält `now` (Serverzeit) für Countdowns.
 - `lib/uploads.js` + `app/api/image/route.js` + `components/images.js`: Bilder aus Spielen (`game.upload`). Der Browser verkleinert auf höchstens 1600 px und schickt JPEG als Base64 (POST, JSON); gespeichert in der Tabelle `uploads`. `GET /api/image?id=…` liefert fremde Bilder nur, wenn die id in der `view()` des Anfragenden vorkommt. Gelöscht werden die Bilder eines Zimmers bei `choose`, `restart` und `lobby`, spätestens nach drei Tagen.
 - Nach einer Änderung per Supabase Realtime Broadcast Bescheid sagen: `room:<CODE>` (Payload `{ version }`, die Browser holen sich dann ihre eigene Ansicht mit `t: 'state'`) und `user:<ID>` (Freundesliste neu laden).
 - `lib/store/`: Datenbankzugriff: `supabase.js` (Secret Key, nur Server), `memory.js` (lokaler Testmodus ohne Supabase; die Browser fragen dann regelmäßig nach). Beide müssen dieselben Funktionen haben.
@@ -39,14 +39,18 @@ Wenn der Nutzer ein Spiel beschreibt: neue Datei `games/<kurzer-name>.js` anlege
 - `schere-stein-papier.js`: gleichzeitige geheime Züge (`view`)
 - `kennst-du-mich.js`: Phasen, Texteingaben per Formular, geheime Antwort
 - `racker-jagd.js`: Bilder hochladen mit Zuschnitt, Zeitlimit (`tick`, `game.now`), eigene Benachrichtigungen (`notices`), lokaler Zustand, der neues Zeichnen übersteht
+- `qwixx.js`: Einstellungen in der Lobby (`meta.options`), 3D-Würfel, vorläufige Eingaben mit Bestätigen, Bereiche, die nur bei Änderung neu gezeichnet werden
 
 Die Datei läuft **sowohl auf dem Server als auch im Browser** und wird von Next.js gebündelt: keine `import`s von Node-Modulen oder npm-Paketen, kein React, keine Browser-Globals außerhalb von `render`.
 
 ```js
 export const meta = { name, description, players: [min, max] };
+// Optional in meta: options = Einstellungen, die man in der Lobby vor dem Start wählt (erste Wahl = Vorgabe),
+// z.B. options: [{ id: 'zeit', label: 'Zeit', choices: [{ value: 0, label: 'Ohne Limit' }, { value: 60, label: 'Eine Minute' }] }]
+// „Nochmal“ startet mit denselben Einstellungen.
 
-// Server: Startzustand. players = [{ id, name }]
-export function setup(players) { return state; }
+// Server: Startzustand. players = [{ id, name }], options = gewählte Einstellungen, z.B. { zeit: 60 } ({} ohne meta.options)
+export function setup(players, options) { return state; }
 
 // Server: ein Zug. state direkt verändern (oder neuen Zustand zurückgeben).
 // Ungültig → throw new Error('Text für den Spieler')   (wird als Hinweis angezeigt)

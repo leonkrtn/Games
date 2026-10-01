@@ -18,13 +18,23 @@ for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.js')).sort()) 
     }
     if (typeof mod.setup === 'function') {
       const [min = 1, max = 99] = mod.meta?.players ?? [];
+      // Spieloptionen: einmal mit den Vorgaben, dann jede Wahl einzeln.
+      const options = mod.meta?.options ?? [];
+      const defaults = Object.fromEntries(options.map((o) => [o.id, o.choices?.[0]?.value]));
+      const variants = [defaults];
+      for (const o of options) {
+        if (!o.id || !o.choices?.length) problems.push('meta.options: jede Option braucht id und choices');
+        for (const c of (o.choices ?? []).slice(1)) variants.push({ ...defaults, [o.id]: c.value });
+      }
       for (const n of new Set([min, Math.min(max, min + 1)])) {
         const players = Array.from({ length: n }, (_, i) => ({ id: `p${i}`, name: `Spieler ${i + 1}` }));
-        const state = mod.setup(players);
-        if (!state || typeof state !== 'object') problems.push('setup() muss ein Objekt zurückgeben');
-        structuredClone(state);
-        JSON.stringify(state);
-        for (const p of players) JSON.stringify(mod.view ? mod.view(state, p.id) : state);
+        for (const chosen of variants) {
+          const state = mod.setup(players, chosen);
+          if (!state || typeof state !== 'object') problems.push('setup() muss ein Objekt zurückgeben');
+          structuredClone(state);
+          JSON.stringify(state);
+          for (const p of players) JSON.stringify(mod.view ? mod.view(state, p.id) : state);
+        }
       }
     }
   } catch (err) {

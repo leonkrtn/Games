@@ -515,6 +515,70 @@ textarea:focus {
   }
 }
 
+/* Einstellungen eines Spiels vor dem Start, aufgeklappt unter seiner Zeile */
+.game-options {
+  display: grid;
+  gap: 16px;
+  justify-items: start;
+  padding: 16px 0 24px;
+  border-bottom: 1px solid var(--hairline);
+}
+.game-options fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.game-options legend {
+  padding: 0;
+}
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.choice {
+  position: relative;
+  margin: 0;
+  font-size: var(--t-base);
+}
+.choice input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.choice span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 2px solid var(--hairline);
+  border-radius: var(--radius);
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out;
+}
+.choice:hover span {
+  background: var(--wash);
+}
+.choice input:checked + span {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+.choice input:focus-visible + span {
+  box-shadow:
+    0 0 0 2px var(--paper),
+    0 0 0 4px var(--ink);
+}
+.choice:active span {
+  transform: translateY(1px);
+}
+
 .history {
   margin-top: 48px;
 }

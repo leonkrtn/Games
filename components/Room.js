@@ -212,6 +212,7 @@ function Result({ result, players, send }) {
 
 function Lobby({ snap, send, unfriend }) {
   const n = snap.players.length;
+  const [open, setOpen] = useState(null); // Spiel mit Optionen, das gerade eingestellt wird
   return (
     <div id="lobby">
       <h2 className="section-title">Spiele</h2>
@@ -220,13 +221,17 @@ function Lobby({ snap, send, unfriend }) {
           const [min, max] = g.players;
           const fits = n >= min && n <= max;
           const count = min === max ? `${min} Spieler` : `${min} bis ${max} Spieler`;
+          const options = g.options?.length > 0;
           return (
             <li key={g.id}>
               <button
                 className="game-row"
                 data-game={g.id}
                 disabled={!fits}
-                onClick={() => send({ t: 'choose', game: g.id })}
+                aria-expanded={options ? open === g.id : undefined}
+                onClick={() =>
+                  options ? setOpen(open === g.id ? null : g.id) : send({ t: 'choose', game: g.id })
+                }
               >
                 <span className="game-name">{g.name}</span>
                 <span className="game-desc">{g.description}</span>
@@ -234,6 +239,13 @@ function Lobby({ snap, send, unfriend }) {
                   {fits ? count : n < min ? `braucht ${min} Spieler` : `höchstens ${max}`}
                 </span>
               </button>
+              {options && open === g.id && fits && (
+                <GameOptions
+                  game={g}
+                  initial={snap.lastOptions?.[g.id]}
+                  onStart={(chosen) => send({ t: 'choose', game: g.id, options: chosen })}
+                />
+              )}
             </li>
           );
         })}
@@ -250,6 +262,49 @@ function Lobby({ snap, send, unfriend }) {
         </span>
       </div>
     </div>
+  );
+}
+
+// Einstellungen vor dem Start (meta.options des Spiels), vorbelegt mit der letzten Wahl in diesem Zimmer.
+function GameOptions({ game, initial, onStart }) {
+  const [values, setValues] = useState(() =>
+    Object.fromEntries(
+      game.options.map((o) => [
+        o.id,
+        o.choices.some((c) => c.value === initial?.[o.id]) ? initial[o.id] : o.choices[0].value,
+      ]),
+    ),
+  );
+  return (
+    <form
+      className="game-options"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onStart(values);
+      }}
+    >
+      {game.options.map((o) => (
+        <fieldset key={o.id}>
+          <legend className="label">{o.label}</legend>
+          <div className="choices">
+            {o.choices.map((c) => (
+              <label key={String(c.value)} className="choice">
+                <input
+                  type="radio"
+                  name={`${game.id}-${o.id}`}
+                  checked={values[o.id] === c.value}
+                  onChange={() => setValues((v) => ({ ...v, [o.id]: c.value }))}
+                />
+                <span>{c.label}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ))}
+      <button className="btn primary" type="submit" data-start={game.id}>
+        Starten
+      </button>
+    </form>
   );
 }
 
