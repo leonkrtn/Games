@@ -1,6 +1,6 @@
 // Racker-Jagd: Wer findet auf Instagram den besten Racker?
 //
-// Ablauf: Zeit wählen (5, 10 oder 15 Minuten) → jeder schickt bis zu drei Screenshots (geheim,
+// Ablauf: Zeit wählen (5, 10, 15 Minuten oder unbegrenzt) → jeder schickt bis zu drei Screenshots (geheim,
 // der andere sieht nur die Anzahl) → gemeinsam Bild für Bild bewerten, abwechselnd, immer bewertet
 // der andere von eins bis zehn → Auflösung: Es zählt nur das bestbewertete Bild jedes Spielers,
 // bei Gleichstand das zweitbeste, dann das drittbeste.
@@ -20,11 +20,13 @@ export const meta = {
 };
 
 const MAX = 3; // Einsendungen pro Spieler
-const MINUTES = [5, 10, 15];
+const TIMES = [5, 10, 15, 0]; // Minuten; 0 = unbegrenzt: bewertet wird erst, wenn beide fertig sind
 const GRACE = 10_000; // ms nach Ablauf: Bilder, die gerade hochgeladen werden, kommen noch an
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const WORDS = ['null', 'eins', 'zwei', 'drei', 'vier', 'fünf', 'sechs', 'sieben', 'acht', 'neun', 'zehn', 'elf', 'zwölf', 'dreizehn', 'vierzehn', 'fünfzehn'];
 const word = (n) => WORDS[n] ?? String(n);
+
+const limited = (s) => s.deadline !== null; // false: ohne Zeitlimit
 
 const otherOf = (s, id) => s.players.find((p) => p.id !== id).id;
 const nameOf = (s, id) => s.players.find((p) => p.id === id).name;
@@ -48,13 +50,12 @@ export function action(s, { player, type, data }) {
   switch (type) {
     case 'zeit': {
       if (s.phase !== 'zeit') return;
-      const minutes = Number(data);
-      if (!MINUTES.includes(minutes)) throw new Error('Bitte fünf, zehn oder fünfzehn Minuten wählen.');
-      Object.assign(s, { phase: 'suchen', minutes, startedAt: now, deadline: now + minutes * 60_000 });
+      if (!TIMES.includes(data)) throw new Error('Bitte fünf, zehn, fünfzehn Minuten oder unbegrenzt wählen.');
+      Object.assign(s, { phase: 'suchen', minutes: data, startedAt: now, deadline: data ? now + data * 60_000 : null });
       return;
     }
     case 'einsenden': {
-      if (s.phase !== 'suchen' || now > s.deadline + GRACE) throw new Error('Die Zeit ist um.');
+      if (s.phase !== 'suchen' || (limited(s) && now > s.deadline + GRACE)) throw new Error('Die Zeit ist um.');
       const list = s.entries[player];
       const id = String(data?.id ?? '');
       if (!ID.test(id)) throw new Error('Das Bild ist nicht angekommen. Bitte nochmal senden.');
@@ -66,7 +67,7 @@ export function action(s, { player, type, data }) {
       return maybeStartReview(s);
     }
     case 'entfernen': {
-      if (s.phase !== 'suchen' || now > s.deadline) throw new Error('Die Zeit ist um.');
+      if (s.phase !== 'suchen' || (limited(s) && now > s.deadline)) throw new Error('Die Zeit ist um.');
       const list = s.entries[player];
       const i = list.findIndex((e) => e.id === data);
       if (i < 0) return;
@@ -80,7 +81,7 @@ export function action(s, { player, type, data }) {
       return maybeStartReview(s);
     case 'weitersuchen':
       if (s.phase !== 'suchen') return;
-      if (now > s.deadline) throw new Error('Die Zeit ist um.');
+      if (limited(s) && now > s.deadline) throw new Error('Die Zeit ist um.');
       s.done[player] = false;
       return;
     case 'bewerten': {
@@ -99,7 +100,7 @@ export function action(s, { player, type, data }) {
 
 // Zeit abgelaufen (plus Nachfrist für laufende Uploads)? Dann wird bewertet.
 export function tick(s, now) {
-  if (s.phase === 'suchen' && now >= s.deadline + GRACE) startReview(s);
+  if (s.phase === 'suchen' && limited(s) && now >= s.deadline + GRACE) startReview(s);
 }
 
 function maybeStartReview(s) {
@@ -160,12 +161,13 @@ export function waitingFor(s) {
 // Benachrichtigungen: nur, wenn es wirklich etwas zu tun gibt (nicht bei jedem Bild des anderen).
 export function notices(s, before, player) {
   if (before.phase === 'zeit' && s.phase === 'suchen') {
-    return [{ to: otherOf(s, player), text: `${nameOf(s, player)} hat die Uhr gestartet. Ihr habt ${word(s.minutes)} Minuten.` }];
+    const time = s.minutes ? `Ihr habt ${word(s.minutes)} Minuten.` : 'Ihr habt unbegrenzt Zeit.';
+    return [{ to: otherOf(s, player), text: `${nameOf(s, player)} hat die Suche gestartet. ${time}` }];
   }
   if (before.phase === 'suchen' && s.phase === 'bewerten') {
     return s.players.map((p) => ({ to: p.id, text: 'Die Suche ist vorbei. Jetzt wird bewertet.' }));
   }
-  if (s.phase === 'suchen' && s.done[player] && !before.done[player] && Date.now() < s.deadline) {
+  if (s.phase === 'suchen' && s.done[player] && !before.done[player] && !(limited(s) && Date.now() >= s.deadline)) {
     return [{ to: otherOf(s, player), text: `${nameOf(s, player)} ist fertig mit Suchen.` }];
   }
   if (s.phase === 'bewerten' && s.index !== before.index) {
@@ -236,15 +238,19 @@ const marker = (game, id) => `<span class="marker" style="color:${game.color(id)
 
 // --- Zeit wählen ---
 
+// Unendlich-Schleife für „unbegrenzt“: einmal die volle Linie, darüber ein Strich, der beim Suchen umläuft
+const LOOP = 'M50 25 C 40 10, 14 8, 12 25 C 10 42, 40 40, 50 25 C 60 10, 86 8, 88 25 C 90 42, 60 40, 50 25 Z';
+const ENDLESS = `<svg class="rj-inf" viewBox="0 0 100 50" aria-hidden="true"><path class="rj-inf-base" pathLength="1" d="${LOOP}"/><path class="rj-inf-run" pathLength="1" d="${LOOP}"/></svg>`;
+
 function renderTime(main, s, game) {
   const intro = game.first ? 'intro' : '';
   main.innerHTML = `
-    <p class="status rj-lead">Wie lange sucht ihr? Wer zuerst wählt, startet die Uhr für beide.</p>
+    <p class="status rj-lead">Wie lange sucht ihr? Wer zuerst wählt, startet die Suche für beide.</p>
     <div class="rj-times">
-      ${MINUTES.map(
+      ${TIMES.map(
         (m, i) => `
         <button class="rj-time ${intro}" style="--i:${i}" data-action="zeit" data-value="${m}">
-          <span class="rj-time-num">${m}</span><span class="rj-time-unit">Minuten</span>
+          ${m ? `<span class="rj-time-num">${m}</span><span class="rj-time-unit">Minuten</span>` : `${ENDLESS}<span class="rj-time-unit">Unbegrenzt</span>`}
         </button>`,
       ).join('')}
     </div>
@@ -278,7 +284,7 @@ function renderSearch(root, main, s, game, u) {
   const before = game.prev?.phase === 'suchen' ? game.prev : null;
   const knownIds = new Set((before?.entries[me] ?? []).map((x) => x.id));
   const prevCount = before ? before.counts[them] : game.first ? 0 : theirCount;
-  const timeUp = game.now() >= s.deadline;
+  const timeUp = limited(s) && game.now() >= s.deadline;
   const done = s.done[me];
   const theirName = e(game.name(them));
 
@@ -332,14 +338,21 @@ function renderSearch(root, main, s, game, u) {
 
   const total = s.deadline - s.startedAt;
   const left = Math.max(0, s.deadline - game.now());
+  const clockIntro = game.first || game.prev?.phase === 'zeit' ? 'intro' : '';
   main.innerHTML = `
-    <div class="rj-clock ${game.first || game.prev?.phase === 'zeit' ? 'intro' : ''} ${timeUp ? 'over' : ''}">
-      <div class="rj-clock-row">
-        <span class="rj-clock-num" aria-hidden="true">${clock(left)}</span>
-        <span class="rj-clock-label">${timeUp ? 'Zeit um' : 'übrig'}</span>
-      </div>
-      <div class="rj-bar"><i style="animation-duration:${total}ms;animation-delay:-${total - left}ms;--left:${left / total}"></i></div>
-    </div>
+    ${
+      limited(s)
+        ? `<div class="rj-clock ${clockIntro} ${timeUp ? 'over' : ''}">
+            <div class="rj-clock-row">
+              <span class="rj-clock-num" aria-hidden="true">${clock(left)}</span>
+              <span class="rj-clock-label">${timeUp ? 'Zeit um' : 'übrig'}</span>
+            </div>
+            <div class="rj-bar"><i style="animation-duration:${total}ms;animation-delay:-${total - left}ms;--left:${left / total}"></i></div>
+          </div>`
+        : `<div class="rj-clock rj-endless ${clockIntro}">
+            <div class="rj-clock-row">${ENDLESS}<span class="rj-clock-label">Ohne Zeitlimit</span></div>
+          </div>`
+    }
     <div class="rj-body">
       <section class="rj-mine">
         <h3 class="rj-who">${marker(game, me)} Deine Racker</h3>
@@ -361,6 +374,7 @@ function renderSearch(root, main, s, game, u) {
   });
 
   // Countdown: zeigt die Serverzeit, schickt bei null „fertig“ und fragt nach Ablauf der Nachfrist nach.
+  if (!limited(s)) return;
   const num = main.querySelector('.rj-clock-num');
   const bar = main.querySelector('.rj-bar i');
   let shown = num.textContent;
@@ -519,7 +533,7 @@ function openEditor(root, file, s, game, u) {
     place();
   });
   sendBtn.addEventListener('click', async () => {
-    if (game.now() > s.deadline) {
+    if (limited(s) && game.now() > s.deadline) {
       close();
       return;
     }
@@ -549,7 +563,7 @@ function openEditor(root, file, s, game, u) {
     close();
     await game.send('einsenden', { id: uploaded.id, w: uploaded.width, h: uploaded.height });
     setBusy(root, u, false);
-    if (game.now() >= s.deadline) game.send('fertig');
+    if (limited(s) && game.now() >= s.deadline) game.send('fertig');
   });
 }
 
@@ -679,17 +693,26 @@ export const style = `
 
   /* ---- Zeit wählen ---- */
   .rj-lead { max-width: 40ch; }
-  .rj-times { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 3px solid var(--line); border-bottom: 1px solid var(--line); max-width: 520px; }
+  /* Feine Linien zwischen den Kacheln: Lücke von 1px auf Haarlinien-Grund */
+  .rj-times {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--hairline);
+    border-top: 3px solid var(--line); border-bottom: 1px solid var(--line); max-width: 600px;
+  }
+  @media (max-width: 440px) { .rj-times { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .rj-time {
-    display: grid; justify-items: center; gap: 2px; padding: 18px 4px 14px;
-    border: 0; border-radius: 0; background: none; color: var(--ink); cursor: pointer;
+    display: grid; justify-items: center; align-content: end; gap: 2px; padding: 18px 4px 14px;
+    border: 0; border-radius: 0; background: var(--paper); color: var(--ink); cursor: pointer;
     transition: background-color 140ms ease-out, transform 140ms cubic-bezier(.2,.8,.2,1);
   }
-  .rj-time + .rj-time { border-left: 1px solid var(--hairline); }
   .rj-time:hover { background: var(--wash); }
   .rj-time:active { transform: scale(.96); }
   .rj-time-num { font-family: var(--font-display); font-weight: 800; font-size: var(--t-4xl); line-height: .9; }
   .rj-time-unit { font-size: var(--t-sm); color: var(--muted); }
+  .rj-inf { display: block; overflow: visible; }
+  .rj-inf path { fill: none; stroke: var(--ink); stroke-width: 7; }
+  .rj-time .rj-inf { width: 62px; height: calc(var(--t-4xl) * .9); }
+  .rj-time .rj-inf-run { display: none; }
+  .rj-time.intro .rj-inf-base { stroke-dasharray: 1; stroke-dashoffset: 1; animation: rj-draw 600ms cubic-bezier(.3,.7,.2,1) calc(200ms + var(--i) * 90ms) forwards; }
   .rj-time.intro { animation: rj-rise 380ms cubic-bezier(.2,.8,.2,1) calc(var(--i) * 90ms) both; }
   .rj-rules { margin: 0; padding: 0; list-style: none; counter-reset: rj; display: grid; gap: 8px; max-width: 52ch; }
   .rj-rules li { counter-increment: rj; display: grid; grid-template-columns: 22px 1fr; gap: 8px; }
@@ -709,6 +732,12 @@ export const style = `
   .rj-bar i { display: block; height: 100%; background: var(--ink); transform-origin: left; animation: rj-bar linear both; }
   .rj-clock.over .rj-bar i { animation: none; transform: scaleX(0); }
   .rj-clock.intro { animation: rj-rise 360ms cubic-bezier(.2,.8,.2,1) both; }
+  .rj-endless .rj-clock-row { align-items: center; gap: 14px; }
+  .rj-endless .rj-inf { width: 84px; height: 42px; }
+  .rj-endless .rj-inf-base { stroke: var(--hairline); stroke-width: 5; }
+  .rj-endless .rj-inf-run { stroke-width: 7; stroke-dasharray: .2 .8; animation: rj-loop 2.8s linear infinite; }
+  .rj-endless .rj-clock-label { font-family: var(--font-display); font-weight: 800; font-size: var(--t-xl); color: var(--ink); }
+  @keyframes rj-loop { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
   @keyframes rj-bar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 
   /* ---- Eigene Einsendungen ---- */
@@ -839,7 +868,9 @@ export const style = `
 
   @media (prefers-reduced-motion: reduce) {
     .rj *, .rj *::after { animation: none !important; transition: none !important; }
-    .rj-ring path { stroke-dashoffset: 0 !important; }
+    .rj-ring path, .rj-inf-base { stroke-dashoffset: 0 !important; }
+    .rj-endless .rj-inf-run { display: none; }
+    .rj-endless .rj-inf-base { stroke: var(--ink); }
     .rj-big.leave { display: none; }
     .rj-bar i { transform: scaleX(var(--left, 1)); }
   }
