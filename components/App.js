@@ -5,19 +5,25 @@ import { account, beacon } from './api';
 import Auth from './Auth';
 import Home from './Home';
 import Room from './Room';
+import Friends from './Friends';
+import NotifySettings from './NotifySettings';
 import {
   pushSupport,
   registerServiceWorker,
   currentSubscription,
   subscribe,
   clearNotifications,
+  deviceLabel,
 } from '@/lib/push-client';
 
+// Ansicht aus der Adresse: ?raum=CODE (Spielzimmer) oder ?seite=freunde|benachrichtigungen
 const roomFromUrl = () => new URLSearchParams(location.search).get('raum');
+const pageFromUrl = () => new URLSearchParams(location.search).get('seite');
 
 export default function App() {
   const [user, setUser] = useState(undefined); // undefined = wird geprüft, null = nicht angemeldet
   const [room, setRoom] = useState(null);
+  const [page, setPage] = useState(null);
   const [toast, setToast] = useState(null);
 
   const showToast = useCallback((text) => setToast({ text, at: Date.now() }), []);
@@ -27,10 +33,14 @@ export default function App() {
     registerServiceWorker();
     clearNotifications();
     setRoom(roomFromUrl());
+    setPage(pageFromUrl());
     account({ t: 'me' })
       .then((r) => setUser(r.user))
       .catch(() => setUser(null));
-    const onPop = () => setRoom(roomFromUrl());
+    const onPop = () => {
+      setRoom(roomFromUrl());
+      setPage(pageFromUrl());
+    };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
@@ -38,11 +48,20 @@ export default function App() {
   const openRoom = useCallback((code) => {
     history.pushState(null, '', `?raum=${code}`);
     setRoom(code);
+    setPage(null);
+  }, []);
+
+  const openPage = useCallback((name) => {
+    history.pushState(null, '', `?seite=${name}`);
+    setPage(name);
+    setRoom(null);
+    window.scrollTo(0, 0);
   }, []);
 
   const goHome = useCallback(() => {
     history.pushState(null, '', location.pathname);
     setRoom(null);
+    setPage(null);
   }, []);
 
   const onUnauthorized = useCallback(() => {
@@ -55,6 +74,7 @@ export default function App() {
     await account({ t: 'logout', endpoint: endpointRef.current }).catch(() => {});
     setUser(null);
     setRoom(null);
+    setPage(null);
     history.replaceState(null, '', location.pathname);
   }, []);
 
@@ -70,10 +90,21 @@ export default function App() {
           <Auth onLogin={setUser} showToast={showToast} />
         ) : room ? (
           <Room code={room} user={user} goHome={goHome} showToast={showToast} onUnauthorized={onUnauthorized} />
+        ) : page === 'freunde' ? (
+          <Friends
+            user={user}
+            goHome={goHome}
+            openRoom={openRoom}
+            showToast={showToast}
+            onUnauthorized={onUnauthorized}
+          />
+        ) : page === 'benachrichtigungen' ? (
+          <NotifySettings goHome={goHome} showToast={showToast} push={push} onUnauthorized={onUnauthorized} />
         ) : (
           <Home
             user={user}
             openRoom={openRoom}
+            openPage={openPage}
             showToast={showToast}
             push={push}
             onLogout={logout}
@@ -104,8 +135,14 @@ function usePushDevice(view, loggedIn, showToast) {
     currentSubscription()
       .then(async (sub) => {
         if (!sub || cancelled) return;
-        await account({ t: 'push-subscribe', subscription: sub.toJSON(), view: viewRef.current });
-        if (!cancelled) setEndpoint(sub.endpoint);
+        const r = await account({
+          t: 'push-subscribe',
+          subscription: sub.toJSON(),
+          view: viewRef.current,
+          label: deviceLabel(),
+        });
+        // enabled false: in der Geräteliste entfernt, bleibt aus, bis man hier wieder einschaltet
+        if (!cancelled && r.enabled !== false) setEndpoint(sub.endpoint);
       })
       .catch((err) => console.error('Benachrichtigungen:', err));
     return () => {
@@ -142,7 +179,13 @@ function usePushDevice(view, loggedIn, showToast) {
     try {
       const sub = await subscribe(); // fragt nach der Erlaubnis
       if (!sub) return setSupport(pushSupport());
-      await account({ t: 'push-subscribe', subscription: sub.toJSON(), view: viewRef.current });
+      await account({
+        t: 'push-subscribe',
+        subscription: sub.toJSON(),
+        view: viewRef.current,
+        label: deviceLabel(),
+        explicit: true,
+      });
       setEndpoint(sub.endpoint);
     } catch (err) {
       showToast(`Benachrichtigungen gehen gerade nicht: ${err.message}`);

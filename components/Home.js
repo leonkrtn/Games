@@ -6,12 +6,25 @@ import { getSupabase } from '@/lib/supabase-browser';
 import { isIos, isStandalone } from '@/lib/push-client';
 import { storage } from './api';
 
-const COLORS = ['var(--p1)', 'var(--p2)'];
+export const COLORS = ['var(--p1)', 'var(--p2)'];
 
-// Startseite nach dem Anmelden: Freunde (mit Punkten und wer dran ist), Anfragen, Freund hinzufügen.
-export default function Home({ user, openRoom, showToast, push, onLogout, onUnauthorized }) {
+// Zahlen im Text als Wort (die Textschrift hat eine durchgestrichene Null)
+const WORDS = ['keine', 'eine', 'zwei', 'drei', 'vier', 'fünf', 'sechs', 'sieben', 'acht', 'neun', 'zehn', 'elf', 'zwölf'];
+export const countWord = (n) => WORDS[n] ?? String(n);
+
+// "1. Oktober", in einem anderen Jahr mit Jahreszahl
+export function formatDay(iso) {
+  const d = new Date(iso);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString('de-DE', { day: 'numeric', month: 'long', ...(sameYear ? {} : { year: 'numeric' }) });
+}
+
+/**
+ * Freunde, Anfragen und Einladungscode (für Startseite und Freunde-Seite), live aktuell gehalten.
+ * act(msg) schickt eine Konto-Anfrage, zeigt deren Meldung und lädt danach neu.
+ */
+export function useHomeData(user, showToast, onUnauthorized) {
   const [data, setData] = useState(null);
-  const inviteHandled = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -42,6 +55,41 @@ export default function Home({ user, openRoom, showToast, push, onLogout, onUnau
     };
   }, [load, user.id]);
 
+  const act = useCallback(
+    async (msg) => {
+      try {
+        const r = await account(msg);
+        if (r.message) showToast(r.message);
+        await load();
+        return true;
+      } catch (err) {
+        showToast(err.message);
+        return false;
+      }
+    },
+    [load, showToast],
+  );
+
+  return { data, load, act };
+}
+
+// Einladungslink über das Teilen-Menü schicken (oder kopieren, wo es das nicht gibt)
+export async function shareInvite(inviteCode, showToast) {
+  const url = `${location.origin}/?einladung=${inviteCode}`;
+  try {
+    if (navigator.share) return await navigator.share({ title: 'Spielzimmer', text: 'Spiel mit mir im Spielzimmer.', url });
+    await navigator.clipboard.writeText(url);
+    showToast('Einladungslink kopiert.');
+  } catch (err) {
+    if (err?.name !== 'AbortError') prompt('Diesen Link schicken:', url);
+  }
+}
+
+// Startseite nach dem Anmelden: Freunde (mit Punkten und wer dran ist), Anfragen, Menü.
+export default function Home({ user, openRoom, openPage, showToast, push, onLogout, onUnauthorized }) {
+  const { data, load, act } = useHomeData(user, showToast, onUnauthorized);
+  const inviteHandled = useRef(false);
+
   // Über einen Einladungslink gekommen: sofort befreundet.
   useEffect(() => {
     const code = new URLSearchParams(location.search).get('einladung');
@@ -55,30 +103,6 @@ export default function Home({ user, openRoom, showToast, push, onLogout, onUnau
       })
       .catch((err) => showToast(err.message));
   }, [load, showToast]);
-
-  const act = async (msg) => {
-    try {
-      const r = await account(msg);
-      if (r.message) showToast(r.message);
-      await load();
-      return true;
-    } catch (err) {
-      showToast(err.message);
-      return false;
-    }
-  };
-
-  const shareInvite = async () => {
-    const url = `${location.origin}/?einladung=${data.inviteCode}`;
-    try {
-      if (navigator.share)
-        return await navigator.share({ title: 'Spielzimmer', text: 'Spiel mit mir im Spielzimmer.', url });
-      await navigator.clipboard.writeText(url);
-      showToast('Einladungslink kopiert.');
-    } catch (err) {
-      if (err?.name !== 'AbortError') prompt('Diesen Link schicken:', url);
-    }
-  };
 
   return (
     <div className="home">
@@ -115,9 +139,12 @@ export default function Home({ user, openRoom, showToast, push, onLogout, onUnau
         {!data ? (
           <p className="muted">Lädt …</p>
         ) : data.friends.length === 0 ? (
-          <p className="empty">
-            Noch niemand da. Füge unten jemanden über den Benutzernamen hinzu oder schick deinen Einladungslink.
-          </p>
+          <div className="empty">
+            <p>Noch niemand da. Füge jemanden über den Benutzernamen hinzu oder schick deinen Einladungslink.</p>
+            <button className="btn primary" id="first-friend" onClick={() => openPage('freunde')}>
+              Freund hinzufügen
+            </button>
+          </div>
         ) : (
           <ul className="friend-list">
             {data.friends.map((f) => (
@@ -129,12 +156,11 @@ export default function Home({ user, openRoom, showToast, push, onLogout, onUnau
         )}
       </section>
 
-      <AddFriend data={data} act={act} shareInvite={shareInvite} />
+      <Menu data={data} push={push} openPage={openPage} />
 
       <InstallHint />
 
       <footer className="home-foot">
-        <Notifications push={push} />
         <p>
           Angemeldet als <strong>{user.name}</strong>.{' '}
           <button className="link" id="logout" onClick={onLogout}>
@@ -195,83 +221,32 @@ function FriendRow({ friend, me, onOpen }) {
   );
 }
 
-function AddFriend({ data, act, shareInvite }) {
-  const [name, setName] = useState('');
-  const submit = async (e) => {
-    e.preventDefault();
-    if (await act({ t: 'friend-add', username: name })) setName('');
-  };
+// Wege zu den Einstellungen, mit dem wichtigsten Stand in einer Zeile
+function Menu({ data, push, openPage }) {
+  // Anfragen an mich stehen schon oben auf der Startseite, hier nur die eigenen offenen
+  const waiting = data?.outgoing.length ?? 0;
+  const friends = waiting
+    ? `${countWord(waiting)} ${waiting === 1 ? 'Anfrage wartet' : 'Anfragen warten'} auf Antwort`
+    : 'Hinzufügen, einladen, entfernen';
+  const notify = {
+    ok: push.endpoint ? 'Auf diesem Gerät an' : 'Auf diesem Gerät aus',
+    'ios-browser': 'Nur in der App vom Home-Bildschirm',
+    denied: 'Auf diesem Gerät blockiert',
+    unsupported: 'Kann dieser Browser nicht',
+  }[push.support];
   return (
-    <section className="add-friend">
-      <h2 className="section-title">Freund hinzufügen</h2>
-      <form onSubmit={submit} className="add-form">
-        <label htmlFor="friend-name">Benutzername</label>
-        <div className="row nowrap">
-          <input
-            id="friend-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            maxLength={20}
-            required
-            enterKeyHint="send"
-          />
-          <button className="btn" id="friend-add">
-            Senden
-          </button>
-        </div>
-      </form>
-      <p className="invite">
-        Oder schick deinen Einladungslink. Wer ihn öffnet, ist sofort mit dir befreundet.{' '}
-        <button className="link" id="invite" onClick={shareInvite} disabled={!data}>
-          Einladungslink teilen
+    <nav className="menu" aria-label="Einstellungen">
+      <button className="menu-row" id="menu-friends" onClick={() => openPage('freunde')}>
+        <span className="menu-title">Freunde verwalten</span>
+        <span className="menu-status">{friends}</span>
+      </button>
+      {notify && (
+        <button className="menu-row" id="menu-notify" onClick={() => openPage('benachrichtigungen')}>
+          <span className="menu-title">Benachrichtigungen</span>
+          <span className="menu-status">{notify}</span>
         </button>
-      </p>
-      {data?.outgoing.length > 0 && (
-        <ul className="rows outgoing">
-          {data.outgoing.map((r) => (
-            <li key={r.id}>
-              Wartet auf <strong>{r.user.name}</strong>.{' '}
-              <button className="link" onClick={() => act({ t: 'friend-remove', id: r.id })}>
-                Zurückziehen
-              </button>
-            </li>
-          ))}
-        </ul>
       )}
-    </section>
-  );
-}
-
-function Notifications({ push }) {
-  const { support, endpoint, busy, turnOn, turnOff } = push;
-  if (support === 'off' || support === 'unsupported') return null;
-  return (
-    <div className="notify" id="notify">
-      {support === 'ios-browser' && (
-        <p className="muted">Benachrichtigungen gibt es auf dem iPhone nur in der App vom Home-Bildschirm.</p>
-      )}
-      {support === 'denied' && (
-        <p className="muted">
-          Benachrichtigungen sind für das Spielzimmer blockiert. Du kannst sie in den Einstellungen erlauben.
-        </p>
-      )}
-      {support === 'ok' &&
-        (endpoint ? (
-          <p>
-            Benachrichtigungen sind an.{' '}
-            <button className="link" id="notify-off" disabled={busy} onClick={turnOff}>
-              Ausschalten
-            </button>
-          </p>
-        ) : (
-          <button className="link" id="notify-on" disabled={busy} onClick={turnOn}>
-            Benachrichtigen, wenn ich dran bin
-          </button>
-        ))}
-    </div>
+    </nav>
   );
 }
 

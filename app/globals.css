@@ -445,11 +445,6 @@ textarea:focus {
   color: var(--muted);
   margin-top: 4px;
 }
-.notify {
-  font-size: var(--t-sm);
-  max-width: 52ch;
-}
-
 
 .section-title {
   font-family: var(--font-display);
@@ -721,14 +716,6 @@ textarea:focus {
 .add-form .row {
   max-width: 480px;
 }
-.invite {
-  margin-top: 16px;
-  max-width: 52ch;
-}
-.outgoing {
-  margin-top: 16px;
-  font-size: var(--t-sm);
-}
 
 .home-foot {
   border-top: 1px solid var(--hairline);
@@ -737,8 +724,181 @@ textarea:focus {
   gap: 10px;
   font-size: var(--t-sm);
 }
-.home-foot .notify {
+
+/* Menü auf der Startseite: Wege zu den Einstellungen */
+.menu {
+  border-top: 2px solid var(--line);
+}
+.menu-row {
+  appearance: none;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: 'title arrow' 'status arrow';
+  gap: 2px 16px;
+  align-items: center;
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  padding: 14px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+.menu-row:hover {
+  background: var(--wash);
+}
+.menu-row::after {
+  content: '\2192';
+  grid-area: arrow;
+  font-weight: 700;
+  font-size: var(--t-lg);
+}
+.menu-title {
+  grid-area: title;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--t-lg);
+  line-height: 1.05;
+}
+.menu-status {
+  grid-area: status;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+.empty .btn {
+  margin-top: 14px;
+}
+
+/* ---------- Unterseiten: Freunde, Benachrichtigungen ---------- */
+
+.page {
+  max-width: 720px;
+  display: grid;
+  gap: 36px;
+}
+.page-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  /* „Benachrichtigungen“ muss auch auf schmalen Handys in eine Zeile passen */
+  font-size: clamp(var(--t-xl), 10vw, var(--t-3xl));
+  line-height: 1;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+.page-intro {
+  color: var(--muted);
+  max-width: 52ch;
+  margin-bottom: 12px;
+}
+.page fieldset {
+  border: 0;
   margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.page legend {
+  padding: 0;
+}
+.manage-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px 16px;
+}
+.manage-meta {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+.tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 6px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  font-size: var(--t-sm);
+  font-weight: 700;
+  vertical-align: 0.1em;
+}
+.device-state {
+  display: grid;
+  gap: 12px;
+}
+
+/* Ankreuzen: ganze Zeile tippbar, eckiges Kästchen */
+.checks {
+  border-top: 2px solid var(--line);
+}
+.check {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  align-items: start;
+  margin: 0 -8px;
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: var(--t-base);
+  font-weight: 400;
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+.check:hover {
+  background: var(--wash);
+}
+.check input {
+  appearance: none;
+  -webkit-appearance: none;
+  display: grid;
+  place-content: center;
+  width: 24px;
+  height: 24px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+.check input::after {
+  content: '';
+  width: 12px;
+  height: 7px;
+  border-left: 3px solid var(--paper);
+  border-bottom: 3px solid var(--paper);
+  transform: translateY(-2px) rotate(-45deg);
+  opacity: 0;
+}
+.check input:checked {
+  background: var(--ink);
+}
+.check input:checked::after {
+  opacity: 1;
+}
+.check input:focus {
+  box-shadow: none;
+}
+.check input:focus-visible {
+  box-shadow:
+    0 0 0 2px var(--paper),
+    0 0 0 4px var(--ink);
+}
+.check-title {
+  display: block;
+  font-weight: 700;
+}
+.check-hint {
+  display: block;
+  color: var(--muted);
+  font-size: var(--t-sm);
 }
 
 .back {
