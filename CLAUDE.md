@@ -40,6 +40,7 @@ Wenn der Nutzer ein Spiel beschreibt: neue Datei `games/<kurzer-name>.js` anlege
 - `kennst-du-mich.js`: Phasen, Texteingaben per Formular, geheime Antwort
 - `racker-jagd.js`: Bilder hochladen mit Zuschnitt, Zeitlimit (`tick`, `game.now`), eigene Benachrichtigungen (`notices`), lokaler Zustand, der neues Zeichnen übersteht
 - `qwixx.js`: Einstellungen in der Lobby (`meta.options`), 3D-Würfel, vorläufige Eingaben mit Bestätigen, Bereiche, die nur bei Änderung neu gezeichnet werden
+- `auf-die-nuesse.js`: Live-Wettlauf trotz Netz-Verzögerung (Tempo-Grenze auf dem Server, mehrere Tipper pro Anfrage, `tick` springt für Abwesende ein), Dinge, die zwischen Bereichen fliegen
 
 Die Datei läuft **sowohl auf dem Server als auch im Browser** und wird von Next.js gebündelt: keine `import`s von Node-Modulen oder npm-Paketen, kein React, keine Browser-Globals außerhalb von `render`.
 
