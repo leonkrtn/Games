@@ -111,6 +111,7 @@ Was jedes Spiel haben soll:
 - **Rückmeldung auf Eingaben**: Vorschau beim Darüberfahren (z.B. blasses eigenes Zeichen), spürbarer Druck beim Tippen (`:active` mit `scale(.96)`), klare Zustände für „nicht dran“.
 - **Die Spielerfarben als Bühne**: Rot und Schwarz tragen die Bewegung; Flächen und Hervorhebungen über `color-mix(in srgb, <Spielerfarbe> 12%, white)`.
 - Eigene Illustration statt Standardformen: SVG mit Charakter (z.B. Spielsteine mit Kante, Papier-Anmutung, Karten mit Rahmen). Keine Emojis, keine Clipart.
+- **Zeichnungen und Abbildungen mit viel Aufwand erstellen und dafür den Skill `zeichnen` nutzen** (`.claude/skills/zeichnen/SKILL.md`): vor jeder Zeichnung laden, Silhouette, Ebenen und Details nach seinem Ablauf, mindestens zwei Überarbeitungsrunden mit der Vorschau (`node .claude/skills/zeichnen/vorschau.mjs`, zeigt jede Zeichnung in mehreren Größen und in Graustufen). Das gilt auch, wenn eine bestehende Zeichnung verbessert wird.
 
 Technik:
 - **Nur animieren, was sich geändert hat**: `game.prev` ist der Stand vor der Änderung (null beim ersten Zeichnen einer Partie), `game.first` ist `true` beim ersten Zeichnen. Neue Elemente bekommen eine Klasse (z.B. `enter`), deren CSS-Animation beim Einfügen startet. Vorbild: `games/tic-tac-toe.js`.
