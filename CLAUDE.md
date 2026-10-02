@@ -6,6 +6,8 @@ Kleine Web-Plattform, um selbst erfundene Spiele mit Freunden live gegeneinander
 
 Änderungen immer direkt auf `master` committen und pushen (Vercel stellt `master` automatisch online). Keine Feature-Branches und keine Pull Requests, außer der Nutzer bittet ausdrücklich darum. Vor dem Push `npm run check` und `npm run build` laufen lassen.
 
+**Wissen festhalten.** Jede neue Methode und jede Erkenntnis (wie man etwas baut oder testet, welche Falle es gab und wie man sie umgeht) gleich mitschreiben, im selben Commit: kurze Regeln hier in `CLAUDE.md`, ausführliche Abläufe als Skill in `.claude/skills/<name>/SKILL.md`. Findet sich eine bessere Methode, den alten Eintrag ersetzen statt einen zweiten danebenzustellen. Vorhandene Skills: `zeichnen` (Zeichnungen und Abbildungen), `spiel-testen` (Logik simulieren, mit zwei Konten im Browser spielen, Finger-Gesten prüfen).
+
 **Datenbank nur über Migrationen ändern.** Jede Änderung am Schema ist eine neue Datei in `supabase/migrations/` (anlegen mit `npm run migration -- kurze-beschreibung`, Name `JJJJMMTTHHMMSS_beschreibung.sql`). Bereits vorhandene Migrationen nie bearbeiten, auch nicht für Korrekturen: dafür eine weitere Migration schreiben. Neue Tabellen mit `enable row level security` (ohne Policies). Der Production-Build führt fehlende Migrationen automatisch aus (`scripts/migrate.js`, braucht `DATABASE_URL`); es gibt keine `schema.sql` mehr zum Einfügen. Nach einer Schema-Änderung auch `lib/store/memory.js` anpassen, damit der lokale Testmodus gleich funktioniert. Keine Befehle, die nicht in einer Transaktion laufen (z.B. `create index concurrently`).
 
 ## Aufbau
@@ -42,7 +44,7 @@ Wenn der Nutzer ein Spiel beschreibt: neue Datei `games/<kurzer-name>.js` anlege
 - `qwixx.js`: Einstellungen in der Lobby (`meta.options`), 3D-Würfel, vorläufige Eingaben mit Bestätigen, Bereiche, die nur bei Änderung neu gezeichnet werden
 - `auf-die-nuesse.js`: Live-Wettlauf trotz Netz-Verzögerung (Tempo-Grenze auf dem Server, mehrere Tipper pro Anfrage, `tick` springt für Abwesende ein), Dinge, die zwischen Bereichen fliegen
 - `flip-7.js`: Kartenstapel, der in `view` geheim bleibt, Ereignisliste im `state`, damit mehrere Schritte eines Zuges nacheinander animiert werden, Karten, die vom Stapel kommen und sich umdrehen
-- `schiffe-versenken.js`: geheime Aufstellung als lokaler Entwurf (Schiffe setzen, drehen, Vorschau), den erst „Bereit“ abschickt, Figuren auf einem Raster über `--x`/`--y` und `transform`, zwei Spielfelder, die per FLIP den Platz tauschen, Treffer erst nach dem Einschlag zeigen
+- `schiffe-versenken.js`: geheime Aufstellung als lokaler Entwurf (Schiffe setzen, drehen, Vorschau), den erst „Bereit“ abschickt, **Ziehen mit dem Finger** (`startDrag`), Figuren auf einem Raster über `--x`/`--y` und `transform`, zwei Spielfelder, die per FLIP den Platz tauschen, Treffer erst nach dem Einschlag zeigen
 
 Die Datei läuft **sowohl auf dem Server als auch im Browser** und wird von Next.js gebündelt: keine `import`s von Node-Modulen oder npm-Paketen, kein React, keine Browser-Globals außerhalb von `render`.
 
@@ -95,6 +97,7 @@ Regeln und Tipps:
 - Texte von Spielern und Spielernamen in `render` immer mit `game.esc()` einsetzen.
 - Klicks: `<button data-action="typ" data-value="3">` sendet automatisch `send('typ', 3)` (`data-value` wird als JSON gelesen, sonst als Text). Formulare: `<form data-action="typ">` mit `<input name="x">` sendet `{ x: '...' }`.
 - Rein lokale Interaktion (z.B. Vorschlag in ein Feld schreiben) per `el.querySelector(...).addEventListener` nach dem Setzen von `innerHTML`.
+- **Ziehen mit dem Finger** (Spielsteine, Schiffe, Karten verschieben): Auf dem Handy scrollt sonst die Seite, statt dass sich das Stück bewegt. Deshalb nur die ziehbaren Stücke selbst mit `touch-action: none` (dazu `user-select: none`, `-webkit-touch-callout: none`, bei Ebenen mit `pointer-events: none` das Stück wieder auf `auto`), nie das ganze Spielfeld: Wischen daneben muss die Seite weiter scrollen. Mit Pointer Events arbeiten: `pointerdown` auf dem Stück, `pointermove`/`pointerup`/`pointercancel` am `window` (übersteht, dass `render` neu zeichnet; an `game.signal` hängen). Erst ab etwa sechs Pixeln Weg ist es Ziehen, sonst ein Tippen; den `click` direkt nach einem Ziehen ignorieren. Das Stück folgt dem Finger über eine Verschiebung in `transform` (CSS-Variablen `--dx`/`--dy`, `transition: none` während des Ziehens), eine Markierung zeigt, wo es einrasten würde, beim Loslassen gleitet es auf das Feld oder zurück. Tippen als zweiter Weg bleibt (Tastatur, Barrierefreiheit). Vorbild: `startDrag` in `games/schiffe-versenken.js`; testen mit `touchDrag` aus dem Skill `spiel-testen`.
 - Auf Handy-Breite (360px) muss alles passen, ohne seitliches Scrollen.
 - Das Ergebnis-Banner mit „Nochmal“/„Anderes Spiel“ zeigt die Plattform selbst an.
 - Ein Zug dauert einen Server-Aufruf plus eine Realtime-Nachricht (einige hundert Millisekunden): gut für Runden- und Rate-Spiele, nicht für Reaktions- oder Echtzeit-Action.
@@ -141,3 +144,4 @@ Vorbild ist ein gedruckter Spielblock: weißes Papier, schwarze Schrift, Linien 
 - `npm run check`: lädt alle Spiele, ruft `setup` und `view` auf und prüft, ob der Zustand verschickt werden kann.
 - `npm run build`: muss fehlerfrei durchlaufen (Vercel baut genauso).
 - `npm run dev` ohne `.env.local` startet den Testmodus ohne Supabase (Konten und Räume nur im Arbeitsspeicher). Zum Spielen zwei Konten in zwei getrennten Browser-Profilen bzw. einem privaten Fenster anlegen und befreunden. Nach dem Anlegen einer neuen Spieldatei `npm run dev` neu starten.
+- Gründlich testen (Simulation vieler Partien, zwei Konten im Browser per Playwright, Finger-Gesten): Skill `spiel-testen`. Für automatische Tests `npm run build` und `npx next start` statt `npm run dev`, denn `next dev` hängt einen Block an diese Datei an.

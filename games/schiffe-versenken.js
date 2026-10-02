@@ -354,7 +354,7 @@ const ui = new WeakMap();
 function local(el, game) {
   let u = ui.get(el);
   if (!u || u.signal !== game.signal) {
-    u = { signal: game.signal, ctrl: null, layout: {}, layoutSeq: -1, sel: null, hover: null, big: null, log: '' };
+    u = { signal: game.signal, ctrl: null, layout: {}, layoutSeq: -1, sel: null, hover: null, big: null, drag: null, dragEnd: 0, paint: null };
     ui.set(el, u);
     game.signal.addEventListener('abort', () => u.ctrl?.abort());
   }
@@ -399,6 +399,7 @@ export function render(el, s, game) {
   const placing = s.phase === 'aufstellen';
 
   root.classList.toggle('placing', placing);
+  root.classList.toggle('editing', placing && !s.ready[me]);
   q('.sv-status').innerHTML = statusHTML(s, game);
   attack.querySelector('.sv-title').innerHTML = `${marker(game, them)} Meer von ${game.esc(game.name(them))}`;
   defense.querySelector('.sv-title').innerHTML = `${marker(game, me)} Deine Flotte`;
@@ -412,6 +413,7 @@ export function render(el, s, game) {
     fleetStatus(defense, s.defense.sunk, s.phase !== 'aufstellen', game);
     q('.sv-dock').innerHTML = placing ? dockHTML(s, game, u) : '';
   };
+  u.paint = paint; // das Ziehen kann länger dauern als dieser render()-Aufruf
   paint();
 
   const logText = logHTML(s, game);
@@ -464,8 +466,9 @@ export function render(el, s, game) {
   // Aufstellen: Schiff wählen, setzen, drehen (nur lokal, erst „Bereit“ schickt es ab)
   if (placing && !s.ready[me]) {
     root.addEventListener('click', (e) => onPlaceClick(e, root, s, game, u, paint), { signal });
+    root.addEventListener('pointerdown', (e) => startDrag(e, root, game, u, () => u.paint()), { signal });
     defense.querySelector('.sv-cells').addEventListener('pointerover', (e) => {
-      if (e.pointerType !== 'mouse') return; // Vorschau nur mit Maus, beim Tippen stört sie
+      if (e.pointerType !== 'mouse' || u.drag) return; // Vorschau nur mit Maus, beim Tippen stört sie
       const cell = e.target.closest('[data-i]');
       u.hover = cell ? Number(cell.dataset.i) : null;
       ghost(defense, u);
@@ -630,11 +633,11 @@ function dockHTML(s, game, u) {
   const value = game.esc(JSON.stringify({ layout: u.layout }));
   const hint = u.sel
     ? u.layout[u.sel]
-      ? `${SHIP[u.sel].name}: Nochmal antippen dreht es, ein freies Feld verschiebt es.`
-      : `${SHIP[u.sel].name}: Tippe auf das Feld für den Bug.`
+      ? `${SHIP[u.sel].name}: Nochmal antippen dreht es, Ziehen verschiebt es.`
+      : `${SHIP[u.sel].name}: Tippe auf das Feld für den Bug oder zieh es ins Meer.`
     : harbor.length
-      ? 'Tippe ein Schiff im Hafen an und dann ein Feld im Meer.'
-      : 'Alle Schiffe stehen. Zum Ändern ein Schiff antippen.';
+      ? 'Zieh ein Schiff aus dem Hafen ins Meer oder tippe es an und dann ein Feld.'
+      : 'Alle Schiffe stehen. Zum Ändern ein Schiff ziehen oder antippen.';
   return `${harbor.length ? `<div class="sv-harbor" aria-label="Hafen">
       ${harbor.map((f) => `<button type="button" class="sv-dockship ${u.sel === f.id ? 'sel' : ''}" data-dock="${f.id}" style="--n:${f.size}" aria-label="${f.name} setzen">${ART[f.art]}</button>`).join('')}
     </div>` : ''}
@@ -647,16 +650,18 @@ function dockHTML(s, game, u) {
 }
 
 function onPlaceClick(e, root, s, game, u, paint) {
+  if (performance.now() - u.dragEnd < 400) return; // das war ein Ziehen, kein Tippen
   const dock = e.target.closest('[data-dock]');
   if (dock) {
     u.sel = u.sel === dock.dataset.dock ? null : dock.dataset.dock;
     paint();
     return;
   }
-  const cell = e.target.closest('[data-board="defense"] .sv-cell');
-  if (!cell) return;
-  const i = Number(cell.dataset.i);
-  const owner = occupiedBy(u.layout).get(i);
+  const shipEl = e.target.closest('[data-board="defense"] .sv-ships [data-ship]');
+  const cell = shipEl ? null : e.target.closest('[data-board="defense"] .sv-cell');
+  if (!shipEl && !cell) return;
+  const i = cell ? Number(cell.dataset.i) : null;
+  const owner = shipEl ? shipEl.dataset.ship : occupiedBy(u.layout).get(i);
   const board = root.querySelector('[data-board="defense"]');
   let from = null;
   if (owner && owner === u.sel) {
@@ -679,6 +684,143 @@ function onPlaceClick(e, root, s, game, u, paint) {
   paint();
   ghost(board, u);
   if (from && !game.reducedMotion) sail(board, u.sel, from, u.layout[u.sel].v);
+}
+
+// Ziehen mit Finger oder Maus: ein Schiff im Hafen oder auf dem Meer greifen und auf ein Feld legen.
+// Nur die Schiffe selbst haben touch-action: none (CSS), daneben scrollt die Seite wie gewohnt.
+// Erst ab ein paar Pixeln Weg ist es Ziehen; sonst bleibt es ein Tippen (onPlaceClick).
+// Bewegung und Loslassen hören am window mit, damit das Ziehen auch übersteht, dass render() neu zeichnet.
+function startDrag(e, root, game, u, paint) {
+  if (e.button > 0 || u.drag) return;
+  const board = root.querySelector('[data-board="defense"]');
+  const shipEl = e.target.closest('[data-board="defense"] .sv-ships [data-ship]');
+  const dockEl = shipEl ? null : e.target.closest('[data-dock]');
+  if (!shipEl && !dockEl) return;
+  const id = shipEl ? shipEl.dataset.ship : dockEl.dataset.dock;
+  const sea = board.querySelector('.sv-sea');
+  const g = seaGeo(sea);
+  const onSea = Boolean(shipEl);
+  const v = onSea ? u.layout[id].v : false;
+  // Griff: wo der Finger relativ zur linken oberen Ecke des Bugfelds sitzt (Meer-Pixel)
+  let grab;
+  if (onSea) {
+    const pt = g.at(e);
+    grab = { x: pt.x - u.layout[id].x * g.c, y: pt.y - u.layout[id].y * g.c };
+  } else {
+    const r = dockEl.getBoundingClientRect();
+    const k = Math.min(SHIP[id].size - 1, Math.max(0, Math.floor(((e.clientX - r.left) / r.width) * SHIP[id].size)));
+    grab = { x: (k + 0.5) * g.c, y: g.c / 2 };
+  }
+  const d = { id, pointer: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false, node: null, target: null, ctrl: new AbortController() };
+  u.drag = d;
+  const stop = () => d.ctrl.abort();
+  game.signal.addEventListener('abort', stop, { once: true });
+  const opts = { signal: d.ctrl.signal };
+  const base = () => (onSea ? u.layout[id] : { x: 0, y: 0 });
+
+  const follow = (ev) => {
+    const geo = seaGeo(sea);
+    const pt = geo.at(ev);
+    const left = pt.x - grab.x;
+    const top = pt.y - grab.y;
+    d.node.style.setProperty('--dx', `${left - base().x * geo.c}px`);
+    d.node.style.setProperty('--dy', `${top - base().y * geo.c}px`);
+    const over = pt.x > -geo.c && pt.y > -geo.c && pt.x < geo.w + geo.c && pt.y < geo.w + geo.c;
+    d.target = over ? { x: Math.round(left / geo.c), y: Math.round(top / geo.c), v } : null;
+    target(board, id, d.target, d.target && problem({ ...u.layout, [id]: d.target }, false));
+  };
+  const begin = () => {
+    d.moved = true;
+    u.hover = null;
+    ghost(board, u);
+    if (onSea) {
+      d.node = board.querySelector(`.sv-ships [data-ship="${id}"]`);
+    } else {
+      // Aus dem Hafen: ein Schiff in Spielgröße folgt dem Finger, der Platz im Hafen bleibt blass zurück
+      d.node = document.createElement('div');
+      d.node.className = 'sv-ship sv-float';
+      d.node.style.cssText = `--x:0;--y:0;--n:${SHIP[id].size};--r:0deg`;
+      d.node.innerHTML = ART[SHIP[id].art];
+      board.querySelector('.sv-fx').append(d.node);
+      root.querySelector(`[data-dock="${id}"]`)?.classList.add('lifted');
+    }
+    d.node.classList.add('dragging');
+  };
+  const end = (ev, cancel) => {
+    if (ev.pointerId !== d.pointer) return;
+    stop();
+    game.signal.removeEventListener('abort', stop);
+    u.drag = null;
+    target(board, id, null);
+    if (!d.moved) return; // nur getippt
+    u.dragEnd = performance.now();
+    const geo = seaGeo(sea);
+    const node = board.querySelector(`.sv-ships [data-ship="${id}"]`) ?? d.node; // falls neu gezeichnet wurde
+    const dx = parseFloat(d.node.style.getPropertyValue('--dx')) || 0;
+    const dy = parseFloat(d.node.style.getPropertyValue('--dy')) || 0;
+    const now = { left: base().x * geo.c + dx, top: base().y * geo.c + dy }; // wo es gerade schwebt
+    const ok = !cancel && d.target && !problem({ ...u.layout, [id]: d.target }, false);
+    if (!onSea) d.node.remove();
+    if (ok) {
+      u.layout = { ...u.layout, [id]: d.target };
+      u.sel = id;
+      paint();
+      settle(board.querySelector(`.sv-ships [data-ship="${id}"]`), now.left - d.target.x * geo.c, now.top - d.target.y * geo.c);
+    } else if (onSea && !cancel && !d.target) {
+      // Neben dem Meer losgelassen: zurück in den Hafen
+      const { [id]: _, ...rest } = u.layout;
+      u.layout = rest;
+      u.sel = null;
+      paint();
+    } else {
+      if (onSea) settle(node, dx, dy); // gleitet zurück an seinen Platz
+      else paint();
+      if (d.target) nope(board, id, game);
+    }
+  };
+  window.addEventListener('pointermove', (ev) => {
+    if (ev.pointerId !== d.pointer) return;
+    if (!d.moved) {
+      if (Math.hypot(ev.clientX - d.x0, ev.clientY - d.y0) < 6) return;
+      begin();
+    }
+    ev.preventDefault();
+    follow(ev);
+  }, opts);
+  window.addEventListener('pointerup', (ev) => end(ev, false), opts);
+  window.addEventListener('pointercancel', (ev) => end(ev, true), opts);
+}
+
+// Meer-Koordinaten: Pixel ab der Innenkante des Meeres, c = Feldgröße
+function seaGeo(sea) {
+  const r = sea.getBoundingClientRect();
+  const w = sea.clientWidth;
+  return { c: w / N, w, at: (ev) => ({ x: ev.clientX - r.left - sea.clientLeft, y: ev.clientY - r.top - sea.clientTop }) };
+}
+
+// Schiff von einer Verschiebung (px) aus an seinen Platz gleiten lassen
+function settle(node, dx, dy) {
+  if (!node) return;
+  node.classList.add('dragging'); // ohne Übergang auf den Startpunkt setzen
+  node.style.setProperty('--dx', `${dx}px`);
+  node.style.setProperty('--dy', `${dy}px`);
+  node.getBoundingClientRect();
+  node.classList.remove('dragging', 'drop');
+  node.style.setProperty('--dx', '0px');
+  node.style.setProperty('--dy', '0px');
+}
+
+// Beim Ziehen: die Felder, auf denen das Schiff landen würde (unter dem Schiff, damit der Finger nichts verdeckt)
+function target(board, id, p, bad) {
+  const layer = board.querySelector('.sv-calm');
+  let n = layer.querySelector('.sv-target');
+  if (!p) return n?.remove();
+  if (!n) {
+    n = document.createElement('div');
+    layer.append(n);
+  }
+  n.className = `sv-target ${bad ? 'bad' : ''}`;
+  n.style.cssText = `--x:${p.x};--y:${p.y};--n:${SHIP[id].size};--r:${p.v ? '90deg' : '0deg'}`;
 }
 
 // Ein Schiff gleitet aus dem Hafen auf sein Feld (FLIP am inneren SVG, das Schiff selbst ist gedreht).
@@ -870,9 +1012,23 @@ export const style = `
   .sv-ship {
     width: calc(var(--n) * var(--c));
     transform-origin: calc(var(--c) / 2) calc(var(--c) / 2);
-    transform: translate(calc(var(--x) * var(--c)), calc(var(--y) * var(--c))) rotate(var(--r));
+    --dx: 0px; --dy: 0px; /* Verschiebung beim Ziehen */
+    transform: translate(calc(var(--x) * var(--c) + var(--dx)), calc(var(--y) * var(--c) + var(--dy))) rotate(var(--r));
     transition: transform 260ms cubic-bezier(.2,.8,.2,1), opacity 300ms ease-out;
   }
+  /* Ziehen: nur die Schiffe fangen den Finger (touch-action: none), daneben scrollt die Seite */
+  .sv.editing [data-board="defense"] .sv-ships .sv-ship, .sv-dockship {
+    pointer-events: auto; touch-action: none; cursor: grab;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  .sv-ship.dragging { z-index: 2; transition: none; cursor: grabbing; }
+  .sv-ship.dragging svg { transform: scale(1.06); transition: transform 140ms cubic-bezier(.2,.8,.2,1); }
+  .sv-dockship.lifted { opacity: .25; }
+  .sv-target { position: absolute; left: 0; top: 0; width: calc(var(--n) * var(--c)); height: var(--c);
+    transform-origin: calc(var(--c) / 2) calc(var(--c) / 2);
+    transform: translate(calc(var(--x) * var(--c)), calc(var(--y) * var(--c))) rotate(var(--r));
+    border: 2px solid var(--ink); border-radius: var(--radius); background: color-mix(in srgb, var(--ink) 8%, white); }
+  .sv-target.bad { border: 2px dashed var(--bad); background: color-mix(in srgb, var(--bad) 10%, white); }
   .sv-ship svg { display: block; width: 100%; height: 100%; }
   .sv-ship.sel { outline: 2px solid var(--ink); outline-offset: 1px; border-radius: var(--radius); }
   .sv-ship.sunk { opacity: .55; }
