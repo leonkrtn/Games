@@ -10,7 +10,8 @@
 //   await close();
 //
 // Optionen: me (Sicht dieses Spielers, über view()), prev (Zustand davor: wird zuerst gezeichnet, dann
-// animiert der Wechsel wie im Spiel), width (Standard 360), wait (ms bis zum Foto), reduced (ohne Bewegung).
+// animiert der Wechsel wie im Spiel), width (Standard 360), wait (ms bis zum Foto), reduced (ohne Bewegung),
+// inspect (Funktion, läuft nach dem Foto in der Seite, ihr Ergebnis steht in `seen`: z.B. Maße von Elementen).
 // Bilder (game.imageUrl) sind graue Platzhalter. Schriften und globals.css sind die echten.
 
 import http from 'node:http';
@@ -83,7 +84,7 @@ async function start() {
   port = server.address().port;
 }
 
-export async function shot(game, G, state, { me = state.players[0].id, prev = null, file, width = 360, wait = 1600, reduced = false } = {}) {
+export async function shot(game, G, state, { me = state.players[0].id, prev = null, file, width = 360, wait = 1600, reduced = false, inspect } = {}) {
   await start();
   const players = state.players.map(({ id, name }) => ({ id, name }));
   const see = (s) => (G.view ? G.view(s, me) : s);
@@ -104,8 +105,9 @@ export async function shot(game, G, state, { me = state.players[0].id, prev = nu
   await new Promise((r) => setTimeout(r, wait));
   if (file) await page.screenshot({ path: file, fullPage: true });
   const scroll = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]);
+  const seen = inspect ? await page.evaluate(inspect) : undefined;
   await ctx.close();
-  return { errors, scroll };
+  return { errors, scroll, ...(inspect ? { seen } : {}) };
 }
 
 export async function close() {

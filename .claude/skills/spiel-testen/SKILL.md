@@ -77,7 +77,17 @@ for (const p of pages) { const b = await p.$('[data-action="ziehen"]'); if (b) a
   einer Sekunde.
 - **Animationen ansehen:** Bildschirmfotos kurz nach einem Zug (60, 300, 1000 ms) zeigen Zwischenstände;
   jedes Foto mit dem Read-Werkzeug ansehen. Einmal mit `reduced: true` spielen: dann muss sofort der
-  Endzustand dastehen.
+  Endzustand dastehen. Mehrere Fotos auf einmal vergleichen: `nebeneinander.cjs` in diesem Ordner legt
+  denselben Ausschnitt nebeneinander (`node nebeneinander.cjs aus.png 150:1050 a.png b.png c.png`).
+- **Fristen und mehrere Spieler:** Läuft eine Phase gegen die Uhr (Lasso: fünfzehn Sekunden), die Gesten
+  aller Seiten gleichzeitig ausführen (`Promise.all(pages.map(…))`), sonst ist die Zeit um, bevor die
+  letzte Seite dran war. Vor jeder Runde auf die neue Phase warten (z.B. `.ls[data-phase="zeichnen"]`),
+  nicht nur auf ein Element, das es auch in der vorigen Phase schon gab.
+- **Element-Handles werden ungültig,** wenn das Spiel neu zeichnet („not attached to the DOM“): lieber
+  mit Selektoren klicken (`page.click('.chip >> nth=0')`). Kommt das bei Knöpfen vor, die ein Mensch drückt,
+  ist es ein Fehler im Spiel (siehe CLAUDE.md, Knöpfe nicht bei jeder Änderung ersetzen).
+- **Finger auf das Feld setzen:** Punkte für `touchPath` innerhalb der Fläche berechnen; ein Start daneben
+  scrollt die Seite (richtig so) und sieht aus wie ein Fehler im Spiel.
 - **Drei Größen:** 360 px (Handy), `width: 1000` (Desktop), und alles mit `fullPage: true` prüfen.
 - Klicks von Playwright verweigern Elemente, die verdeckt sind („intercepts pointer events“). Das ist
   meist richtig: dann das Element anklicken, das ein Mensch trifft (z.B. das Schiff statt der Zelle
@@ -100,7 +110,10 @@ await close();
 ```
 
 Mit `prev` (Zustand davor) wird erst dieser gezeichnet und dann der Wechsel animiert wie im Spiel;
-`wait` bestimmt, wann das Foto entsteht. Die Bilder sind Platzhalter, also Bilder-Layouts zusätzlich
+`wait` bestimmt, wann das Foto entsteht. `inspect` (eine Funktion) läuft danach in der Seite, ihr Ergebnis
+steht in `seen`, z.B. Maße und Stile von Elementen, wenn auf dem Foto etwas fehlt:
+`inspect: () => [...document.querySelectorAll('.zeile > *')].map((e) => [e.className, JSON.stringify(e.getBoundingClientRect())])`.
+Die Bilder sind Platzhalter, also Bilder-Layouts zusätzlich
 im echten Spiel ansehen. Den ersten Wurf zeigt `game.first`: Ein Auftakt mit vielen Karten kann beim Foto
 noch laufen (dann `wait` erhöhen, oder es ist ein Hinweis, dass der Auftakt zu lang ist).
 
