@@ -382,29 +382,86 @@ function word(n) {
 const INK = '#141414';
 // Gedämpfte Druckfarben, eine pro Zahl
 const NUM_COLOR = ['#7d7d7d', '#9a7b3c', '#3c8070', '#c0592f', '#3a6b98', '#6f8a2c', '#b03a3a', '#2e7d4f', '#b8801a', '#4d7280', '#8f4a2a', '#2f8585', '#5c5c2e'];
-const ICE = '#3a6b98';
-const LEAF = '#2e7d4f';
+const ICE = '#3a6b98'; // auch für den Stempel „Eingefroren“
+// Eigene Illustrationen (Skill „zeichnen“): Tuschekontur, gedämpfte Druckfarben
+const C = {
+  ice: '#cfe0ee', iceDark: '#2a4f73', clover: '#2e7d4f', cloverLight: '#cfe3c4', rust: '#c0592f', backTint: '#ece7dc',
+};
+const pic = (inner) => `<svg viewBox="0 0 100 100" aria-hidden="true">${inner}</svg>`;
+// Eiskristall: ein Arm mit Seitenästen und Rautenspitze, sechsmal gedreht
+const arm = (a) => `<g transform="rotate(${a} 50 50)">
+  <path d="M50 50 V11 M50 33 L41.5 24.5 M50 33 L58.5 24.5 M50 21 L44 15 M50 21 L56 15" />
+  <path d="M50 4.5 L54 9.5 L50 14.5 L46 9.5 Z" class="spitze"/>
+</g>`;
+// Sechseck in der Mitte des Kristalls
+const HEX = `${Array.from({ length: 6 }, (_, i) => {
+  const a = (Math.PI / 3) * i + Math.PI / 6;
+  return `${i ? 'L' : 'M'}${(50 + 10 * Math.cos(a)).toFixed(2)} ${(50 + 10 * Math.sin(a)).toFixed(2)}`;
+}).join(' ')} Z`;
+// Spielkarte im Fächer, gedreht um einen Punkt unter der Hand
+const card = (x, y, w, h, rot, inner) => `<g transform="rotate(${rot} 50 97)">
+  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="#fff" stroke="${INK}" stroke-width="3.5"/>${inner}</g>`;
+// Herzförmiges Kleeblatt mit hellem V-Zeichen
+const leaflet = (rot) => `<g transform="rotate(${rot} 50 50)">
+  <path d="M50 50 C44 44 33.5 40 33.5 29.5 C33.5 21.5 42 17.5 48 22.5 C49.2 23.5 50 25 50 26.5 C50 25 50.8 23.5 52 22.5 C58 17.5 66.5 21.5 66.5 29.5 C66.5 40 56 44 50 50 Z" fill="${C.clover}" stroke="${INK}" stroke-width="3.5" stroke-linejoin="round"/>
+  <path d="M41.5 31.5 L50 38 L58.5 31.5" fill="none" stroke="${C.cloverLight}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M50 47 V29" stroke="${INK}" stroke-width="1.3" stroke-linecap="round" opacity=".45"/>
+</g>`;
 
 const ICON = {
-  freeze: `<svg viewBox="0 0 40 40" aria-hidden="true"><g stroke="${ICE}" stroke-width="2.4" stroke-linecap="round" fill="none">${[0, 60, 120, 180, 240, 300]
-    .map((a) => `<path transform="rotate(${a} 20 20)" d="M20 20 V4.5 M20 9.5 L16.2 6.4 M20 9.5 L23.8 6.4 M20 14.5 L17 12.2 M20 14.5 L23 12.2"/>`)
-    .join('')}</g><circle cx="20" cy="20" r="2.6" fill="${ICE}"/></svg>`,
-  flip3: `<svg viewBox="0 0 40 40" aria-hidden="true"><g fill="#fff" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round">
-    <rect x="6.5" y="9.5" width="14" height="20" rx="2" transform="rotate(-14 13.5 19.5)"/>
-    <rect x="19.5" y="9.5" width="14" height="20" rx="2" transform="rotate(14 26.5 19.5)"/>
-    <rect x="13" y="7.5" width="14" height="21" rx="2"/></g>
-    <text x="20" y="23.4" text-anchor="middle" style="font:800 12px var(--font-display);fill:#c0592f">3</text>
-    <path d="M9 34 H31 M27 31 L31 34 L27 37" fill="none" stroke="${INK}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
-  second: `<svg viewBox="0 0 40 40" aria-hidden="true">
-    <path d="M21.5 22 C24 27 25.5 31 30 35" fill="none" stroke="${INK}" stroke-width="2" stroke-linecap="round"/>
-    <g fill="${LEAF}" stroke="${INK}" stroke-width="1.4"><circle cx="14.6" cy="14.6" r="6.2"/><circle cx="25.4" cy="14.6" r="6.2"/><circle cx="14.6" cy="25.4" r="6.2"/><circle cx="25.4" cy="25.4" r="6.2"/></g>
-    <circle cx="20" cy="20" r="2.6" fill="#a8d0a0" stroke="${INK}" stroke-width="1.2"/></svg>`,
+  freeze: pic(`
+  <g fill="none" stroke="${C.iceDark}" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round">${[0, 60, 120, 180, 240, 300].map(arm).join('')}</g>
+  <g fill="none" stroke="${C.ice}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">${[0, 60, 120, 180, 240, 300].map(arm).join('')}</g>
+  <path d="${HEX}" fill="${C.ice}" stroke="${C.iceDark}" stroke-width="3.5" stroke-linejoin="round"/>
+  <circle cx="50" cy="50" r="3" fill="${C.iceDark}"/>`),
+  flip3: pic(`
+  ${card(33, 44, 34, 48, -30, `<rect x="37" y="48" width="26" height="40" rx="2" fill="${C.backTint}" stroke="${INK}" stroke-width="1.5"/><circle cx="50" cy="68" r="6.5" fill="#fff" stroke="${INK}" stroke-width="1.5"/>`)}
+  ${card(33, 44, 34, 48, 30, `<rect x="37" y="48" width="26" height="40" rx="2" fill="${C.backTint}" stroke="${INK}" stroke-width="1.5"/><circle cx="50" cy="68" r="6.5" fill="#fff" stroke="${INK}" stroke-width="1.5"/>`)}
+  <g class="gezogen" transform="rotate(-9 50 34)">
+    <rect x="31" y="5" width="38" height="56" rx="4" fill="#fff" stroke="${INK}" stroke-width="3.5"/>
+    <rect x="34.5" y="8.5" width="31" height="49" rx="2" fill="none" stroke="${INK}" stroke-width=".9" opacity=".35"/>
+    <text x="50" y="45" text-anchor="middle" style="font:800 36px var(--font-display);fill:${C.rust}">3</text>
+    <text x="37.5" y="18" style="font:800 9px var(--font-display);fill:${C.rust}">3</text>
+  </g>
+  <path d="M19 36 L11 32 M18.5 46 L9 46 M81 36 L89 32 M81.5 46 L91 46" stroke="${INK}" stroke-width="3" stroke-linecap="round"/>`),
+  second: pic(`
+  <path d="M53 54 C59 66 62 78 74 91" fill="none" stroke="${INK}" stroke-width="7" stroke-linecap="round"/>
+  <path d="M53 54 C59 66 62 78 74 91" fill="none" stroke="${C.clover}" stroke-width="3.2" stroke-linecap="round"/>
+  ${[42, 130, 222, 312].map(leaflet).join('')}
+  <circle cx="50" cy="50" r="3.2" fill="${C.cloverLight}" stroke="${INK}" stroke-width="2"/>
+  <path d="M37 22.5 C35.5 24.5 35 27 35.5 29" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" opacity=".8"/>`),
 };
-// Rückseite: Tuscherahmen, Schraffur, die Sieben im Kreis
-const BACK = `<svg class="f7-backart" viewBox="0 0 42 60" preserveAspectRatio="none" aria-hidden="true">
-  <g stroke="${INK}" stroke-width=".8" opacity=".32">${Array.from({ length: 14 }, (_, i) => `<line x1="${i * 6 - 36}" y1="62" x2="${i * 6 + 6}" y2="-2"/>`).join('')}</g>
-  <rect x="3" y="3" width="36" height="54" rx="2" fill="none" stroke="${INK}" stroke-width="1"/>
-</svg><span class="f7-backmark">7</span>`;
+
+// Schraffur, rechnerisch auf ein Rechteck zugeschnitten (ohne clipPath, damit keine ids nötig sind)
+function hatch(x0, y0, x1, y1, step, dir) {
+  const lines = [];
+  for (let c = -(y1 - y0); c <= x1 - x0; c += step) {
+    // Linie: dir 1 → von links unten nach rechts oben
+    const a = { x: x0 + c, y: dir > 0 ? y1 : y0 };
+    const b = { x: x0 + c + (y1 - y0), y: dir > 0 ? y0 : y1 };
+    // zuschneiden auf x0..x1
+    const clip = (p, q) => {
+      let [px, py, qx, qy] = [p.x, p.y, q.x, q.y];
+      const k = (qy - py) / (qx - px);
+      if (px < x0) { py += (x0 - px) * k; px = x0; }
+      if (qx > x1) { qy -= (qx - x1) * k; qx = x1; }
+      return px < qx ? `M${px.toFixed(1)} ${py.toFixed(1)} L${qx.toFixed(1)} ${qy.toFixed(1)}` : '';
+    };
+    lines.push(clip(a, b));
+  }
+  return lines.filter(Boolean).join(' ');
+}
+// Rückseite: Doppelrahmen, Kreuzschraffur, Ecksterne, Medaillon mit der Sieben
+const BACK = `<svg class="f7-backart" viewBox="0 0 60 90" preserveAspectRatio="none" aria-hidden="true">
+  <rect x="0" y="0" width="60" height="90" fill="#fff"/>
+  <path d="${hatch(7, 7, 53, 83, 5, 1)}" stroke="${INK}" stroke-width=".7" opacity=".28"/>
+  <path d="${hatch(7, 7, 53, 83, 5, -1)}" stroke="${INK}" stroke-width=".7" opacity=".18"/>
+  <rect x="4" y="4" width="52" height="82" rx="2.5" fill="none" stroke="${INK}" stroke-width="1.4"/>
+  <rect x="7" y="7" width="46" height="76" rx="1.5" fill="none" stroke="${INK}" stroke-width=".7"/>
+  <g fill="${INK}">${[[7, 7], [53, 7], [7, 83], [53, 83]].map(([x, y]) => `<path d="M${x} ${y - 3} L${x + 3} ${y} L${x} ${y + 3} L${x - 3} ${y} Z"/>`).join('')}</g>
+  <circle cx="30" cy="45" r="16" fill="#fff" stroke="${INK}" stroke-width=".8"/>
+  <circle cx="30" cy="45" r="12.5" fill="#fff" stroke="${INK}" stroke-width="1.6"/>
+  <text x="30" y="52" text-anchor="middle" style="font:800 20px var(--font-display);fill:${INK}">7</text></svg>`;
 const XMARK = `<svg class="f7-x" viewBox="0 0 40 60" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M5 8 L35 52"/><path pathLength="1" d="M35 8 L5 52"/></svg>`;
 
 const ORDER = (c) => (isNum(c) ? c : c in MODS ? 20 + MODS[c] : c === 'x2' ? 40 : c === 'second' ? 50 : c === 'freeze' ? 60 : 70);
@@ -879,11 +936,6 @@ export const style = `
   .f7-front::before { content: ''; position: absolute; inset: 3px; border: 1px solid var(--hairline); border-radius: 2px; }
   .f7-back { transform: rotateY(180deg); }
   .f7-backart { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .f7-backmark {
-    position: absolute; left: 50%; top: 50%; width: 50%; aspect-ratio: 1; transform: translate(-50%, -50%);
-    display: grid; place-items: center; border: 1.5px solid var(--ink); border-radius: 50%; background: var(--paper);
-    font: 800 calc(var(--w) * .3) / 1 var(--font-display);
-  }
   .f7-corner { position: absolute; left: 5px; top: 4px; color: var(--c); font: 800 calc(var(--w) * .26) / 1 var(--font-display); }
   .f7-corner-icon { width: calc(var(--w) * .26); height: calc(var(--w) * .26); }
   .f7-corner-icon svg { display: block; width: 100%; height: 100%; }

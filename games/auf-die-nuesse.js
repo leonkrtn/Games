@@ -249,56 +249,164 @@ const nutsText = (n) => (n === 0 ? 'keine Nüsse' : n === 1 ? 'eine Nuss' : `${w
 
 // ---------- Anzeige (nur im Browser) ----------
 
-// Eigene Illustrationen, Druckfarben mit Tuschekontur
+// Eigene Illustrationen (Skill „zeichnen“): Tuschekontur, gedämpfte Druckfarben, viewBox 100 × 100.
+// Teile, die sich bewegen könnten (Schwanz, Ohren, Kopf), sind eigene Gruppen.
 const INK = '#141414';
+const C = {
+  nut: '#b07436', nutDark: '#8a5626', nutBase: '#e6c48f', nutDot: '#b8915a', leaf: '#6f8a2c',
+  fur: '#c0622b', furDark: '#9c4a1f', furLight: '#d98a4f', cream: '#f2dcc0',
+  jay: '#5b4434', jayDark: '#2f241c', fir: '#2e5e3a', branch: '#6b4a31',
+  dog: '#d9b88a', dogDark: '#6b4a31', dogLight: '#f3e3c8', tongue: '#d77a7a', collar: '#2e7d4f', tag: '#c48a1e',
+  wood: '#b77a4c', woodDark: '#7a4a2c', woodLight: '#d49a62', roof: '#6e4128', grass: '#4f7a2c',
+};
+const pic = (inner) => `<svg viewBox="0 0 100 100" aria-hidden="true">${inner}</svg>`;
+// Tannennadeln am Zweig des Tannenhähers
+const NEEDLES = Array.from({ length: 14 }, (_, i) => {
+  const x = 16 + i * 5.6;
+  const y = 84.5 - Math.sin((x - 10) / 84 * Math.PI) * 3.6;
+  return `M${x} ${y.toFixed(1)} l-4.5 -5 M${x + 1} ${y.toFixed(1)} l-4 4.6`;
+}).join(' ');
+
 const ICON = {
-  nuss: `<svg viewBox="0 0 40 40" aria-hidden="true">
-    <path d="M20 3.6 V7" stroke="${INK}" stroke-width="1.8" stroke-linecap="round"/>
-    <path d="M20 6.5 C26.5 9.5 31.5 15.5 31.5 23 C31.5 29.8 26.4 34 20 34 C13.6 34 8.5 29.8 8.5 23 C8.5 15.5 13.5 9.5 20 6.5 Z" fill="#b07436" stroke="${INK}" stroke-width="1.8" stroke-linejoin="round"/>
-    <path d="M11.6 27.6 C15 31.2 25 31.2 28.4 27.6 C27.2 31.8 23.8 34 20 34 C16.2 34 12.8 31.8 11.6 27.6 Z" fill="#e6c48f" stroke="${INK}" stroke-width="1.4" stroke-linejoin="round"/>
-    <path d="M15.2 13.6 C13.4 16 12.6 19 12.8 22" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" opacity=".6"/>
-  </svg>`,
-  hoernchen: `<svg viewBox="0 0 40 40" aria-hidden="true">
-    <path d="M22 32 C31 33 35.5 26 32.5 19.5 C30.5 15 31 10.5 34 8.5" fill="none" stroke="${INK}" stroke-width="9.6" stroke-linecap="round"/>
-    <path d="M22 32 C31 33 35.5 26 32.5 19.5 C30.5 15 31 10.5 34 8.5" fill="none" stroke="#c0622b" stroke-width="6.4" stroke-linecap="round"/>
-    <path d="M11.4 10.6 L11.8 5.2 L15.8 9.4 Z" fill="#c0622b" stroke="${INK}" stroke-width="1.4" stroke-linejoin="round"/>
-    <ellipse cx="17.5" cy="25.5" rx="7.5" ry="8" fill="#c0622b" stroke="${INK}" stroke-width="1.6"/>
-    <ellipse cx="15" cy="27" rx="3.6" ry="5" fill="#f2dcc0"/>
-    <ellipse cx="15" cy="33.4" rx="4" ry="1.6" fill="#c0622b" stroke="${INK}" stroke-width="1.3"/>
-    <circle cx="13.6" cy="14.6" r="5.6" fill="#c0622b" stroke="${INK}" stroke-width="1.6"/>
-    <circle cx="12.2" cy="13.8" r="1.15" fill="${INK}"/>
-    <circle cx="8.3" cy="15.8" r=".9" fill="${INK}"/>
-    <circle cx="11" cy="22.4" r="1.8" fill="#c0622b" stroke="${INK}" stroke-width="1.2"/>
-  </svg>`,
-  haeher: `<svg viewBox="0 0 40 40" aria-hidden="true">
-    <path d="M17 30.4 L16 35.2 M21.4 30.8 L21.4 35.4 M14.4 35.4 H18 M19.6 35.6 H23.2" stroke="${INK}" stroke-width="1.4" stroke-linecap="round"/>
-    <path d="M29 23.6 L37.6 28.2 L35.6 31 L27.4 27.6 Z" fill="#5b4434" stroke="${INK}" stroke-width="1.4" stroke-linejoin="round"/>
-    <path d="M10 22 C10.5 16 17 13.5 23.5 15.5 C28.5 17 31 21 31 25 C27.5 29.5 21 31.5 15.5 30 C12 29 10 26 10 22 Z" fill="#5b4434" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>
-    <path d="M17 19.5 C21.5 18 26.5 19.5 29 24 C24.5 25.5 19.5 24.5 17 19.5 Z" fill="#3a2b21" stroke="${INK}" stroke-width="1.2" stroke-linejoin="round"/>
-    <g fill="#fff"><circle cx="14" cy="21.5" r=".9"/><circle cx="15.6" cy="25.6" r=".9"/><circle cx="19.4" cy="27.6" r=".9"/><circle cx="12.8" cy="25.2" r=".8"/><circle cx="23.4" cy="27.2" r=".8"/><circle cx="21.4" cy="22.6" r=".7"/></g>
-    <circle cx="12" cy="14.5" r="5.2" fill="#5b4434" stroke="${INK}" stroke-width="1.6"/>
-    <path d="M7.4 13.3 L1.8 15.3 L7.6 16.7 Z" fill="${INK}" stroke="${INK}" stroke-width=".8" stroke-linejoin="round"/>
-    <circle cx="10.9" cy="13.5" r="1.3" fill="#fff"/><circle cx="10.7" cy="13.5" r=".6" fill="${INK}"/>
-    <circle cx="14.4" cy="11.6" r=".7" fill="#fff"/><circle cx="15.2" cy="15.6" r=".7" fill="#fff"/>
-  </svg>`,
-  hund: `<svg viewBox="0 0 40 40" aria-hidden="true">
-    <path d="M10 9.6 C4.6 10.6 3.6 19.6 6.6 25.4 C8.8 22.4 10.8 17.4 13 13 Z" fill="#6b4a31" stroke="${INK}" stroke-width="1.5" stroke-linejoin="round"/>
-    <path d="M30 9.6 C35.4 10.6 36.4 19.6 33.4 25.4 C31.2 22.4 29.2 17.4 27 13 Z" fill="#6b4a31" stroke="${INK}" stroke-width="1.5" stroke-linejoin="round"/>
-    <path d="M20 7 C27.5 7 31.5 12.5 31.5 20 C31.5 28 26.5 33.5 20 33.5 C13.5 33.5 8.5 28 8.5 20 C8.5 12.5 12.5 7 20 7 Z" fill="#d9b88a" stroke="${INK}" stroke-width="1.6"/>
-    <ellipse cx="24.8" cy="16.8" rx="3.4" ry="3" fill="#6b4a31"/>
-    <ellipse cx="20" cy="25.6" rx="6.6" ry="5" fill="#f3e3c8" stroke="${INK}" stroke-width="1.3"/>
-    <path d="M17.2 22 C18 20.8 22 20.8 22.8 22 C22.6 23.6 21.2 24.4 20 24.4 C18.8 24.4 17.4 23.6 17.2 22 Z" fill="${INK}"/>
-    <path d="M20 24.4 V26.6 M17 27 C18.4 28.4 21.6 28.4 23 27" fill="none" stroke="${INK}" stroke-width="1.3" stroke-linecap="round"/>
-    <circle cx="15.3" cy="17" r="1.45" fill="${INK}"/><circle cx="24.7" cy="17" r="1.45" fill="${INK}"/>
-    <circle cx="15.8" cy="16.5" r=".45" fill="#fff"/><circle cx="25.2" cy="16.5" r=".45" fill="#fff"/>
-  </svg>`,
-  huette: `<svg viewBox="0 0 40 40" aria-hidden="true">
-    <path d="M8.5 34.5 V19 L20 9.5 L31.5 19 V34.5 Z" fill="#b77a4c" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>
-    <path d="M8.5 24.2 H31.5 M8.5 29.4 H31.5" stroke="${INK}" stroke-width=".9" opacity=".45"/>
-    <path d="M15 34.5 V27 A5 5 0 0 1 25 27 V34.5 Z" fill="${INK}"/>
-    <path d="M5 20.4 L20 7.4 L35 20.4" fill="none" stroke="#6e4128" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M3.6 34.5 H36.4" stroke="${INK}" stroke-width="1.6" stroke-linecap="round"/>
-  </svg>`,
+  nuss: pic(`
+  <g class="blatt">
+    <path d="M53 22 C55.5 15.5 61 11 67.5 9.5 L69.5 7.2 L71.8 8.8 C75.5 7.6 79.5 7.2 83.5 7.8 L86.2 6.2 L87.5 9.2 C86 14.5 83 18.5 78.5 21.2 L79.2 23.8 L76 23.6 C70 26.4 61.5 26.8 53 22 Z" fill="${C.leaf}" stroke="${INK}" stroke-width="3.2" stroke-linejoin="round"/>
+    <path d="M55.5 21.5 C64 17 73 13 84.5 9.8" fill="none" stroke="${INK}" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M63 18.5 L64 13.5 M71 15 L73.5 10.5 M64 18 L68 22 M72 14.5 L77 18" fill="none" stroke="${INK}" stroke-width="1.3" stroke-linecap="round" opacity=".6"/>
+  </g>
+  <g class="schale">
+    <path d="M50 16 C58 21.5 81 37.5 81 59 C81 77 67 89 50 89 C33 89 19 77 19 59 C19 37.5 42 21.5 50 16 Z" fill="${C.nut}" stroke="${INK}" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M43 23.5 C33 34 28.5 50 30.5 68 M57 23.5 C67 34 71.5 50 69.5 68 M50 21 C48.5 38 48.5 56 50 72" fill="none" stroke="${C.nutDark}" stroke-width="1.8" stroke-linecap="round"/>
+  </g>
+  <g class="boden">
+    <path d="M23.5 70 C33 79.5 67 79.5 76.5 70 C73.5 82.5 63 89 50 89 C37 89 26.5 82.5 23.5 70 Z" fill="${C.nutBase}" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>
+    <g fill="${C.nutDot}">${[[36, 80], [43, 84], [50, 81], [57, 84], [64, 80], [47, 87], [55, 87.5], [40, 79], [60, 79]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.2"/>`).join('')}</g>
+  </g>
+  <g class="spitze">
+    <path d="M50 16.5 V10" stroke="${INK}" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M50 11 L46.5 7 M50 11 L53.5 7 M50 10.5 V5.5" stroke="${INK}" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <g class="licht" fill="none" stroke="#fff" stroke-linecap="round" opacity=".8">
+    <path d="M36 32 C31 40 28.5 49 29 57" stroke-width="4.5"/>
+    <path d="M31 64 L31 64.5" stroke-width="3.5"/>
+  </g>`),
+  hoernchen: pic(`
+  <g class="schwanz">
+    <path d="M58 84 C80 88 92 72 87 55 C84 43 74 38 76 26 C77 18 83 13 89 15" fill="none" stroke="${INK}" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M58 84 C80 88 92 72 87 55 C84 43 74 38 76 26 C77 18 83 13 89 15" fill="none" stroke="${C.fur}" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M66 80 C80 81 87 70 84 57 C82 48 74 42 75.5 31" fill="none" stroke="${C.furLight}" stroke-width="4" stroke-linecap="round"/>
+    <path d="M80 72.5 C83.5 71 85.5 68 86 64.5 M84.5 52 C86.5 49.5 87 46.5 86 43.5 M78 37 C80 35 80.5 32 79.5 29 M73 81 C76 80.5 78.5 79 80 77" fill="none" stroke="${C.furDark}" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M84 13.5 C85 8 89.5 4.5 95.5 5 C93.5 7.5 93 10 94.5 12.5 C92 15 89 16.5 86.5 16.5 Z" fill="${C.fur}" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>
+  </g>
+  <path class="ohr-hinten" d="M44 25 L50 9.5 L54.5 26 Z" fill="${C.furDark}" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>
+  <g class="koerper">
+    <ellipse cx="56" cy="77" rx="13" ry="10.5" fill="${C.fur}" stroke="${INK}" stroke-width="4"/>
+    <path d="M30 60 C28 46 36 38 47 38 C59 38 66 48 66 62 C66 76 58 86 46 86 C35 86 31 74 30 60 Z" fill="${C.fur}" stroke="${INK}" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M35.5 50 C33 61 34 73 40.5 82 C45 75 46.5 63 44.5 51 Z" fill="${C.cream}"/>
+    <path d="M57 50 L61 53 M60 63 L64 65 M54 72 L58 73" stroke="${C.furDark}" stroke-width="2" stroke-linecap="round"/>
+    <path d="M35 89 C37 84.5 50 84 61 88 C58.5 92 39.5 92.5 35 89 Z" fill="${C.fur}" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>
+  </g>
+  <g class="kopf">
+    <path d="M20 37 C17 32 20 25 27 23 C31 18 40 17 45 21 C51 25 52 33 49 39 C46 46 37 48 31 46 C26 45 22 42 20 37 Z" fill="${C.fur}" stroke="${INK}" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M21.5 39.5 C25.5 44 31 46 37 45 C33 48.5 26 48 22.5 44 Z" fill="${C.cream}"/>
+    <g class="ohr">
+      <path d="M35.5 22.5 L37 6.5 L45 21 Z" fill="${C.fur}" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M35.5 8.5 C34 5 34.5 2 36.8 0.8 C37.6 3 39.6 5 39 8.5 Z" fill="${INK}"/>
+    </g>
+    <circle cx="33" cy="31" r="5.6" fill="${C.cream}"/>
+    <ellipse cx="32.5" cy="31" rx="3.4" ry="3.9" fill="${INK}"/>
+    <circle cx="31.3" cy="29.5" r="1.3" fill="#fff"/>
+    <ellipse cx="19.6" cy="33.5" rx="2.1" ry="1.7" fill="${INK}"/>
+    <path d="M20 35.5 L12.5 34.5 M20.5 37 L13.5 39.5" stroke="${INK}" stroke-width="1.2" stroke-linecap="round" opacity=".55"/>
+  </g>
+  <g class="pfoten" fill="${C.fur}" stroke="${INK}" stroke-width="2.5" stroke-linejoin="round">
+    <path d="M28.5 55.5 C25 54.5 24.5 59.5 28 61 C31 62 34 59 32.5 56.5 Z"/>
+    <path d="M34 58 C31 57.5 31 62 34 63 C37 63.5 39.5 61 38 58.5 Z"/>
+  </g>`),
+  haeher: pic(`
+  <g class="zweig">
+    <path d="${NEEDLES}" stroke="${C.fir}" stroke-width="2.4" stroke-linecap="round"/>
+    <path d="M10 86 C34 82 62 82 94 86" fill="none" stroke="${INK}" stroke-width="7" stroke-linecap="round"/>
+    <path d="M10 86 C34 82 62 82 94 86" fill="none" stroke="${C.branch}" stroke-width="3.6" stroke-linecap="round"/>
+  </g>
+  <g class="schwanz">
+    <path d="M62 60.5 C72 64 83 67.5 93.5 69.5 L89.5 81.5 C79 78 68 73.5 58 70 Z" fill="${C.jayDark}" stroke="${INK}" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M66.5 66.5 L88 74.5 M64 69.5 L86 78" stroke="${C.jay}" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M86.5 68.6 L93.5 69.5 L89.5 81.5 L83 79.4 Z" fill="#fff" stroke="${INK}" stroke-width="2.5" stroke-linejoin="round"/>
+  </g>
+  <g class="beine" stroke="${INK}" stroke-linecap="round">
+    <path d="M42 72 L40 83 M52 73 L53 83" stroke-width="3.5"/>
+    <path d="M35.5 84 H45 M48 84 H58" stroke-width="3"/>
+  </g>
+  <g class="koerper">
+    <path d="M24 50 C24 36 37 28 52 30 C66 32 74 44 72 58 C70 70 58 76 45 74 C33 72 24 63 24 50 Z" fill="${C.jay}" stroke="${INK}" stroke-width="4" stroke-linejoin="round"/>
+    <g class="fluegel">
+      <path d="M44 41 C57 37 71 44 77 59 C66 65 52 62 45 54 C42 50 42 45 44 41 Z" fill="${C.jayDark}" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M51 50 C59 54 67 56 74 58 M50 45 C58 47 66 51 71 55" fill="none" stroke="${C.jay}" stroke-width="1.6" stroke-linecap="round"/>
+    </g>
+  </g>
+  <g class="kopf">
+    <circle cx="30" cy="35" r="13" fill="${C.jay}" stroke="${INK}" stroke-width="4"/>
+    <path d="M19 31.5 C20.5 23.5 28 20 35 21.5 C40 22.5 43 27.5 43 33 C35 29 26.5 28.5 19 31.5 Z" fill="${C.jayDark}"/>
+    <path d="M19 31 C13 32 7 34 2 37 C8 38.5 13 39.5 19 40 Z" fill="${INK}" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="26" cy="33.5" r="3.2" fill="${INK}"/>
+    <circle cx="25" cy="32.3" r="1.2" fill="#fff"/>
+    <path d="M23 38.5 C26 40 30 39.5 32.5 37.5" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>
+  </g>
+  <g class="tupfen" fill="#fff">${[[34, 41, 1.3], [38.5, 44.5, 1.5], [30.5, 45.5, 1.3], [36, 50.5, 1.8], [29.5, 55, 1.6], [40, 58, 1.8], [34, 63, 1.7], [43.5, 66.5, 1.6], [51.5, 69, 1.4], [28, 50, 1.2], [36.5, 34, 1], [40, 38, 1.1], [57, 67, 1.2], [61, 51, 1], [67, 55, 1]]
+    .map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}"/>`)
+    .join('')}</g>`),
+  hund: pic(`
+  <g class="ohren" fill="${C.dogDark}" stroke="${INK}" stroke-width="4" stroke-linejoin="round">
+    <path d="M29 25 C14 25 7.5 45 13.5 64 C20 62.5 26 52 30.5 39 Z"/>
+    <path d="M71 25 C85 23 93 38 89.5 55 C83.5 53.5 76 46 70 37.5 Z"/>
+  </g>
+  <g class="kopf">
+    <path d="M50 15 C68 15 78 29 78 47 C78 67 66 80 50 80 C34 80 22 67 22 47 C22 29 32 15 50 15 Z" fill="${C.dog}" stroke="${INK}" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M46 17 C44 29 42.5 38 41 49 L59 49 C57.5 38 56 29 54 17 C52.5 16.4 47.5 16.4 46 17 Z" fill="${C.dogLight}"/>
+    <ellipse cx="63" cy="39.5" rx="9.5" ry="8.5" fill="${C.dogDark}"/>
+    <path d="M32 31.5 Q37 28.5 42 30.5 M58 30.5 Q63 28 68 31" fill="none" stroke="${INK}" stroke-width="2.4" stroke-linecap="round"/>
+    <circle cx="62.5" cy="39.5" r="6" fill="none" stroke="${C.dogLight}" stroke-width="1.8"/>
+    <circle cx="37.5" cy="39.5" r="4.2" fill="${INK}"/><circle cx="62.5" cy="39.5" r="4.2" fill="${INK}"/>
+    <circle cx="36.2" cy="38" r="1.5" fill="#fff"/><circle cx="61.2" cy="38" r="1.5" fill="#fff"/>
+  </g>
+  <g class="schnauze">
+    <path d="M32 58 C32 50 40 47 50 47 C60 47 68 50 68 58 C68 68 60 74 50 74 C40 74 32 68 32 58 Z" fill="${C.dogLight}" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M46 66 C46 75.5 54 75.5 54 66 Z" fill="${C.tongue}" stroke="${INK}" stroke-width="2.2" stroke-linejoin="round"/>
+    <path d="M50 67 V71.5" stroke="${INK}" stroke-width="1.2" stroke-linecap="round" opacity=".6"/>
+    <path d="M50 59.5 V64 M41 63.5 C44.5 68 55.5 68 59 63.5" fill="none" stroke="${INK}" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M42.5 52 C43.5 48 56.5 48 57.5 52 C57.5 57 53.5 59.5 50 59.5 C46.5 59.5 42.5 57 42.5 52 Z" fill="${INK}"/>
+    <ellipse cx="47" cy="51.3" rx="2.4" ry="1.3" fill="#fff" opacity=".85"/>
+  </g>
+  <g class="halsband">
+    <path d="M31 75 C40 82 60 82 69 75 L70 81 C60 88.5 40 88.5 30 81 Z" fill="${C.collar}" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>
+    <circle cx="50" cy="90" r="5" fill="${C.tag}" stroke="${INK}" stroke-width="2.6"/>
+    <path d="M50 85 V86.5" stroke="${INK}" stroke-width="2"/>
+  </g>`),
+  huette: pic(`
+  <g class="boden">
+    <path d="M5 89 H95" stroke="${INK}" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M9 88 l-1.5 -5 M11 88 l1 -6 M13 88 l2.5 -4.5 M86 88 l-2 -4.5 M88 88 l.5 -6 M90.5 88 l2.5 -4.5" stroke="${C.grass}" stroke-width="2.2" stroke-linecap="round"/>
+  </g>
+  <g class="wand">
+    <path d="M20 89 V48 L50 23 L80 48 V89 Z" fill="${C.wood}" stroke="${INK}" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M20.5 58 H79.5 M20.5 68 H79.5 M20.5 78 H79.5" stroke="${C.woodDark}" stroke-width="1.6"/>
+    <g fill="${C.woodDark}">${[[25, 63], [75, 63], [25, 73], [75, 73], [25, 83], [75, 83]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.1"/>`).join('')}</g>
+  </g>
+  <g class="tuer">
+    <path d="M34.5 89 V69 A15.5 15.5 0 0 1 65.5 69 V89 Z" fill="${C.woodLight}" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M39 89 V69.5 A11 11 0 0 1 61 69.5 V89 Z" fill="${INK}"/>
+  </g>
+  <g class="schild">
+    <path d="M42 44.5 H58" stroke="${INK}" stroke-width="7" stroke-linecap="round"/>
+    <path d="M42 44.5 H58" stroke="${C.dogLight}" stroke-width="3.6" stroke-linecap="round"/>
+    <g fill="${C.dogLight}" stroke="${INK}" stroke-width="1.6">${[[41.5, 42.3], [41.5, 46.7], [58.5, 42.3], [58.5, 46.7]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2.7"/>`).join('')}</g>
+    <path d="M42 44.5 H58" stroke="${C.dogLight}" stroke-width="3.6" stroke-linecap="round"/>
+  </g>
+  <g class="dach">
+    <path d="M9 52 L50 14 L91 52 L83 58 L50 28 L17 58 Z" fill="${C.roof}" stroke="${INK}" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M20 46 L25.5 51 M27.5 39 L33 44 M35 32 L40.5 37 M42.5 25 L47 29.5 M80 46 L74.5 51 M72.5 39 L67 44 M65 32 L59.5 37 M57.5 25 L53 29.5" stroke="${INK}" stroke-width="2" stroke-linecap="round" opacity=".8"/>
+  </g>`),
 };
 const NAME = { nuss: 'Nuss', hoernchen: 'Eichhörnchen', haeher: 'Tannenhäher', hund: 'Hund', huette: 'Hütte' };
 
