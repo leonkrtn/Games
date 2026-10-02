@@ -41,12 +41,13 @@ const page = `<!doctype html><html><head><meta charset="utf-8"><style>
     --font-display: 'Big Shoulders Variable', 'Arial Narrow', Arial, sans-serif; --font-body: Arial, sans-serif; }
   body { margin: 0; padding: 24px; background: #fff; color: var(--ink); font: 13px/1.3 var(--font-body); }
   #quelle { display: none; }
-  .zeile { display: flex; align-items: end; gap: 28px; padding: 18px 0; border-bottom: 1px solid var(--hairline); }
+  .zeile { display: flex; flex-wrap: wrap; align-items: end; gap: 18px 28px; padding: 18px 0; border-bottom: 1px solid var(--hairline); }
   .feld { display: grid; justify-items: center; gap: 6px; }
   .feld small { color: #5c5c5c; }
   .feld svg { display: block; overflow: visible; }
   .karte { width: 96px; height: 144px; display: grid; place-items: center; border: 1.6px solid var(--ink); border-radius: 4px; }
   .grau { filter: grayscale(1); }
+  .felder { padding: 6px; background-image: linear-gradient(90deg, var(--hairline) 1px, transparent 1px), linear-gradient(var(--hairline) 1px, transparent 1px); background-size: 40px 40px; background-position: 6px 6px; }
 </style></head><body><div id="quelle">${source}</div><div id="vorschau"></div><script>
   const quelle = document.getElementById('quelle');
   const svgs = [...quelle.querySelectorAll('svg')].filter((s) => !s.parentElement.closest('svg'));
@@ -54,11 +55,14 @@ const page = `<!doctype html><html><head><meta charset="utf-8"><style>
   svgs.forEach((svg, i) => {
     const zeile = document.createElement('div');
     zeile.className = 'zeile';
-    const feld = (px, extra = '', label = px + ' px') => {
+    // Breite Zeichnungen (z.B. Schiffe über mehrere Felder) behalten ihr Seitenverhältnis, px gilt für die Höhe.
+    const vb = (svg.getAttribute('viewBox') || '0 0 1 1').trim().split(/[ ,]+/).map(Number);
+    const ratio = vb[2] / vb[3] || 1;
+    const feld = (px, extra = '', label = px + ' px' + (ratio > 1.2 ? ' hoch' : '')) => {
       const f = document.createElement('div');
       f.className = 'feld';
       const kopie = svg.cloneNode(true);
-      kopie.setAttribute('width', px);
+      kopie.setAttribute('width', ratio > 1.2 ? Math.round(px * ratio) : px);
       kopie.setAttribute('height', px);
       const halter = document.createElement('div');
       if (extra) halter.className = extra;
@@ -67,7 +71,9 @@ const page = `<!doctype html><html><head><meta charset="utf-8"><style>
       f.insertAdjacentHTML('beforeend', '<small>' + label + '</small>');
       return f;
     };
-    zeile.append(feld(24), feld(48), feld(96), feld(192), feld(68, 'karte', 'auf Karte'), feld(96, 'grau', 'Graustufen'));
+    // Breite Zeichnungen liegen im Spiel über mehreren Feldern: dort auf einer Feldreihe zeigen statt auf einer Karte
+    const flaeche = ratio > 1.2 ? feld(40, 'felder', 'auf Feldern') : feld(68, 'karte', 'auf Karte');
+    zeile.append(feld(24), feld(48), feld(96), feld(192), flaeche, feld(96, 'grau', 'Graustufen'));
     zeile.insertAdjacentHTML('afterbegin', '<b>' + (svg.id || svg.dataset.name || 'Nr. ' + (i + 1)) + '</b>');
     ziel.append(zeile);
   });

@@ -42,6 +42,7 @@ Wenn der Nutzer ein Spiel beschreibt: neue Datei `games/<kurzer-name>.js` anlege
 - `qwixx.js`: Einstellungen in der Lobby (`meta.options`), 3D-Würfel, vorläufige Eingaben mit Bestätigen, Bereiche, die nur bei Änderung neu gezeichnet werden
 - `auf-die-nuesse.js`: Live-Wettlauf trotz Netz-Verzögerung (Tempo-Grenze auf dem Server, mehrere Tipper pro Anfrage, `tick` springt für Abwesende ein), Dinge, die zwischen Bereichen fliegen
 - `flip-7.js`: Kartenstapel, der in `view` geheim bleibt, Ereignisliste im `state`, damit mehrere Schritte eines Zuges nacheinander animiert werden, Karten, die vom Stapel kommen und sich umdrehen
+- `schiffe-versenken.js`: geheime Aufstellung als lokaler Entwurf (Schiffe setzen, drehen, Vorschau), den erst „Bereit“ abschickt, Figuren auf einem Raster über `--x`/`--y` und `transform`, zwei Spielfelder, die per FLIP den Platz tauschen, Treffer erst nach dem Einschlag zeigen
 
 Die Datei läuft **sowohl auf dem Server als auch im Browser** und wird von Next.js gebündelt: keine `import`s von Node-Modulen oder npm-Paketen, kein React, keine Browser-Globals außerhalb von `render`.
 
