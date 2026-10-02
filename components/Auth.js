@@ -41,7 +41,7 @@ export default function Auth({ onLogin, showToast }) {
         <p className="start-intro">
           {inviter
             ? `${inviter} lädt dich zum Spielen ein. Erstelle ein Konto oder melde dich an, dann seid ihr befreundet.`
-            : 'Hier spielt ihr zu zweit die Spiele, die ihr euch selbst ausdenkt. Melde dich an und füge Freunde hinzu.'}
+            : 'Hier spielt ihr mit Freunden die Spiele, die ihr euch selbst ausdenkt. Melde dich an und füge Freunde hinzu.'}
         </p>
       </div>
 

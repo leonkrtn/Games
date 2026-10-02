@@ -3,7 +3,7 @@
 
   Vorbild: ein gedruckter Spielblock. Weißes Papier, schwarze Schrift, Linien statt
   Kästen, eine einzige Farbe (Signalrot). Die beiden Spieler sind Rot und Schwarz
-  wie bei Dame. Namen und Zahlen stehen in einer schmalen Anzeigetafel-Schrift
+  wie bei Dame, in Gruppen kommen Blau, Ocker, Grün und Rostbraun dazu. Namen und Zahlen stehen in einer schmalen Anzeigetafel-Schrift
   (Big Shoulders), Fließtext in einer gut lesbaren Schrift (Atkinson Hyperlegible Next).
 */
 
@@ -17,8 +17,11 @@
 
   --p1: #d7301f; /* Rot, 4,9:1 auf Weiß */
   --p2: #141414; /* Schwarz */
-  --p3: #2d5f8b;
-  --p4: #7a6400;
+  /* Weitere Spieler in Gruppen (alle mindestens 4,5:1 auf Weiß) */
+  --p3: #2d5f8b; /* Blau */
+  --p4: #7a6400; /* Ocker */
+  --p5: #2f7d32; /* Grün */
+  --p6: #9a4a14; /* Rostbraun */
 
   --ok: #1f7a4a;
   --bad: #b3261e;
@@ -439,6 +442,49 @@ textarea:focus {
     margin-top: 2px;
   }
 }
+/* Gruppen: mehr als zwei Spieler. Am Handy zwei Spalten, in der Seitenleiste eine Zeile pro Spieler */
+.scoreboard.many {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+}
+.scoreboard.many .team {
+  padding: 8px 0;
+  border-left: 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.scoreboard.many .team:nth-last-child(-n + 2):nth-child(odd),
+.scoreboard.many .team:last-child {
+  border-bottom: 0;
+}
+.scoreboard.many .team-score {
+  font-size: var(--t-xl);
+}
+@media (min-width: 880px) {
+  .scoreboard.many {
+    grid-template-columns: 1fr;
+  }
+  .scoreboard.many .team {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .scoreboard.many .team:nth-last-child(-n + 2):nth-child(odd):not(:last-child) {
+    border-bottom: 1px solid var(--hairline);
+  }
+  .scoreboard.many .team-score {
+    order: 0;
+    margin-top: 0;
+    font-size: var(--t-2xl);
+  }
+}
+.room-name {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--t-xl);
+  line-height: 1;
+  margin-bottom: 10px;
+  overflow-wrap: break-word;
+}
 .team-away {
   display: block;
   font-size: var(--t-sm);
@@ -624,6 +670,13 @@ textarea:focus {
   }
 }
 
+.group-edit {
+  margin-top: 48px;
+  max-width: 480px;
+}
+.group-edit + .room-foot {
+  margin-top: 24px;
+}
 .room-foot {
   margin-top: 48px;
   display: flex;
@@ -768,6 +821,33 @@ textarea:focus {
   line-height: 1;
   display: flex;
   gap: 4px;
+}
+/* Gruppe auf der Startseite: Name und Status, darunter alle Mitglieder mit Punkten */
+.group-row {
+  grid-template-columns: 1fr;
+  grid-template-areas: 'name' 'status' 'members';
+}
+.group-members {
+  grid-area: members;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  margin-top: 4px;
+  font-size: var(--t-sm);
+}
+.group-member {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.group-member .num {
+  font-size: var(--t-md);
+  line-height: 1;
+}
+.group-form {
+  display: grid;
+  gap: 28px;
+  max-width: 480px;
 }
 .empty {
   color: var(--muted);
@@ -947,6 +1027,17 @@ textarea:focus {
 }
 .check input:checked {
   background: var(--ink);
+}
+.check.disabled {
+  color: var(--muted);
+  cursor: default;
+}
+.check.disabled:hover {
+  background: none;
+}
+.check input:disabled {
+  border-color: var(--hairline);
+  cursor: default;
 }
 .check input:checked::after {
   opacity: 1;

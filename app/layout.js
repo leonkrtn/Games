@@ -4,7 +4,7 @@ import './globals.css';
 
 export const metadata = {
   title: 'Spielzimmer',
-  description: 'Selbst ausgedachte Spiele zu zweit live spielen.',
+  description: 'Selbst ausgedachte Spiele mit Freunden live spielen.',
   applicationName: 'Spielzimmer',
   // iPhone: als Web-App vom Home-Bildschirm im Vollbild starten, weiße Statusleiste mit dunkler Schrift
   appleWebApp: {

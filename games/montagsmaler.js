@@ -1,16 +1,16 @@
-// Montagsmaler: Einer zeichnet, der andere rät. Zu zweit und gemeinsam.
+// Montagsmaler: Einer zeichnet, die anderen raten. Zu zweit bis zu sechst, gemeinsam.
 //
-// Ablauf pro Runde: Der Zeichner schreibt ein Wort (oder nimmt einen Vorschlag) → der Rater sieht nur
-// die Striche wie beim Galgenmännchen und tippt auf „Bereit“ → die Zeit läuft ab dem ersten Strich,
-// der Rater sieht live, was gezeichnet wird, und tippt Rateversuche ein → erraten, Zeit um oder
-// aufgegeben: nächste Runde, die Rollen wechseln. Schafft ihr alle Wörter, gewinnt ihr beide.
-// Am Ende zeigt eine Galerie alle Bilder der Partie.
+// Ablauf pro Runde: Der Zeichner schreibt ein Wort (oder nimmt einen Vorschlag) → die Rater sehen nur
+// die Striche wie beim Galgenmännchen, einer tippt auf „Bereit“ → die Zeit läuft ab dem ersten Strich,
+// die Rater sehen live, was gezeichnet wird, und tippen Rateversuche ein → erraten (von irgendwem),
+// Zeit um oder alle haben aufgegeben: nächste Runde, der Nächste zeichnet. Schafft ihr alle Wörter,
+// gewinnt ihr alle. Am Ende zeigt eine Galerie alle Bilder der Partie.
 //
 // Zeichnen: Die Zeichnung ist eine Liste von Befehlen (Strich, Füllen, Löschen, Zurück, Vor), die der
 // Server und beide Browser gleich anwenden. Gemalt wird auf ein eigenes Raster (S × S Punkte, jede
 // Zelle eine Farbnummer) statt mit den Canvas-Funktionen: So ergibt der Eimer überall exakt dieselbe
-// Fläche, auch wenn Browser Linien unterschiedlich glätten. Damit der Rater flüssig zusieht, gehen
-// Striche schon während des Zeichnens über game.live an den anderen Browser; gespeichert wird jeder
+// Fläche, auch wenn Browser Linien unterschiedlich glätten. Damit die Rater flüssig zusehen, gehen
+// Striche schon während des Zeichnens über game.live an die anderen Browser; gespeichert wird jeder
 // fertige Befehl mit einer laufenden Nummer (seq), damit nichts doppelt oder in falscher Reihenfolge ankommt.
 //
 // Motion: Die Runden bauen sich als Kästchen auf, die Buchstaben-Striche fallen ein, Stifte heben
@@ -20,16 +20,16 @@
 
 export const meta = {
   name: 'Montagsmaler',
-  description: 'Einer zeichnet ein Wort, der andere sieht live zu und rät. Zusammen gegen die Uhr.',
-  players: [2, 2],
+  description: 'Einer zeichnet ein Wort, die anderen sehen live zu und raten. Zusammen gegen die Uhr.',
+  players: [2, 6],
   options: [
     {
-      id: 'runden',
+      id: 'jeder',
       label: 'Runden',
       choices: [
-        { value: 4, label: 'Vier Runden' },
-        { value: 2, label: 'Zwei Runden' },
-        { value: 6, label: 'Sechs Runden' },
+        { value: 2, label: 'Jeder zeichnet zweimal' },
+        { value: 1, label: 'Jeder zeichnet einmal' },
+        { value: 3, label: 'Jeder zeichnet dreimal' },
       ],
     },
     {
@@ -234,12 +234,18 @@ const isClose = (guess, target) => target.length >= 3 && distance(guess, target)
 
 // ---------- Spielablauf (Server) ----------
 
-const otherOf = (s, id) => s.players.find((p) => p.id !== id).id;
+const ids = (s) => s.players.map((p) => p.id);
+const nextAfter = (s, id) => ids(s)[(ids(s).indexOf(id) + 1) % s.players.length];
 const nameOf = (s, id) => s.players.find((p) => p.id === id)?.name ?? '?';
-const guesserOf = (s) => otherOf(s, s.drawer);
+const guessersOf = (s) => ids(s).filter((id) => id !== s.drawer);
+// „Ben muss“ (zu zweit) oder „Die anderen müssen“
+const othersDo = (s, one, many) => {
+  const g = guessersOf(s);
+  return g.length === 1 ? `${nameOf(s, g[0])} ${one}` : `Die anderen ${many}`;
+};
 
 export function setup(players, options = {}) {
-  const rounds = [2, 4, 6].includes(options.runden) ? options.runden : 4;
+  const rounds = ([1, 2, 3].includes(options.jeder) ? options.jeder : 2) * players.length;
   const zeit = [0, 60, 90, 120].includes(options.zeit) ? options.zeit : 90;
   const deck = SUGGESTIONS.map((_, i) => i);
   for (let i = deck.length - 1; i > 0; i--) {
@@ -259,8 +265,9 @@ export function setup(players, options = {}) {
     drawing: emptyDrawing(),
     startedAt: null, // erster Strich: ab da läuft die Zeit
     deadline: null,
-    guesses: [], // falsche Versuche dieser Runde: [{ text, close }]
-    past: [], // fertige Runden: [{ drawer, word, guessed, ms, tries, ops }]
+    guesses: [], // falsche Versuche dieser Runde: [{ text, close, by }]
+    gaveUp: [], // Rater, die in dieser Runde aufgegeben haben
+    past: [], // fertige Runden: [{ drawer, word, guessed, by, ms, tries, ops }]
   };
 }
 
@@ -286,7 +293,7 @@ export function action(s, { player, type, data }) {
     }
     case 'bereit': {
       if (s.phase !== 'bereit') return;
-      if (drawer) throw new Error(`${nameOf(s, guesserOf(s))} muss bereit sein.`);
+      if (drawer) throw new Error(`${othersDo(s, 'muss', 'müssen')} bereit sein.`);
       s.phase = 'malen';
       return;
     }
@@ -309,21 +316,25 @@ export function action(s, { player, type, data }) {
     }
     case 'raten': {
       if (s.phase !== 'malen') throw new Error('Gerade wird nicht geraten.');
-      if (drawer) throw new Error('Du zeichnest. Raten muss der andere.');
+      if (drawer) throw new Error(`Du zeichnest. Raten ${guessersOf(s).length === 1 ? 'muss der andere' : 'müssen die anderen'}.`);
       if (s.deadline && now > s.deadline + GRACE) throw new Error('Die Zeit ist um.');
       const text = String(data?.text ?? '').replace(/\s+/g, ' ').trim().slice(0, 30);
       const guess = norm(text);
       if (!guess) throw new Error('Bitte tipp ein Wort ein.');
       const target = norm(s.word);
-      if (guess === target) return endRound(s, true, now);
-      if (s.guesses.some((g) => norm(g.text) === guess)) throw new Error('Das hast du schon geraten.');
-      s.guesses.push({ text, close: isClose(guess, target) });
+      if (guess === target) return endRound(s, true, now, player);
+      const same = s.guesses.find((g) => norm(g.text) === guess);
+      if (same) throw new Error(same.by && same.by !== player ? 'Das wurde schon geraten.' : 'Das hast du schon geraten.');
+      s.guesses.push({ text, close: isClose(guess, target), by: player });
       if (s.guesses.length > 60) s.guesses.shift();
       return;
     }
     case 'aufgeben': {
+      // Die Runde endet erst, wenn alle Rater aufgegeben haben.
       if (s.phase !== 'malen' || drawer) return;
-      return endRound(s, false, now);
+      s.gaveUp = [...new Set([...(s.gaveUp ?? []), player])];
+      if (guessersOf(s).every((id) => s.gaveUp.includes(id))) return endRound(s, false, now);
+      return;
     }
   }
 }
@@ -333,24 +344,26 @@ export function tick(s, now) {
   if (s.phase === 'malen' && s.deadline && now >= s.deadline + GRACE) endRound(s, false, now);
 }
 
-function endRound(s, guessed, now) {
+function endRound(s, guessed, now, by = null) {
   s.past.push({
     drawer: s.drawer,
     word: s.word,
     guessed,
+    by, // wer es erraten hat
     ms: guessed && s.startedAt ? Math.min(now, s.deadline ?? now) - s.startedAt : null,
     tries: s.guesses.length,
     ops: s.drawing.ops.slice(0, s.drawing.n),
   });
   Object.assign(s, {
     round: s.round + 1,
-    drawer: guesserOf(s),
+    drawer: nextAfter(s, s.drawer),
     phase: 'wort',
     word: null,
     drawing: emptyDrawing(),
     startedAt: null,
     deadline: null,
     guesses: [],
+    gaveUp: [],
   });
   if (s.round < s.rounds) return;
 
@@ -368,8 +381,10 @@ function endRound(s, guessed, now) {
 export function waitingFor(s) {
   if (s.result) return [];
   if (s.phase === 'wort') return [s.drawer];
-  if (s.phase === 'bereit') return [guesserOf(s)];
-  if (s.phase === 'malen') return s.startedAt ? [s.drawer, guesserOf(s)] : [s.drawer];
+  if (s.phase === 'bereit') return guessersOf(s);
+  if (s.phase === 'malen') {
+    return s.startedAt ? [s.drawer, ...guessersOf(s).filter((id) => !(s.gaveUp ?? []).includes(id))] : [s.drawer];
+  }
   return [];
 }
 
@@ -383,18 +398,18 @@ export function notices(s, before, player) {
     return [{ to: s.drawer, text: `${how} Jetzt zeichnest du. Denk dir ein Wort aus.` }];
   }
   if (before.phase === 'wort' && s.phase === 'bereit') {
-    return [{ to: guesserOf(s), text: `${drawerName} hat ein Wort. Tipp auf Bereit, dann geht es los.` }];
+    return guessersOf(s).map((id) => ({ to: id, text: `${drawerName} hat ein Wort. Tipp auf Bereit, dann geht es los.` }));
   }
   if (before.phase === 'bereit' && s.phase === 'malen') {
-    return [{ to: s.drawer, text: `${nameOf(s, guesserOf(s))} ist bereit. Du kannst zeichnen.` }];
+    return [{ to: s.drawer, text: `${nameOf(s, player)} ist bereit. Du kannst zeichnen.` }];
   }
   if (s.phase === 'malen' && !before.startedAt && s.startedAt) {
-    return [{ to: guesserOf(s), text: `${drawerName} zeichnet. Rate mit.` }];
+    return guessersOf(s).map((id) => ({ to: id, text: `${drawerName} zeichnet. Rate mit.` }));
   }
   return [];
 }
 
-// Geheim: das Wort (der Rater sieht nur die Striche) und die Vorschläge des Zeichners.
+// Geheim: das Wort (die Rater sehen nur die Striche) und die Vorschläge des Zeichners.
 // Die Zeichnungen fertiger Runden kommen erst am Ende mit, bis dahin nur die der letzten Runde.
 export function view(s, me) {
   const { deck, deckPos, ...rest } = s;
@@ -858,7 +873,8 @@ function renderTrack(box, s, game) {
   const before = game.prev ? game.prev.past.length : game.first ? 0 : s.past.length;
   const items = Array.from({ length: s.rounds }, (_, i) => {
     const r = s.past[i];
-    const drawer = r ? r.drawer : (i - s.round) % 2 === 0 ? s.drawer : otherOf(s, s.drawer);
+    const list = ids(s);
+    const drawer = r ? r.drawer : list[(list.indexOf(s.drawer) + i - s.round) % list.length];
     const state = r ? (r.guessed ? 'ok' : 'miss') : i === s.round && !s.result ? 'now' : 'next';
     const label = r ? (r.guessed ? 'erraten' : 'nicht erraten') : state === 'now' ? 'läuft' : 'kommt noch';
     return `<li class="mm-round is-${state} ${r && i >= before ? 'fresh' : ''}" style="--i:${i};--c:${game.color(drawer)}"
@@ -870,7 +886,7 @@ function renderTrack(box, s, game) {
     const who = s.drawer === game.me ? 'Du zeichnest.' : `${game.esc(game.name(s.drawer))} zeichnet.`;
     caption = `Runde ${word(s.round + 1)} von ${word(s.rounds)}. <span class="marker" style="color:${game.color(s.drawer)}"></span> ${who}`;
   }
-  box.innerHTML = `<ol class="mm-rounds ${game.first ? 'intro' : ''}">${items}</ol><p class="mm-track-cap">${caption}</p>`;
+  box.innerHTML = `<ol class="mm-rounds ${s.rounds > 9 ? 'many' : ''} ${game.first ? 'intro' : ''}">${items}</ol><p class="mm-track-cap">${caption}</p>`;
 }
 
 // --- Wort aussuchen (mit Auflösung der letzten Runde) ---
@@ -878,7 +894,8 @@ function renderTrack(box, s, game) {
 function renderWord(stage, s, game, u, from) {
   const signal = u.stage.signal;
   const drawer = s.drawer === game.me;
-  const other = game.esc(game.name(otherOf(s, game.me)));
+  const g = guessersOf(s);
+  const other = g.length === 1 ? `${game.esc(game.name(g[0]))} sieht` : 'Die anderen sehen';
   stage.innerHTML = `
     ${s.past.length ? revealHtml(s, game) : ''}
     ${
@@ -887,7 +904,7 @@ function renderWord(stage, s, game, u, from) {
             <label for="mm-word-in">Dein Wort</label>
             <input id="mm-word-in" name="wort" maxlength="${MAX_WORD}" autocomplete="off" spellcheck="false" enterkeyhint="done">
             <div class="mm-preview" aria-hidden="true"></div>
-            <p class="field-hint muted">${other} sieht nur einen Strich pro Buchstaben. Erlaubt sind Buchstaben, Leerzeichen und Bindestriche.</p>
+            <p class="field-hint muted">${other} nur einen Strich pro Buchstaben. Erlaubt sind Buchstaben, Leerzeichen und Bindestriche.</p>
             <div class="row">
               <button class="btn primary" type="submit">Fertig</button>
               <button class="btn mm-suggest" type="button">Vorschlag</button>
@@ -935,10 +952,12 @@ function renderWord(stage, s, game, u, from) {
 function revealHtml(s, game) {
   const r = s.past[s.past.length - 1];
   const who = r.drawer === game.me ? 'Du hast' : `${game.esc(game.name(r.drawer))} hat`;
+  // Zu mehreren steht dabei, wer es erraten hat
+  const by = s.players.length > 2 && r.by ? `${r.by === game.me ? 'Du hast' : `${game.esc(game.name(r.by))} hat`} es erraten` : 'Erraten';
   let res;
   if (!r.guessed) res = 'Nicht erraten.';
-  else if (r.ms === null) res = 'Erraten, noch bevor der erste Strich da war.';
-  else res = `Erraten in <span class="num">${fmt(r.ms, true)}</span>${r.tries ? '.' : ', gleich beim ersten Versuch.'}`;
+  else if (r.ms === null) res = `${by}, noch bevor der erste Strich da war.`;
+  else res = `${by} in <span class="num">${fmt(r.ms, true)}</span>${r.tries ? '.' : ', gleich beim ersten Versuch.'}`;
   return `<section class="mm-reveal ${r.guessed ? 'is-ok' : 'is-miss'}" aria-label="Auflösung">
     <div class="mm-thumb"><canvas width="500" height="500" role="img" aria-label="Zeichnung zu ${game.esc(r.word)}"></canvas>${STAMP[r.guessed ? 'ok' : 'miss']}</div>
     <div class="mm-reveal-text">
@@ -982,7 +1001,7 @@ function renderReady(stage, s, game) {
     stage.innerHTML = `<div class="mm-ready">
       <p class="label">Dein Wort</p>
       ${slotsHtml(game, s.pattern, s.word, 'drop')}
-      <p class="status">Warte, bis ${game.esc(game.name(otherOf(s, game.me)))} bereit ist. Die Zeit läuft ab deinem ersten Strich.</p>
+      <p class="status">Warte, bis ${guessersOf(s).length === 1 ? `${game.esc(game.name(guessersOf(s)[0]))} bereit ist` : 'jemand bereit ist'}. Die Zeit läuft ab deinem ersten Strich.</p>
       <button class="link" data-action="anderes-wort">Anderes Wort</button>
     </div>`;
     return;
@@ -1037,7 +1056,9 @@ function toolsHtml() {
 function renderBoard(stage, s, game, u) {
   const signal = u.stage.signal;
   const drawer = u.drawer;
-  const otherName = game.esc(game.name(drawer ? otherOf(s, game.me) : s.drawer));
+  const many = guessersOf(s).length > 1;
+  const otherName = game.esc(game.name(drawer ? guessersOf(s)[0] : s.drawer));
+  const triesTitle = drawer ? (many ? 'Versuche der anderen' : `Versuche von ${otherName}`) : many ? 'Versuche' : 'Deine Versuche';
   const n = slotCount(s.pattern);
   stage.innerHTML = `
     <div class="mm-board ${drawer ? 'is-drawer' : 'is-guesser'}">
@@ -1068,7 +1089,7 @@ function renderBoard(stage, s, game, u) {
       }
       <p class="status mm-note" aria-live="polite"></p>
       <section class="mm-tries" hidden>
-        <h3 class="mm-tries-title">${drawer ? `Versuche von ${otherName}` : 'Deine Versuche'}</h3>
+        <h3 class="mm-tries-title">${triesTitle}</h3>
         <ol class="mm-tries-list" aria-live="polite"></ol>
       </section>
       ${drawer ? '' : '<div class="mm-giveup"><button type="button" class="link">Aufgeben</button></div>'}
@@ -1189,10 +1210,12 @@ function renderTries(u) {
     board.list.replaceChildren();
     u.triesShown = 0;
   }
+  const many = s.players.length > 2;
   for (const g of list.slice(u.triesShown)) {
     const li = document.createElement('li');
     li.className = `mm-try enter ${g.close ? 'close' : ''}`;
-    li.innerHTML = `<span>${game.esc(g.text)}</span>${g.close ? '<b class="mm-close">knapp</b>' : ''}`;
+    const who = many && g.by ? `<span class="marker" style="color:${game.color(g.by)}" title="${game.esc(game.name(g.by))}"></span> ` : '';
+    li.innerHTML = `<span>${who}${game.esc(g.text)}</span>${g.close ? '<b class="mm-close">knapp</b>' : ''}`;
     board.list.prepend(li);
   }
   u.triesShown = list.length;
@@ -1201,8 +1224,15 @@ function renderTries(u) {
 
 function renderNote(u) {
   const { s, game, board } = u;
+  const gaveUp = !u.drawer && (s.gaveUp ?? []).includes(game.me);
+  const guess = board.el.querySelector('.mm-guess');
+  if (guess) {
+    guess.hidden = gaveUp;
+    board.el.querySelector('.mm-giveup').hidden = gaveUp;
+  }
   let text = '';
   if (u.full) text = 'Das Bild ist voll. Nimm etwas zurück oder lösche alles.';
+  else if (gaveUp) text = 'Du hast aufgegeben. Die anderen raten weiter.';
   else if (!s.startedAt) {
     text = u.drawer
       ? 'Leg los. Die Zeit läuft ab deinem ersten Strich.'
@@ -1589,7 +1619,10 @@ export const style = `
 
   /* Runden */
   .mm-track { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
-  .mm-rounds { display: flex; gap: 6px; }
+  .mm-rounds { display: flex; flex-wrap: wrap; gap: 6px; }
+  .mm-rounds.many { gap: 4px; }
+  .mm-rounds.many .mm-round { width: 22px; height: 22px; }
+  .mm-rounds.many .mm-round svg { width: 18px; height: 18px; }
   .mm-round {
     position: relative; width: 28px; height: 28px; border: 1px solid var(--hairline); border-radius: var(--radius);
     display: grid; place-items: center;

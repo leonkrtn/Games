@@ -1,12 +1,13 @@
 // Qwixx: würfeln, ankreuzen, Reihen schließen.
 //
 // Eine Runde: Wer dran ist, würfelt mit zwei weißen und vier farbigen Würfeln.
-// 1. Beide dürfen gleichzeitig die Summe der weißen Würfel in einer Reihe ankreuzen. Das ist offen:
-//    Man sieht sofort, was der andere gewählt hat.
+// 1. Alle dürfen gleichzeitig die Summe der weißen Würfel in einer Reihe ankreuzen. Das ist offen:
+//    Man sieht sofort, was die anderen gewählt haben.
 // 2. Danach darf nur, wer gewürfelt hat, einen weißen und einen farbigen Würfel zusammenzählen.
 // Wer würfelt und in beiden Schritten nichts ankreuzt, bekommt einen Fehlwurf. Angekreuzt wird nur
 // von links nach rechts. Das letzte Feld einer Reihe geht erst ab fünf Kreuzen, dann ist die Reihe für
 // alle geschlossen und ihr Würfel fällt weg. Ende bei zwei geschlossenen Reihen oder vier Fehlwürfen.
+// Zwei bis sechs Spieler, gewürfelt wird reihum.
 //
 // Einstellungen in der Lobby (meta.options): klassisch oder gemixxt (jedes Feld hat eine eigene
 // Farbe, Weiß plus Farbe nur auf ein Feld dieser Farbe; die Schlösser bleiben Rot, Gelb, Grün, Blau)
@@ -19,7 +20,7 @@
 export const meta = {
   name: 'Qwixx',
   description: 'Würfelt, kreuzt an und schließt Reihen. Wer mehr Punkte hat, gewinnt.',
-  players: [2, 2],
+  players: [2, 6],
   options: [
     {
       id: 'variante',
@@ -62,7 +63,8 @@ const layoutFor = (variant) =>
 const LAYOUTS = { klassisch: layoutFor('klassisch'), gemixxt: layoutFor('gemixxt') };
 const layoutOf = (s) => LAYOUTS[s.variant];
 
-const otherOf = (s, id) => s.players.find((p) => p.id !== id).id;
+const ids = (s) => s.players.map((p) => p.id);
+const nextAfter = (s, id) => ids(s)[(ids(s).indexOf(id) + 1) % s.players.length];
 const nameOf = (s, id) => s.players.find((p) => p.id === id).name;
 
 export function setup(players, options = {}) {
@@ -183,7 +185,7 @@ function roll(s, now) {
 }
 
 function afterWhite(s, now) {
-  // In Schritt eins geschlossene Reihen gelten erst jetzt: So dürfen beide gleichzeitig in derselben
+  // In Schritt eins geschlossene Reihen gelten erst jetzt: So dürfen alle gleichzeitig in derselben
   // Reihe ankreuzen oder sie sogar beide schließen.
   COLORS.forEach((_, r) => {
     if (!s.locked[r] && s.players.some((p) => s.sheets[p.id].locks[r])) lockRow(s, r);
@@ -204,7 +206,7 @@ function endRound(s, now) {
     r.fail = true;
   }
   if (over(s)) return finish(s);
-  s.active = otherOf(s, r.by);
+  s.active = nextAfter(s, r.by);
   s.phase = 'wuerfeln';
   s.deadline = deadlineFrom(s, now);
 }
@@ -217,13 +219,28 @@ function finish(s) {
   s.phase = 'ende';
   s.deadline = null;
   s.end = s.locked.filter(Boolean).length >= 2 ? 'reihen' : 'fehlwuerfe';
-  const [a, b] = s.players.map((p) => ({ p, total: scoreOf(s, p.id).total }));
-  if (a.total === b.total) {
-    s.result = { winners: [], text: `Unentschieden, beide haben ${word(a.total)} Punkte.` };
+  const all = s.players.map((p) => ({ p, total: scoreOf(s, p.id).total }));
+  if (all.length === 2) {
+    const [a, b] = all;
+    if (a.total === b.total) {
+      s.result = { winners: [], text: `Unentschieden, beide haben ${word(a.total)} Punkte.` };
+      return;
+    }
+    const [w, l] = a.total > b.total ? [a, b] : [b, a];
+    s.result = { winners: [w.p.id], text: `${w.p.name} gewinnt, ${word(w.total)} zu ${word(l.total)}.` };
     return;
   }
-  const [w, l] = a.total > b.total ? [a, b] : [b, a];
-  s.result = { winners: [w.p.id], text: `${w.p.name} gewinnt, ${word(w.total)} zu ${word(l.total)}.` };
+  const top = Math.max(...all.map((x) => x.total));
+  const best = all.filter((x) => x.total === top).map((x) => x.p);
+  const points = top === 1 || top === -1 ? `${top < 0 ? 'minus ' : ''}einem Punkt` : `${word(top)} Punkten`;
+  if (best.length === all.length) s.result = { winners: [], text: `Unentschieden, alle haben ${word(top)} Punkte.` };
+  else if (best.length === 1) s.result = { winners: [best[0].id], text: `${best[0].name} gewinnt mit ${points}.` };
+  else s.result = { winners: best.map((p) => p.id), text: `${list(best.map((p) => p.name))} gewinnen mit je ${points}.` };
+}
+
+// „Anna“, „Anna und Ben“, „Anna, Ben und Cem“
+function list(names) {
+  return names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} und ${names.at(-1)}`;
 }
 
 // --- Felder ---
@@ -361,7 +378,7 @@ function local(el, game) {
     u = {
       signal: game.signal,
       ctrl: null, // pro Zeichnen: Timer und Listener
-      tab: 'me', // 'me' | 'them'
+      tab: null, // wessen Zettel zu sehen ist (Konto-ID), null = der eigene
       pick: null, // vorläufiges Kreuz [reihe, feld]
       pickKey: '',
       optKey: '', // für welche Entscheidung die Felder schon aufgeleuchtet sind
@@ -399,7 +416,7 @@ export function render(el, s, game) {
     u.pickKey = key;
     u.pick = null;
     u.autoSent = false;
-    if (decisionOf(s, game.me)) u.tab = 'me'; // neue Entscheidung: der eigene Zettel kommt nach vorn
+    if (decisionOf(s, game.me)) u.tab = game.me; // neue Entscheidung: der eigene Zettel kommt nach vorn
   }
 
   const fx = changes(s, game);
@@ -422,8 +439,8 @@ export function render(el, s, game) {
         return;
       }
       const tab = e.target.closest('[data-tab]');
-      if (tab && tab.dataset.tab !== u.tab) {
-        const from = u.tab;
+      if (tab && tab.dataset.tab !== shownOf(s, game, u)) {
+        const from = shownOf(s, game, u);
         u.tab = tab.dataset.tab;
         paint({ ...NONE, tabFrom: from });
         return;
@@ -573,11 +590,20 @@ function markDice(tray, s, game, u) {
 
 // --- Alles unter dem Würfeltisch ---
 
+// Reihenfolge der Reiter: ich zuerst, dann die anderen in Spielreihenfolge
+function seatOrder(s, me) {
+  const list = ids(s);
+  const i = Math.max(0, list.indexOf(me));
+  return [...list.slice(i), ...list.slice(0, i)];
+}
+// Wessen Zettel gerade zu sehen ist
+const shownOf = (s, game, u) => (u.tab && s.sheets[u.tab] ? u.tab : game.me);
+
 function paintMain(main, s, game, u, fx) {
   const me = game.me;
-  const them = otherOf(s, me);
   const decision = decisionOf(s, me);
-  const shown = u.tab === 'me' ? me : them;
+  const shown = shownOf(s, game, u);
+  const order = seatOrder(s, me);
   const freshOpts = decision && u.optKey !== u.pickKey;
   if (decision) u.optKey = u.pickKey;
 
@@ -591,13 +617,14 @@ function paintMain(main, s, game, u, fx) {
     ${barHTML(s, game, u, decision)}`;
 
   if (fx.tabFrom && !game.reducedMotion) {
-    const dir = fx.tabFrom === 'me' ? 1 : -1;
+    const [from, to] = [order.indexOf(fx.tabFrom), order.indexOf(shown)];
+    const dir = to > from ? 1 : -1;
     main.querySelector('.qx-sheet').animate(
       [{ transform: `translateX(${dir * 18}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }],
       { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' },
     );
     const ind = main.querySelector('.qx-ind');
-    ind.animate([{ transform: `translateX(${fx.tabFrom === 'me' ? 0 : 100}%)` }, { transform: `translateX(${u.tab === 'me' ? 0 : 100}%)` }], {
+    ind.animate([{ transform: `translateX(${from * 100}%)` }, { transform: `translateX(${to * 100}%)` }], {
       duration: 260,
       easing: 'cubic-bezier(.6,0,.2,1)',
     });
@@ -606,7 +633,7 @@ function paintMain(main, s, game, u, fx) {
   // Punkte zählen hoch
   if (fx.totals && !game.reducedMotion) {
     for (const p of s.players) {
-      const node = main.querySelector(`.qx-tab[data-tab="${p.id === me ? 'me' : 'them'}"] .qx-tab-pts`);
+      const node = main.querySelector(`.qx-tab[data-tab="${p.id}"] .qx-tab-pts`);
       if (node) countUp(node, fx.totals[p.id].total, scoreOf(s, p.id).total, 250, u.ctrl.signal);
     }
     const before = fx.totals[shown];
@@ -680,7 +707,6 @@ function startTimer(main, s, game, u, signal) {
 function statusHTML(s, game, decision) {
   const e = game.esc;
   const me = game.me;
-  const them = otherOf(s, me);
   let who = s.active;
   let text;
   if (s.result) {
@@ -702,8 +728,11 @@ function statusHTML(s, game, decision) {
         ? 'Weiße Summe ankreuzen oder auslassen, danach Weiß plus Farbe.'
         : 'Weiße Summe ankreuzen oder auslassen.';
     } else {
-      who = them;
-      text = s.active === me ? `${e(game.name(them))} überlegt noch, danach kommt dein Weiß plus Farbe.` : `${e(game.name(them))} überlegt noch.`;
+      const open = seatOrder(s, me).filter((id) => s.round.white[id] === null);
+      who = open[0];
+      const names = list(open.map((id) => e(game.name(id))));
+      const verb = open.length === 1 ? 'überlegt' : 'überlegen';
+      text = s.active === me ? `${names} ${verb} noch, danach kommt dein Weiß plus Farbe.` : `${names} ${verb} noch.`;
     }
   } else {
     text = decision
@@ -718,7 +747,7 @@ const fieldLabel = (s, [r, i]) => {
   return `${COLOR_NAME[row.colors[i]]} <span class="num">${row.nums[i]}</span>`;
 };
 
-// Was im aktuellen Wurf schon entschieden ist, pro Spieler ein Satz (offen für beide).
+// Was im aktuellen Wurf schon entschieden ist, pro Spieler ein Satz (offen für alle).
 // Wer noch überlegt, steht im Status darüber.
 function roundHTML(s, game, u) {
   const r = s.round;
@@ -739,7 +768,7 @@ function roundHTML(s, game, u) {
     const name = you ? 'Du' : game.esc(game.name(id));
     return `<li class="${fresh ? 'enter' : ''}">${marker(game, id)}<span><b>${name}</b> ${text}.</span></li>`;
   };
-  const lines = [game.me, otherOf(s, game.me)].map(line).join('');
+  const lines = seatOrder(s, game.me).map(line).join('');
   if (!lines) return '';
   const caption = s.phase === 'wuerfeln' ? '<li class="qx-round-cap">Letzter Wurf</li>' : '';
   return `<ul class="qx-round">${caption}${lines}</ul>`;
@@ -747,19 +776,21 @@ function roundHTML(s, game, u) {
 
 function tabsHTML(s, game, u, fx) {
   const e = game.esc;
-  const tab = (key, id, label) => {
-    const unseen = u.tab !== key && sheetKeys(s, id).some((k) => !u.drawn.has(k));
+  const shown = shownOf(s, game, u);
+  const order = seatOrder(s, game.me);
+  const tab = (id) => {
+    const unseen = shown !== id && sheetKeys(s, id).some((k) => !u.drawn.has(k));
     const total = scoreOf(s, id).total;
-    return `<button type="button" role="tab" class="qx-tab" data-tab="${key}" aria-selected="${u.tab === key}" style="--pc:${game.color(id)}">
+    const label = id === game.me ? 'Du' : e(game.name(id));
+    return `<button type="button" role="tab" class="qx-tab" data-tab="${id}" aria-selected="${shown === id}" style="--pc:${game.color(id)}">
       ${marker(game, id)}<span class="qx-tab-name">${label}</span>
       ${unseen ? '<span class="qx-news" aria-label="neu"></span>' : ''}
       ${s.result ? '' : `<span class="qx-tab-pts" aria-label="${word(total)} Punkte">${minus(total)}</span>`}
     </button>`;
   };
-  const them = otherOf(s, game.me);
-  return `<div class="qx-tabs ${fx.first ? 'intro' : ''}" role="tablist" aria-label="Zettel">
-    ${tab('me', game.me, 'Du')}${tab('them', them, e(game.name(them)))}
-    <span class="qx-ind" style="transform:translateX(${u.tab === 'me' ? 0 : 100}%)"></span>
+  return `<div class="qx-tabs ${order.length > 2 ? 'many' : ''} ${fx.first ? 'intro' : ''}" role="tablist" aria-label="Zettel" style="--n:${order.length}">
+    ${order.map(tab).join('')}
+    <span class="qx-ind" style="transform:translateX(${order.indexOf(shown) * 100}%)"></span>
   </div>`;
 }
 
@@ -864,13 +895,31 @@ function barHTML(s, game, u, decision) {
 
 // Wertung am Ende: Reihe für Reihe, die Zahlen zählen hoch, zuletzt wird der Sieger unterstrichen.
 function finalHTML(s, game, fx) {
-  const ids = [game.me, otherOf(s, game.me)];
+  const ids = seatOrder(s, game.me);
   const scores = Object.fromEntries(ids.map((id) => [id, scoreOf(s, id)]));
-  const winner = s.result.winners[0];
+  const winners = s.result.winners;
   const anim = fx.ended && !game.reducedMotion;
   const STEP = 110;
   const cell = (n, k, cls = '', style = '') =>
     `<td class="num ${cls}" style="${style}" ${anim ? `data-to="${n}" data-delay="${k * STEP}"` : ''}>${anim ? '0' : minus(n)}</td>`;
+  if (ids.length > 2) {
+    // Ab drei Spielern: eine Zeile pro Spieler, Spalten sind die Reihen, Fehlwürfe und die Summe
+    const head = `<tr><th></th>${COLORS.map((c) => `<th aria-label="${COLOR_NAME[c]}"><span class="qx-swatch" style="--c:var(--qx-${c})"></span></th>`).join('')}
+      <th aria-label="Fehlwürfe"><span class="qx-mini-fail">${CROSS()}</span></th><th>Summe</th></tr>`;
+    const body = ids
+      .map((id, k) => {
+        const sc = scores[id];
+        const state = winners.length ? (winners.includes(id) ? 'win' : 'lose') : '';
+        return `<tr class="${state}" style="--k:${k};--wc:${game.color(id)}">
+          <th>${marker(game, id)} ${id === game.me ? 'Du' : game.esc(game.name(id))}</th>
+          ${sc.rows.map((n) => cell(n, k)).join('')}${cell(-sc.fails, k)}${cell(sc.total, k + 1, `qx-sum ${state}`)}
+        </tr>`;
+      })
+      .join('');
+    return `<section class="qx-final many ${anim ? 'play' : ''}" aria-label="Wertung">
+      <table><thead>${head}</thead><tbody>${body}</tbody></table>
+    </section>`;
+  }
   const rows = COLORS.map(
     (c, r) => `<tr style="--k:${r}"><th><span class="qx-swatch" style="--c:var(--qx-${c})"></span>${COLOR_NAME[c]}</th>${ids
       .map((id) => cell(scores[id].rows[r], r))
@@ -878,7 +927,7 @@ function finalHTML(s, game, fx) {
   ).join('');
   const fails = `<tr style="--k:4"><th>Fehlwürfe</th>${ids.map((id) => cell(-scores[id].fails, 4)).join('')}</tr>`;
   const total = `<tr class="qx-total" style="--k:5"><th>Summe</th>${ids
-    .map((id) => cell(scores[id].total, 5, winner ? (id === winner ? 'win' : 'lose') : '', `--wc:${game.color(id)}`))
+    .map((id) => cell(scores[id].total, 5, winners.length ? (winners.includes(id) ? 'win' : 'lose') : '', `--wc:${game.color(id)}`))
     .join('')}</tr>`;
   return `<section class="qx-final ${anim ? 'play' : ''}" aria-label="Wertung">
     <table>
@@ -896,7 +945,7 @@ function rulesHTML(s) {
     <summary>Regeln${mixed ? ' (gemixxt)' : ''}</summary>
     <ol>
       <li>Wer dran ist, würfelt mit allen Würfeln.</li>
-      <li>Zuerst dürfen beide die Summe der weißen Würfel in einer Reihe ankreuzen.</li>
+      <li>Zuerst dürfen ${s.players.length > 2 ? 'alle' : 'beide'} die Summe der weißen Würfel in einer Reihe ankreuzen.</li>
       <li>${mixed
         ? 'Danach darf, wer gewürfelt hat, einen weißen und einen farbigen Würfel zusammenzählen und die Zahl auf einem Feld in der Farbe dieses Würfels ankreuzen.'
         : 'Danach darf, wer gewürfelt hat, einen weißen und einen farbigen Würfel zusammenzählen und die Zahl in der Reihe dieser Farbe ankreuzen.'}</li>
@@ -1003,8 +1052,8 @@ export const style = `
   .qx-round li.enter { animation: qx-rise 260ms cubic-bezier(.2,.8,.2,1); }
   @keyframes qx-rise { from { opacity: 0; transform: translateY(6px); } }
 
-  /* ---------- Reiter: eigener Zettel und der des anderen, mit Punkten ---------- */
-  .qx-tabs { position: relative; display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--hairline); }
+  /* ---------- Reiter: eigener Zettel und die der anderen, mit Punkten ---------- */
+  .qx-tabs { position: relative; display: grid; grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr)); border-bottom: 1px solid var(--hairline); }
   .qx-tab {
     appearance: none; -webkit-appearance: none;
     display: flex; align-items: center; gap: 8px;
@@ -1020,7 +1069,13 @@ export const style = `
   .qx-tab-pts { margin-left: auto; color: var(--pc); font: 800 var(--t-xl) / 1 var(--font-display); font-variant-numeric: tabular-nums; }
   .qx-news { flex: none; width: 7px; height: 7px; background: var(--pc); animation: qx-news 900ms ease-in-out 3 alternate; }
   @keyframes qx-news { from { opacity: .25; transform: scale(.6); } }
-  .qx-ind { position: absolute; left: 0; bottom: -1px; width: 50%; height: 3px; background: var(--ink); }
+  .qx-ind { position: absolute; left: 0; bottom: -1px; width: calc(100% / var(--n, 2)); height: 3px; background: var(--ink); }
+  /* Ab drei Spielern: Name klein oben, Punkte darunter */
+  .qx-tabs.many .qx-tab { display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: center; gap: 0 5px; padding: 4px 4px 6px 0; font-size: var(--t-sm); }
+  .qx-tabs.many .qx-tab + .qx-tab { padding-left: 6px; }
+  .qx-tabs.many .qx-tab-pts { grid-column: 1 / -1; margin-left: 0; font-size: var(--t-lg); }
+  .qx-tabs.many .qx-news { position: absolute; margin: 4px 0 0 0; right: 4px; }
+  .qx-tabs.many .qx-tab { position: relative; }
 
   /* ---------- Zettel ---------- */
   .qx-sheet { display: grid; gap: 4px; }
@@ -1130,6 +1185,20 @@ export const style = `
   .qx-final th:first-child { padding-left: 0; text-align: left; }
   .qx-final thead th { border-bottom: 2px solid var(--line); font-size: var(--t-sm); white-space: nowrap; }
   .qx-final td { font: 800 var(--t-lg) / 1 var(--font-display); font-variant-numeric: tabular-nums; }
+  /* Ab drei Spielern: Zeilen pro Spieler */
+  .qx-final.many table { table-layout: fixed; }
+  .qx-final.many th, .qx-final.many td { padding-left: 4px; }
+  .qx-final.many thead th:first-child { width: 32%; }
+  .qx-final.many thead th:last-child { width: 19%; }
+  .qx-final.many thead .qx-swatch { margin: 0; }
+  .qx-final.many tbody th { font-size: var(--t-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qx-final.many td { font-size: var(--t-md); }
+  .qx-final.many td.qx-sum { position: relative; font-size: var(--t-xl); }
+  .qx-final.many tr.win td.qx-sum { color: var(--wc); }
+  .qx-final.many td.qx-sum.win::after { content: ''; position: absolute; left: 25%; right: 0; bottom: 2px; height: 4px; background: var(--wc); transform-origin: right; }
+  .qx-final.many tr.lose { opacity: .45; }
+  .qx-mini-fail { --pc: var(--bad); position: relative; display: inline-block; width: 16px; height: 16px; border: 1.5px solid var(--ink); border-radius: 2px; vertical-align: middle; }
+  .qx-mini-fail .qx-x { left: 0; top: 0; width: 100%; height: 100%; }
   .qx-swatch { display: inline-block; width: .7em; height: .7em; margin-right: 8px; background: var(--c); }
   .qx-total th, .qx-total td { padding-top: 10px; border-bottom: 0; border-top: 2px solid var(--line); }
   .qx-total td { position: relative; font-size: var(--t-2xl); }

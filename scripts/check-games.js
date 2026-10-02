@@ -26,7 +26,8 @@ for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.js')).sort()) 
         if (!o.id || !o.choices?.length) problems.push('meta.options: jede Option braucht id und choices');
         for (const c of (o.choices ?? []).slice(1)) variants.push({ ...defaults, [o.id]: c.value });
       }
-      for (const n of new Set([min, Math.min(max, min + 1)])) {
+      // Jede erlaubte Spielerzahl bis sechs (so groß werden Gruppen)
+      for (let n = min; n <= Math.min(max, 6); n++) {
         const players = Array.from({ length: n }, (_, i) => ({ id: `p${i}`, name: `Spieler ${i + 1}` }));
         for (const chosen of variants) {
           const state = mod.setup(players, chosen);

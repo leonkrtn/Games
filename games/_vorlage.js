@@ -2,14 +2,16 @@
 // Kopiere diese Datei, z.B. nach games/mein-spiel.js (ohne _ am Anfang),
 // dann taucht das Spiel automatisch in der Lobby auf (lokal: `npm run dev` neu starten).
 //
-// Beispiel-Spiel "Bis 10": Abwechselnd zählt jeder 1 oder 2 weiter.
+// Beispiel-Spiel "Bis 10": Reihum zählt jeder 1 oder 2 weiter.
 // Wer die 10 erreicht, gewinnt.
 
 // 1) Name, Beschreibung und erlaubte Spielerzahl [min, max]
+//    Wo es sinnvoll ist, bis zu sechs (so groß werden Gruppen): Wer dran ist, geht reihum, und die Anzeige
+//    muss für alle passen. Nur zu zweit, wenn das Spiel davon lebt (z.B. Tic-Tac-Toe, Schiffe versenken).
 export const meta = {
   name: 'Bis 10',
-  description: 'Zählt abwechselnd 1 oder 2 weiter. Wer die 10 sagt, gewinnt.',
-  players: [2, 2],
+  description: 'Zählt reihum 1 oder 2 weiter. Wer die 10 sagt, gewinnt.',
+  players: [2, 6],
   // Optional: Einstellungen, die man in der Lobby vor dem Start wählt (erste Wahl = Vorgabe).
   // „Nochmal“ startet mit denselben Einstellungen. Beispiel: qwixx.js
   // options: [
@@ -42,7 +44,9 @@ export function action(state, { player, type, data }) {
     const name = state.players.find((p) => p.id === player).name;
     state.result = { winners: [player], text: `${name} hat die 10.` };
   } else {
-    state.turn = state.players.find((p) => p.id !== player).id;
+    // Reihum: der Nächste in der Reihenfolge der Spieler, nach dem Letzten wieder der Erste
+    const i = state.players.findIndex((p) => p.id === player);
+    state.turn = state.players[(i + 1) % state.players.length].id;
   }
 }
 

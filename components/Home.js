@@ -5,8 +5,7 @@ import { account } from './api';
 import { getSupabase } from '@/lib/supabase-browser';
 import { isIos, isStandalone } from '@/lib/push-client';
 import { storage } from './api';
-
-export const COLORS = ['var(--p1)', 'var(--p2)'];
+import { PLAYER_COLORS } from '@/lib/colors';
 
 // Zahlen im Text als Wort (die Textschrift hat eine durchgestrichene Null)
 const WORDS = ['keine', 'eine', 'zwei', 'drei', 'vier', 'fünf', 'sechs', 'sieben', 'acht', 'neun', 'zehn', 'elf', 'zwölf'];
@@ -156,6 +155,19 @@ export default function Home({ user, openRoom, openPage, showToast, push, onLogo
         )}
       </section>
 
+      {data?.groups.length > 0 && (
+        <section>
+          <h2 className="section-title">Gruppen</h2>
+          <ul className="friend-list">
+            {data.groups.map((g) => (
+              <li key={g.room}>
+                <GroupRow group={g} me={user} onOpen={() => openRoom(g.room)} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <Menu data={data} push={push} openPage={openPage} />
 
       <InstallHint />
@@ -190,7 +202,7 @@ export function Wordmark() {
 
 function FriendRow({ friend, me, onOpen }) {
   const { user: other, scores, order, game } = friend;
-  const color = (id) => COLORS[order?.indexOf(id)] ?? 'var(--ink)';
+  const color = (id) => PLAYER_COLORS[order?.indexOf(id)] ?? 'var(--ink)';
   let status = 'Kein Spiel offen';
   if (game?.finished) status = `${game.name} ist vorbei`;
   else if (game?.myTurn) status = `Du bist dran bei ${game.name}`;
@@ -221,6 +233,43 @@ function FriendRow({ friend, me, onOpen }) {
   );
 }
 
+// Gruppe: Name, wer dran ist, darunter alle Mitglieder mit ihren gewonnenen Spielen
+function GroupRow({ group, me, onOpen }) {
+  const { name, members, scores, order, game } = group;
+  const color = (id) => PLAYER_COLORS[order?.indexOf(id)] ?? 'var(--ink)';
+  const nameOf = (id) => members.find((m) => m.id === id)?.name ?? '?';
+  const waiting = game?.waiting ?? [];
+  let status = 'Kein Spiel offen';
+  if (game?.finished) status = `${game.name} ist vorbei`;
+  else if (game?.myTurn) status = `Du bist dran bei ${game.name}`;
+  else if (waiting.length === 1) status = `${nameOf(waiting[0])} ist dran bei ${game.name}`;
+  else if (waiting.length > 1) status = `${capitalize(countWord(waiting.length))} sind dran bei ${game.name}`;
+  else if (game) status = game.name;
+
+  return (
+    <button className={`friend-row group-row ${game?.myTurn ? 'my-turn' : ''}`} onClick={onOpen} data-group={group.room}>
+      <span className="friend-name">{name}</span>
+      <span className="friend-status">
+        {game?.myTurn && <span className="marker" style={{ color: 'var(--p1)' }} aria-hidden="true" />}
+        {status}
+      </span>
+      <span className="group-members">
+        {members.map((m) => (
+          <span key={m.id} className="group-member">
+            <span className="marker" style={{ color: color(m.id) }} aria-hidden="true" />
+            {m.id === me.id ? 'Du' : m.name}
+            <span className="num" style={{ color: color(m.id) }}>
+              {scores?.[m.id] ?? 0}
+            </span>
+          </span>
+        ))}
+      </span>
+    </button>
+  );
+}
+
+const capitalize = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+
 // Wege zu den Einstellungen, mit dem wichtigsten Stand in einer Zeile
 function Menu({ data, push, openPage }) {
   // Anfragen an mich stehen schon oben auf der Startseite, hier nur die eigenen offenen
@@ -240,6 +289,10 @@ function Menu({ data, push, openPage }) {
       <button className="menu-row" id="menu-friends" onClick={() => openPage('freunde')}>
         <span className="menu-title">Freunde verwalten</span>
         <span className="menu-status">{friends}</span>
+      </button>
+      <button className="menu-row" id="menu-group" onClick={() => openPage('gruppe')}>
+        <span className="menu-title">Gruppe gründen</span>
+        <span className="menu-status">Ein Spielzimmer für bis zu sechs Leute</span>
       </button>
       <button className="menu-row" id="menu-notify" onClick={() => openPage('benachrichtigungen')}>
         <span className="menu-title">Benachrichtigungen</span>

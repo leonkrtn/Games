@@ -1,6 +1,6 @@
 ---
 name: spiel-testen
-description: Spiele im Spielzimmer gründlich testen, bevor sie online gehen. Spiellogik in Node simulieren (tausende Partien, Geheimnisse in view, jede Partie endet), mit zwei Konten im echten Browser spielen (Handy-Breite, Desktop, ohne Bewegung), Bildschirmfotos ansehen und Finger-Gesten wie Ziehen prüfen. Laden, wenn ein neues Spiel fertig ist, ein Spiel geändert wurde oder ein Fehler gemeldet wird.
+description: Spiele im Spielzimmer gründlich testen, bevor sie online gehen. Spiellogik in Node simulieren (tausende Partien mit jeder Spielerzahl, Geheimnisse in view, jede Partie endet), mit zwei bis sechs Konten im echten Browser spielen (Handy-Breite, Desktop, ohne Bewegung), seltene Zustände im Prüfstand zeichnen, Bildschirmfotos ansehen und Finger-Gesten wie Ziehen prüfen. Laden, wenn ein neues Spiel fertig ist, ein Spiel geändert wurde oder ein Fehler gemeldet wird.
 ---
 
 # Spiele testen
@@ -21,23 +21,25 @@ const act = (s, player, type, data) => { const t = structuredClone(s); return G.
 const throws = (fn, re) => { try { fn(); } catch (e) { if (re.test(e.message)) return; throw e; } throw new Error('kein Fehler: ' + re); };
 ```
 
-Dann einige tausend Partien mit zufälligen, gültigen Zügen spielen und nach jedem Zug prüfen:
+Dann einige tausend Partien mit zufälligen, gültigen Zügen spielen, **mit jeder erlaubten Spielerzahl**
+(`for (let n = min; n <= max; n++)`, Namen z.B. Ana, Ben, Cem, Dora, Emil, Fia), und nach jedem Zug prüfen:
 
 - **Geheimnisse:** `G.view(s, id)` enthält nichts, was `id` nicht wissen darf (Handkarten, Stapel,
   Aufstellung des Gegners). Gezielt nach den geheimen Feldern suchen, nicht nach zufälligen
   Teilstrings des JSON (die treffen auch zufällig gleiche Werte).
-- **Ende:** jede Partie endet nach einer Höchstzahl Züge, `state.result` ist gesetzt, `waitingFor`
-  danach leer.
+- **Ende:** jede Partie endet nach einer Höchstzahl Züge, `state.result` ist gesetzt. (`waitingFor` des
+  Spiels muss nach dem Ende nichts Besonderes liefern: Die Plattform fragt dann nicht mehr.)
+- **Reihum:** jeder kommt dran (z.B. jeder zeichnet gleich oft), niemand, der schon raus ist.
 - **Regeln:** ungültige Züge werfen einen verständlichen Satz (`throws(..., /ist dran/)`), doppelt
   gesendete Züge (gleicher `at`/`seq`) ändern nichts, Erhaltungsgrößen stimmen (z.B. Kartenzahl).
 - **Texte:** keine Ziffern in Ergebnistexten (`!/\d/.test(text)`), `notices` gehen an die richtigen
-  Spieler.
+  Spieler. Die Ergebnistexte aller Spielerzahlen einmal ausgeben und lesen (Gleichstand zu dritt, alle gleich).
 - `JSON.stringify(state)` geht, und der Zustand bleibt klein.
 
 Läuft eine Simulation länger als zwei Minuten, die Zahl der Partien senken; Tempo misst man mit
 zwanzig Partien.
 
-## 2. Im Browser spielen (zwei Konten)
+## 2. Im Browser spielen (zwei bis sechs Konten)
 
 **Nicht mit `npm run dev` testen:** Next.js hängt dabei einen Block an `CLAUDE.md` an (falls doch
 passiert: `git checkout CLAUDE.md`). Stattdessen der Production-Server im Testmodus (ohne
@@ -51,7 +53,8 @@ ps -eo pid,cmd | grep -E "next start|next-server" | grep -v grep | awk '{print $
 
 Nach jeder Änderung am Spiel neu bauen und den Server neu starten.
 
-`zwei-spieler.cjs` in diesem Ordner legt zwei Konten an, befreundet sie und startet das Spiel:
+`zwei-spieler.cjs` in diesem Ordner legt Konten an, befreundet sie und startet das Spiel. Mit
+`players: 3` bis `6` gründet Anna eine Gruppe mit allen; `pages` enthält dann alle Seiten (Anna zuerst):
 
 ```js
 const { start, sleep, touchDrag, center } = require('/home/user/Games/.claude/skills/spiel-testen/zwei-spieler.cjs');
@@ -61,7 +64,13 @@ await A.screenshot({ path: '<scratchpad>/shots/01.png', fullPage: true });
 console.log(errors);                                                     // Konsolenfehler beider Seiten
 console.log(await A.evaluate(() => [document.documentElement.scrollWidth, innerWidth])); // gleich = kein seitliches Scrollen
 await browser.close();
+
+const { pages } = await start({ game: 'flip-7', players: 5 });           // Gruppe aus fünf Konten
+for (const p of pages) { const b = await p.$('[data-action="ziehen"]'); if (b) await b.click(); }
 ```
+
+- Mit mehreren Konten in einer Schleife auf jeder Seite einen passenden Knopf drücken; zufällig
+  wählen (`$$` und ein zufälliges Element), sonst endet z.B. Schere, Stein, Papier nie.
 
 - **Ganze Partien** im Browser durchspielen lassen: Schleife, die auf der Seite, die dran ist, einen
   gültigen Knopf drückt, bis `#result` erscheint. B sieht Änderungen im Testmodus erst nach bis zu
@@ -74,7 +83,28 @@ await browser.close();
   meist richtig: dann das Element anklicken, das ein Mensch trifft (z.B. das Schiff statt der Zelle
   darunter).
 
-## 3. Finger-Gesten
+## 3. Prüfstand: seltene Zustände gezielt zeichnen
+
+Manches kommt im echten Spiel selten oder erst spät (Sonderrunde, volle Hände, Endwertung zu sechst,
+Gleichstand). `pruefstand.mjs` zeichnet ein Spiel mit einem selbst gebauten Zustand im Browser, ohne
+Server und Konten, mit den echten Schriften und `globals.css`:
+
+```js
+import * as G from '/home/user/Games/games/flip-7.js';
+import { shot, close } from '/home/user/Games/.claude/skills/spiel-testen/pruefstand.mjs';
+const players = ['Anna', 'Ben', 'Cem', 'Dora', 'Emil', 'Fiona'].map((name, i) => ({ id: 'p' + i, name }));
+const s = G.setup(players, {});
+s.hands.p1.cards = [1, 2, 4, 5, 7, 11, '+4', 'second', 'x2'];   // Zustand direkt setzen
+console.log(await shot('flip-7', G, s, { me: 'p0', file: '<scratchpad>/shots/f7.png' }));
+await close();
+```
+
+Mit `prev` (Zustand davor) wird erst dieser gezeichnet und dann der Wechsel animiert wie im Spiel;
+`wait` bestimmt, wann das Foto entsteht. Die Bilder sind Platzhalter, also Bilder-Layouts zusätzlich
+im echten Spiel ansehen. Den ersten Wurf zeigt `game.first`: Ein Auftakt mit vielen Karten kann beim Foto
+noch laufen (dann `wait` erhöhen, oder es ist ein Hinweis, dass der Auftakt zu lang ist).
+
+## 4. Finger-Gesten
 
 `page.mouse` und `page.click` prüfen nicht, ob die Seite beim Ziehen mit dem Finger scrollt.
 `touchDrag(page, von, nach)` schickt echte Touch-Ereignisse über das DevTools-Protokoll:
@@ -88,7 +118,7 @@ console.log(await A.evaluate(() => scrollY) === y0); // true: gezogen, nicht ges
 Immer beides prüfen: Ziehen auf dem Spielstück scrollt nicht, Wischen daneben scrollt weiterhin.
 Tippen: `A.touchscreen.tap(x, y)`. Über mehrere Punkte (Malen, Wischgesten): `touchPath(A, [{ x, y }, …])`.
 
-## 4. Live-Nachrichten (`game.live`)
+## 5. Live-Nachrichten (`game.live`)
 
 Im Testmodus laufen sie über den Server (`t: 'live'`), sie lassen sich also wie alles andere testen.
 Weil sie verloren gehen dürfen, einmal ohne sie spielen: beim Empfänger
@@ -98,8 +128,10 @@ Anfragen erscheinen als `ERR_FAILED` unter den Konsolenfehlern (erwartet). Malfl
 
 ## Prüfliste
 
-- [ ] Simulation mit vielen Partien: Geheimnisse, Ende, Regeln, Texte.
-- [ ] Eine ganze Partie im Browser, ohne Konsolenfehler, auf 360 px ohne seitliches Scrollen.
+- [ ] Simulation mit vielen Partien und jeder Spielerzahl: Geheimnisse, Ende, Regeln, Texte.
+- [ ] Eine ganze Partie im Browser, ohne Konsolenfehler, auf 360 px ohne seitliches Scrollen, zu zweit und
+      mit der größten Spielerzahl (Gruppe).
+- [ ] Dichte Zustände mit sechs Spielern im Prüfstand angesehen (volle Hände, lange Namen, Endwertung).
 - [ ] Bildschirmfotos von Auftakt, Zug, Höhepunkt und Ende angesehen.
 - [ ] Mit `reduced: true` und mit `width: 1000` angesehen.
 - [ ] Gesten (Ziehen, Tippen) mit `touchDrag` bzw. `touchscreen.tap` geprüft, falls das Spiel welche hat.

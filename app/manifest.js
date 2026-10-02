@@ -3,7 +3,7 @@ export default function manifest() {
   return {
     name: 'Spielzimmer',
     short_name: 'Spielzimmer',
-    description: 'Selbst ausgedachte Spiele zu zweit live spielen.',
+    description: 'Selbst ausgedachte Spiele mit Freunden live spielen.',
     id: '/',
     start_url: '/',
     scope: '/',

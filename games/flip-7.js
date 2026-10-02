@@ -2,8 +2,8 @@
 //
 // Stapel (94 Karten): Zahlen von null bis zwölf, jede Zahl so oft, wie sie hoch ist (die Null einmal),
 // dazu Bonuskarten (+2, +4, +6, +8, +10, ×2) und je drei Aktionskarten: Einfrieren, Drei ziehen,
-// Zweite Chance. Jede Runde bekommt jeder eine Karte, danach ist man abwechselnd dran: noch eine Karte
-// oder aufhören. Eine Zahl doppelt heißt raus mit null Punkten (außer eine Zweite Chance rettet).
+// Zweite Chance. Jede Runde bekommt jeder eine Karte, danach ist man reihum dran: noch eine Karte
+// oder aufhören. Zwei bis sechs Spieler. Eine Zahl doppelt heißt raus mit null Punkten (außer eine Zweite Chance rettet).
 // Sieben verschiedene Zahlen sind „Flip 7“: fünfzehn Bonuspunkte, und die Runde endet sofort.
 // Einfrieren und Drei ziehen treffen, wen der Ziehende wählt (auch sich selbst). Karten aus Drei ziehen
 // werden einzeln aufgedeckt, dabei gezogene Aktionen erst danach ausgeführt.
@@ -20,7 +20,7 @@
 export const meta = {
   name: 'Flip 7',
   description: 'Zieht Karten, solange ihr euch traut. Eine Zahl doppelt, und die Runde zählt nichts.',
-  players: [2, 2],
+  players: [2, 6],
   options: [
     {
       id: 'ziel',
@@ -38,7 +38,14 @@ const MODS = { '+2': 2, '+4': 4, '+6': 6, '+8': 8, '+10': 10 };
 const FLIP7_BONUS = 15;
 const isNum = (c) => typeof c === 'number';
 
-const otherOf = (s, id) => s.players.find((p) => p.id !== id).id;
+const ids = (s) => s.players.map((p) => p.id);
+const nextAfter = (s, id) => ids(s)[(ids(s).indexOf(id) + 1) % s.players.length];
+// Alle Spieler reihum, beginnend mit `id`
+const around = (s, id) => {
+  const list = ids(s);
+  const i = list.indexOf(id);
+  return [...list.slice(i), ...list.slice(0, i)];
+};
 const nameOf = (s, id) => s.players.find((p) => p.id === id).name;
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 
@@ -68,7 +75,7 @@ export function setup(players, options = {}) {
     round: 0,
     dealer: pick(players).id,
     turn: null,
-    after: null, // wer zuletzt am Zug war (danach ist der andere dran, wenn er noch mitspielt)
+    after: null, // wer zuletzt am Zug war (danach ist der Nächste dran, der noch mitspielt)
     phase: 'zug', // zug | ziel (Aktionskarte braucht ein Ziel) | pause (Runde vorbei) | ende
     hands: {},
     totals: Object.fromEntries(players.map((p) => [p.id, 0])),
@@ -151,14 +158,13 @@ function noticeText(s, before, id) {
 
 function startRound(s) {
   for (const p of s.players) s.discard.push(...(s.hands[p.id]?.cards ?? []));
-  if (s.round > 0) s.dealer = otherOf(s, s.dealer);
+  if (s.round > 0) s.dealer = nextAfter(s, s.dealer);
   s.round++;
   s.hands = Object.fromEntries(s.players.map((p) => [p.id, { cards: [], state: 'aktiv', bust: null }]));
   s.choice = null;
   s.phase = 'zug';
-  const first = otherOf(s, s.dealer);
-  s.after = s.dealer; // nach dem Austeilen ist `first` dran
-  s.todo = [{ draw: first }, { draw: s.dealer }];
+  s.after = s.dealer; // nach dem Austeilen ist der Nächste nach dem Geber dran
+  s.todo = around(s, nextAfter(s, s.dealer)).map((id) => ({ draw: id })); // reihum, der Geber zuletzt
   ev(s, { kind: 'runde', round: s.round });
   run(s);
 }
@@ -191,8 +197,8 @@ function run(s) {
   s.choice = null;
   if (s.players.some((p) => s.hands[p.id].state === 'flip7') || !active(s).length) return endRound(s);
   s.phase = 'zug';
-  const next = otherOf(s, s.after);
-  s.turn = s.hands[next].state === 'aktiv' ? next : s.after;
+  // Der Nächste, der noch mitspielt (zuletzt wieder, wer gerade dran war)
+  s.turn = [...around(s, s.after).slice(1), s.after].find((id) => s.hands[id].state === 'aktiv');
 }
 
 const active = (s) => s.players.map((p) => p.id).filter((id) => s.hands[id].state === 'aktiv');
@@ -243,8 +249,8 @@ function draw(s, id, f3) {
     return;
   }
   if (card === 'second' && hand.cards.includes('second')) {
-    // Nur eine Zweite Chance pro Person: die zweite geht an den anderen, sonst auf die Ablage.
-    const to = active(s).find((o) => o !== id && !s.hands[o].cards.includes('second'));
+    // Nur eine Zweite Chance pro Person: die zweite geht an den Nächsten ohne, sonst auf die Ablage.
+    const to = around(s, id).find((o) => o !== id && s.hands[o].state === 'aktiv' && !s.hands[o].cards.includes('second'));
     if (to) {
       ev(s, { kind: 'weiter', who: to, from: id, card, key: keyFor(s.hands[to], card) });
       s.hands[to].cards.push(card);
@@ -294,8 +300,14 @@ function endRound(s) {
   if (top >= s.target && leaders.length === 1) {
     s.phase = 'ende';
     const w = leaders[0];
-    const other = otherOf(s, w.id);
-    s.result = { winners: [w.id], text: `${w.name} gewinnt mit ${word(top)} zu ${word(s.totals[other])} Punkten.` };
+    const others = ids(s).filter((id) => id !== w.id);
+    s.result = {
+      winners: [w.id],
+      text:
+        others.length === 1
+          ? `${w.name} gewinnt mit ${word(top)} zu ${word(s.totals[others[0]])} Punkten.`
+          : `${w.name} gewinnt mit ${word(top)} Punkten.`,
+    };
     return;
   }
   s.phase = 'pause'; // bei Gleichstand über dem Ziel geht es weiter
@@ -519,7 +531,7 @@ export function render(el, s, game) {
     el.innerHTML = `<div class="f7">
       <div class="f7-board"></div>
       <p class="status f7-status"></p>
-      <section class="f7-seat f7-them"></section>
+      <div class="f7-others"></div>
       <div class="f7-table"></div>
       <section class="f7-seat f7-me"></section>
       <div class="f7-bar"></div>
@@ -529,7 +541,7 @@ export function render(el, s, game) {
   }
   const q = (sel) => root.querySelector(sel);
   const me = game.me;
-  const them = otherOf(s, me);
+  const others = around(s, me).slice(1); // die anderen in Spielreihenfolge nach mir
 
   // Wo lagen die Karten bisher? (für das Nachrücken und das Abräumen)
   const rootBefore = root.getBoundingClientRect();
@@ -548,12 +560,18 @@ export function render(el, s, game) {
 
   q('.f7-board').innerHTML = boardHTML(s, game, game.first);
   q('.f7-status').innerHTML = statusHTML(s, game);
-  for (const [sel, id] of [['.f7-them', them], ['.f7-me', me]]) {
-    const seat = q(sel);
+  const othersBox = q('.f7-others');
+  othersBox.classList.toggle('many', others.length > 2);
+  if (othersBox.children.length !== others.length) {
+    othersBox.innerHTML = others.map(() => '<section class="f7-seat f7-them"></section>').join('');
+  }
+  const seats = [...others.map((id, k) => [othersBox.children[k], id]), [q('.f7-me'), me]];
+  for (const [seat, id] of seats) {
     seat.className = `f7-seat ${id === me ? 'f7-me' : 'f7-them'} is-${s.hands[id].state}`;
     seat.style.setProperty('--pc', game.color(id));
     seat.dataset.who = id;
     seat.innerHTML = seatHTML(s, game, id);
+    if (s.phase === 'zug' && s.turn === id) seat.classList.add('is-turn');
   }
   q('.f7-table').innerHTML = tableHTML(s, game);
   const logText = q('.f7-log').innerHTML;
@@ -655,7 +673,7 @@ function barHTML(s, game) {
       <button class="btn" data-action="aufhoeren" data-value="${value()}">Aufhören</button>`;
   }
   if (s.phase === 'ziel' && s.choice.by === me) {
-    return [me, otherOf(s, me)]
+    return around(s, me)
       .filter((id) => s.hands[id].state === 'aktiv')
       .map((id) => `<button class="btn" data-action="ziel" data-value="${value({ target: id })}">${id === me ? 'Mich' : game.esc(game.name(id))}</button>`)
       .join('');
@@ -668,7 +686,7 @@ function rulesHTML(s) {
     <summary>Regeln</summary>
     <ol>
       <li>Im Stapel sind die Zahlen von null bis zwölf, jede so oft, wie sie hoch ist. Dazu kommen Bonuskarten und Aktionskarten.</li>
-      <li>Jede Runde bekommt jeder eine Karte. Danach seid ihr abwechselnd dran: noch eine Karte ziehen oder aufhören und die Punkte behalten.</li>
+      <li>Jede Runde bekommt jeder eine Karte. Danach seid ihr ${s.players.length > 2 ? 'reihum' : 'abwechselnd'} dran: noch eine Karte ziehen oder aufhören und die Punkte behalten.</li>
       <li>Wer eine Zahl doppelt zieht, ist raus und bekommt in dieser Runde nichts. Eine Zweite Chance rettet einmal davor.</li>
       <li>Wer sieben verschiedene Zahlen hat, schafft Flip 7: fünfzehn Punkte extra, und die Runde ist sofort vorbei.</li>
       <li>Einfrieren beendet die Runde für die getroffene Person, ihre Punkte zählen. Bei Drei ziehen muss sie drei Karten nehmen. Wer die Karte zieht, wählt, wen sie trifft, auch sich selbst.</li>
@@ -682,7 +700,9 @@ function rulesHTML(s) {
 
 function intro(root) {
   const deck = root.querySelector('.f7-deck .f7-stack').getBoundingClientRect();
-  root.querySelectorAll('.f7-hand .f7-card').forEach((n, i) => deal(n, deck, 260 + i * 110));
+  const cards = root.querySelectorAll('.f7-hand .f7-card');
+  const step = Math.min(110, 1300 / cards.length); // zu sechst nicht länger als zu zweit
+  cards.forEach((n, i) => deal(n, deck, 260 + i * step));
 }
 
 // Karte kommt verdeckt vom Stapel und dreht sich an ihrem Platz um.
@@ -907,6 +927,18 @@ export const style = `
   /* ---------- Plätze ---------- */
   .f7-seat { --w: 54px; --h: 78px; display: grid; gap: 8px; }
   .f7-them { --w: 42px; --h: 60px; }
+  .f7-others { display: grid; gap: 12px; }
+  .f7-others:empty { display: none; }
+  /* Ab drei Gegnern: kleinere Karten, zwei Plätze nebeneinander */
+  .f7-others.many { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
+  .f7-others.many .f7-them { --w: 30px; --h: 43px; align-content: start; }
+  .f7-others.many .f7-head { gap: 6px; min-height: 24px; flex-wrap: wrap; }
+  .f7-others.many .f7-who { flex: 1 1 0; font-size: var(--t-sm); }
+  .f7-others.many .f7-pts { font-size: var(--t-lg); }
+  .f7-others.many .f7-badge { order: 3; font-size: 11px; padding: 1px 5px 0; }
+  .f7-others.many .f7-head:has(.f7-badge)::after { content: ''; order: 2; flex-basis: 100%; } /* Stempel in eigener Zeile */
+  .f7-others.many .f7-corner { left: 3px; top: 2px; }
+  .f7-them.is-turn .f7-who { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; text-decoration-color: var(--pc); }
   .f7-head { display: flex; align-items: center; gap: 10px; min-height: 30px; }
   .f7-who { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 700; }
   .f7-pts { margin-left: auto; color: var(--pc); font: 800 var(--t-xl) / 1 var(--font-display); font-variant-numeric: tabular-nums; }
@@ -984,6 +1016,7 @@ export const style = `
   @media (min-width: 600px) {
     .f7-seat { --w: 62px; --h: 90px; }
     .f7-them { --w: 50px; --h: 72px; }
+    .f7-others.many .f7-them { --w: 38px; --h: 55px; }
     .f7-label { font-size: 10px; }
   }
 

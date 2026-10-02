@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { COLORS, formatDay, shareInvite, useHomeData } from './Home';
+import { formatDay, shareInvite, useHomeData } from './Home';
+import { PLAYER_COLORS } from '@/lib/colors';
 
 // Freunde verwalten: Anfragen beantworten, hinzufügen, einladen, Freundschaften beenden.
 export default function Friends({ user, goHome, openRoom, showToast, onUnauthorized }) {
@@ -94,7 +95,7 @@ export default function Friends({ user, goHome, openRoom, showToast, onUnauthori
                   <span className="friend-name">
                     <span
                       className="marker"
-                      style={{ color: COLORS[f.order?.indexOf(f.user.id)] ?? 'var(--ink)' }}
+                      style={{ color: PLAYER_COLORS[f.order?.indexOf(f.user.id)] ?? 'var(--ink)' }}
                       aria-hidden="true"
                     />
                     {f.user.name}

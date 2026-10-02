@@ -1,8 +1,8 @@
 # Spielzimmer
 
-Selbst ausgedachte Spiele zu zweit live spielen, am Handy oder Laptop.
+Selbst ausgedachte Spiele mit Freunden live spielen, am Handy oder Laptop.
 
-Jeder legt ein Konto an (Benutzername und Passwort), dann fügt ihr euch als Freunde hinzu. Jede Freundschaft hat ein eigenes Spielzimmer mit Punktestand und Verlauf. Züge erscheinen sofort beim anderen.
+Jeder legt ein Konto an (Benutzername und Passwort), dann fügt ihr euch als Freunde hinzu. Jede Freundschaft hat ein eigenes Spielzimmer mit Punktestand und Verlauf, für mehr Leute gründet ihr eine Gruppe (bis zu sechs). Züge erscheinen sofort bei den anderen.
 
 Dabei sind drei Beispielspiele:
 
@@ -15,7 +15,7 @@ Dabei sind drei Beispielspiele:
 ## So funktioniert es
 
 - **Next.js auf Vercel** liefert die Seite aus und rechnet jeden Spielzug aus (`app/api/room`).
-- **Supabase (Postgres)** speichert Konten, Freundschaften, Spielzimmer, Punktestände und den Verlauf.
+- **Supabase (Postgres)** speichert Konten, Freundschaften, Gruppen, Spielzimmer, Punktestände und den Verlauf.
 - **Supabase Realtime** sagt allen im Raum sofort Bescheid, wenn sich etwas geändert hat, und zeigt an, wer gerade online ist.
 - Jedes Spiel ist eine einzelne Datei in `games/`.
 
@@ -85,7 +85,7 @@ npm install
 npm run dev
 ```
 
-Dann <http://localhost:3000> öffnen. Ohne Supabase-Zugangsdaten läuft ein **Testmodus**: Alles bleibt nur im Arbeitsspeicher, und die Browser fragen jede Sekunde nach dem neuen Stand. Zum Testen mit zwei Spielern ein zweites Browser-Fenster im privaten Modus öffnen.
+Dann <http://localhost:3000> öffnen. Ohne Supabase-Zugangsdaten läuft ein **Testmodus**: Alles bleibt nur im Arbeitsspeicher, und die Browser fragen jede Sekunde nach dem neuen Stand. Zum Testen mit zwei Spielern ein zweites Browser-Fenster im privaten Modus öffnen (für Gruppen weitere Browser-Profile).
 
 Mit echter Datenbank: `.env.example` nach `.env.local` kopieren und die Werte eintragen.
 
@@ -95,6 +95,7 @@ Mit echter Datenbank: `.env.example` nach `.env.local` kopieren und die Werte ei
 - **Freund hinzufügen** per Benutzername: Die andere Person bekommt eine Anfrage und nimmt sie an.
 - **Einladungslink teilen**: Wer den Link öffnet und sich anmeldet, ist sofort befreundet.
 - Auf der Startseite steht bei jedem Freund der Punktestand und wer gerade dran ist. Antippen öffnet euer Spielzimmer.
+- **Gruppe gründen** (Menü auf der Startseite): Name und zwei bis fünf Freunde wählen. Die Gruppe hat ein eigenes Spielzimmer für bis zu sechs Leute. Dort kann jedes Mitglied eigene Freunde dazuholen, die Gruppe umbenennen oder sie verlassen.
 
 ## Ein neues Spiel erfinden
 

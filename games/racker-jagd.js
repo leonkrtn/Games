@@ -1,9 +1,10 @@
 // Racker-Jagd: Wer findet auf Instagram den besten Racker?
 //
 // Ablauf: Zeit wählen (5, 10, 15 Minuten oder unbegrenzt) → jeder schickt bis zu drei Screenshots (geheim,
-// der andere sieht nur die Anzahl) → gemeinsam Bild für Bild bewerten, abwechselnd, immer bewertet
-// der andere von eins bis zehn → Auflösung: Es zählt nur das bestbewertete Bild jedes Spielers,
-// bei Gleichstand das zweitbeste, dann das drittbeste.
+// die anderen sehen nur die Anzahl) → gemeinsam Bild für Bild bewerten, reihum, alle anderen geben
+// gleichzeitig eins bis zehn (geheim, bis alle bewertet haben), das Bild bekommt den Durchschnitt →
+// Auflösung: Es zählt nur das bestbewertete Bild jedes Spielers, bei Gleichstand das zweitbeste, dann
+// das drittbeste. Zwei bis sechs Spieler.
 //
 // Plattform-Funktionen: game.upload/game.imageUrl für die Screenshots, tick() und game.now()
 // für das Zeitlimit, notices() für passende Benachrichtigungen.
@@ -15,8 +16,8 @@
 
 export const meta = {
   name: 'Racker-Jagd',
-  description: 'Findet auf Instagram den besten Racker. Der andere bewertet.',
-  players: [2, 2],
+  description: 'Findet auf Instagram den besten Racker. Die anderen bewerten.',
+  players: [2, 6],
 };
 
 const MAX = 3; // Einsendungen pro Spieler
@@ -28,8 +29,17 @@ const word = (n) => WORDS[n] ?? String(n);
 
 const limited = (s) => s.deadline !== null; // false: ohne Zeitlimit
 
-const otherOf = (s, id) => s.players.find((p) => p.id !== id).id;
 const nameOf = (s, id) => s.players.find((p) => p.id === id).name;
+const ratersOf = (s, item) => s.players.map((p) => p.id).filter((id) => id !== item.owner);
+const votesOf = (item) => item.votes ?? {}; // fehlt in Partien von vor den Gruppen
+// Wertung als Zahl mit Komma (Durchschnitt, eine Nachkommastelle)
+const fmtRating = (n) => String(n).replace('.', ',');
+const ratingWord = (n) => (Number.isInteger(n) ? word(n) : `${word(Math.floor(n))} Komma ${word(Math.round((n % 1) * 10))}`);
+
+// „Anna“, „Anna und Ben“, „Anna, Ben und Cem“
+function list(names) {
+  return names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} und ${names.at(-1)}`;
+}
 
 export function setup(players) {
   return {
@@ -87,10 +97,17 @@ export function action(s, { player, type, data }) {
     case 'bewerten': {
       if (s.phase !== 'bewerten' || data?.i !== s.index) return; // doppelt getippt: zählt nur einmal
       const item = s.order[s.index];
-      if (item.owner === player) throw new Error('Dein eigenes Bild bewertet der andere.');
+      if (item.owner === player) {
+        throw new Error(s.players.length > 2 ? 'Dein eigenes Bild bewerten die anderen.' : 'Dein eigenes Bild bewertet der andere.');
+      }
+      if (votesOf(item)[player]) return;
       const n = Number(data.n);
       if (!Number.isInteger(n) || n < 1 || n > 10) throw new Error('Bitte eine Zahl von eins bis zehn.');
-      item.rating = n;
+      item.votes = { ...votesOf(item), [player]: n };
+      const raters = ratersOf(s, item);
+      if (!raters.every((id) => item.votes[id])) return;
+      // Alle haben bewertet: Durchschnitt mit einer Nachkommastelle
+      item.rating = Math.round((raters.reduce((sum, id) => sum + item.votes[id], 0) / raters.length) * 10) / 10;
       s.index++;
       if (s.index >= s.order.length) finish(s);
       return;
@@ -107,14 +124,18 @@ function maybeStartReview(s) {
   if (s.players.every((p) => s.done[p.id])) startReview(s);
 }
 
-// Abwechselnd: Bild 1 von A, Bild 1 von B, Bild 2 von A … Wer anfängt, wird ausgelost.
+// Reihum: Bild 1 von A, Bild 1 von B, …, Bild 2 von A … Die Reihenfolge der Spieler wird ausgelost.
 function startReview(s) {
-  const [a, b] = Math.random() < 0.5 ? s.players : [s.players[1], s.players[0]];
+  const players = [...s.players];
+  for (let i = players.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [players[i], players[j]] = [players[j], players[i]];
+  }
   s.order = [];
   for (let i = 0; i < MAX; i++) {
-    for (const p of [a, b]) {
+    for (const p of players) {
       const e = s.entries[p.id][i];
-      if (e) s.order.push({ owner: p.id, ...e, rating: null });
+      if (e) s.order.push({ owner: p.id, ...e, rating: null, votes: {} });
     }
   }
   s.entries = null; // ab jetzt steht alles in order (und view() verrät nur, was dran war)
@@ -135,6 +156,7 @@ const ratingsOf = (s, id) =>
 
 function finish(s) {
   s.phase = 'ende';
+  if (s.players.length > 2) return finishMany(s);
   const [ra, rb] = s.players.map((p) => ratingsOf(s, p.id));
   const decider = [0, 1, 2].find((i) => (ra[i] ?? 0) !== (rb[i] ?? 0));
   if (decider === undefined) {
@@ -151,33 +173,65 @@ function finish(s) {
   s.result = { winners: [winner.id], text };
 }
 
+// Zu mehreren: wie zu zweit, nur über alle verglichen. Teilen sich mehrere den ersten Platz, gewinnen sie zusammen.
+function finishMany(s) {
+  const all = s.players.map((p) => ({ p, r: ratingsOf(s, p.id) }));
+  const diff = (a, b) => [0, 1, 2].find((i) => (a.r[i] ?? 0) !== (b.r[i] ?? 0));
+  const cmp = (a, b) => {
+    const i = diff(a, b);
+    return i === undefined ? 0 : (b.r[i] ?? 0) - (a.r[i] ?? 0);
+  };
+  const sorted = [...all].sort(cmp);
+  const best = sorted.filter((x) => cmp(x, sorted[0]) === 0);
+  if (best.length === all.length) {
+    s.result = { winners: [], text: 'Unentschieden. Alle Bilder gleich gut.' };
+    return;
+  }
+  if (best.length > 1) {
+    s.result = { winners: best.map((x) => x.p.id), text: `${list(best.map((x) => x.p.name))} teilen sich den Sieg.` };
+    return;
+  }
+  const [w, second] = sorted;
+  const decider = diff(w, second);
+  const text =
+    decider === 0
+      ? `${w.p.name} gewinnt mit der besten Wertung, ${ratingWord(w.r[0])}.`
+      : `${w.p.name} gewinnt. Gleiche Bestnote, das ${decider === 1 ? 'zweitbeste' : 'drittbeste'} Bild entscheidet.`;
+  s.result = { winners: [w.p.id], text };
+}
+
 export function waitingFor(s) {
   if (s.phase === 'zeit') return s.players.map((p) => p.id);
   if (s.phase === 'suchen') return s.players.filter((p) => !s.done[p.id]).map((p) => p.id);
-  if (s.phase === 'bewerten') return [otherOf(s, s.order[s.index].owner)];
+  if (s.phase === 'bewerten') {
+    const item = s.order[s.index];
+    return ratersOf(s, item).filter((id) => !votesOf(item)[id]);
+  }
   return [];
 }
 
 // Benachrichtigungen: nur, wenn es wirklich etwas zu tun gibt (nicht bei jedem Bild des anderen).
 export function notices(s, before, player) {
+  const others = s.players.map((p) => p.id).filter((id) => id !== player);
   if (before.phase === 'zeit' && s.phase === 'suchen') {
     const time = s.minutes ? `Ihr habt ${word(s.minutes)} Minuten.` : 'Ihr habt unbegrenzt Zeit.';
-    return [{ to: otherOf(s, player), text: `${nameOf(s, player)} hat die Suche gestartet. ${time}` }];
+    return others.map((id) => ({ to: id, text: `${nameOf(s, player)} hat die Suche gestartet. ${time}` }));
   }
   if (before.phase === 'suchen' && s.phase === 'bewerten') {
     return s.players.map((p) => ({ to: p.id, text: 'Die Suche ist vorbei. Jetzt wird bewertet.' }));
   }
   if (s.phase === 'suchen' && s.done[player] && !before.done[player] && !(limited(s) && Date.now() >= s.deadline)) {
-    return [{ to: otherOf(s, player), text: `${nameOf(s, player)} ist fertig mit Suchen.` }];
+    return others.filter((id) => !s.done[id]).map((id) => ({ to: id, text: `${nameOf(s, player)} ist fertig mit Suchen.` }));
   }
   if (s.phase === 'bewerten' && s.index !== before.index) {
-    return [{ to: otherOf(s, s.order[s.index].owner), text: 'Du bist dran mit Bewerten.' }];
+    return ratersOf(s, s.order[s.index]).map((id) => ({ to: id, text: 'Du bist dran mit Bewerten.' }));
   }
   return [];
 }
 
-// Geheim bis zur Auflösung: die Bilder des anderen (nur die Anzahl), Bilder, die beim Bewerten
-// noch nicht dran waren, und die Wertungen der eigenen Bilder.
+// Geheim bis zur Auflösung: die Bilder der anderen (nur die Anzahl), Bilder, die beim Bewerten
+// noch nicht dran waren, die Wertungen der eigenen Bilder und beim aktuellen Bild die Noten der anderen,
+// bis alle bewertet haben (nur wer schon bewertet hat, steht in voted).
 export function view(s, me) {
   if (s.result) return s;
   if (s.phase === 'suchen') {
@@ -188,9 +242,12 @@ export function view(s, me) {
     return {
       ...s,
       order: s.order.map((o, i) => {
-        if (o.owner === me) return { ...o, rating: null, rated: o.rating !== null };
-        if (i > s.index) return { owner: o.owner, id: null, w: null, h: null, rating: null };
-        return o;
+        const votes = votesOf(o);
+        const voted = Object.keys(votes);
+        if (o.owner === me) return { ...o, rating: null, votes: {}, voted, rated: o.rating !== null };
+        if (i > s.index) return { owner: o.owner, id: null, w: null, h: null, rating: null, votes: {}, voted: [] };
+        if (i === s.index) return { ...o, votes: votes[me] ? { [me]: votes[me] } : {}, voted };
+        return { ...o, voted };
       }),
     };
   }
@@ -245,7 +302,7 @@ const ENDLESS = `<svg class="rj-inf" viewBox="0 0 100 50" aria-hidden="true"><pa
 function renderTime(main, s, game) {
   const intro = game.first ? 'intro' : '';
   main.innerHTML = `
-    <p class="status rj-lead">Wie lange sucht ihr? Wer zuerst wählt, startet die Suche für beide.</p>
+    <p class="status rj-lead">Wie lange sucht ihr? Wer zuerst wählt, startet die Suche für ${s.players.length > 2 ? 'alle' : 'beide'}.</p>
     <div class="rj-times">
       ${TIMES.map(
         (m, i) => `
@@ -257,7 +314,7 @@ function renderTime(main, s, game) {
     <ol class="rj-rules ${intro}">
       <li>Sucht auf Instagram einen richtig guten Racker und schickt ihn als Screenshot.</li>
       <li>Jeder hat bis zu drei Einsendungen.</li>
-      <li>Danach bewertet ihr abwechselnd die Bilder des anderen, von eins bis zehn.</li>
+      <li>${s.players.length > 2 ? 'Danach bewertet ihr Bild für Bild die Racker der anderen, von eins bis zehn. Jedes Bild bekommt den Durchschnitt.' : 'Danach bewertet ihr abwechselnd die Bilder des anderen, von eins bis zehn.'}</li>
       <li>Es zählt nur euer bestbewertetes Bild.</li>
     </ol>`;
 }
@@ -278,15 +335,12 @@ const BACK = `<svg viewBox="0 0 40 50" aria-hidden="true">
 function renderSearch(root, main, s, game, u) {
   const e = game.esc;
   const me = game.me;
-  const them = otherOf(s, me);
+  const others = s.players.map((p) => p.id).filter((id) => id !== me);
   const mine = s.entries[me];
-  const theirCount = s.counts[them];
   const before = game.prev?.phase === 'suchen' ? game.prev : null;
   const knownIds = new Set((before?.entries[me] ?? []).map((x) => x.id));
-  const prevCount = before ? before.counts[them] : game.first ? 0 : theirCount;
   const timeUp = limited(s) && game.now() >= s.deadline;
   const done = s.done[me];
-  const theirName = e(game.name(them));
 
   const slots = Array.from({ length: MAX }, (_, i) => {
     const item = mine[i];
@@ -311,15 +365,33 @@ function renderSearch(root, main, s, game, u) {
     return `<div class="rj-slot rj-empty" style="--tilt:${TILT[i]}deg"><span class="rj-pic"><span class="rj-slot-num">${i + 1}</span></span></div>`;
   }).join('');
 
-  const backs = Array.from({ length: MAX }, (_, i) =>
-    i < theirCount
-      ? `<div class="rj-back ${i >= prevCount ? 'enter' : ''}" style="--c:${game.color(them)};--tilt:${TILT[i]}deg">${BACK}</div>`
-      : '<div class="rj-back rj-back-empty"></div>',
-  ).join('');
+  // Die anderen: verdeckte Karten, so viele wie eingeschickt
+  const theirs = others
+    .map((them) => {
+      const count = s.counts[them];
+      const prevCount = before ? before.counts[them] : game.first ? 0 : count;
+      const name = e(game.name(them));
+      const backs = Array.from({ length: MAX }, (_, i) =>
+        i < count
+          ? `<div class="rj-back ${i >= prevCount ? 'enter' : ''}" style="--c:${game.color(them)};--tilt:${TILT[i]}deg">${BACK}</div>`
+          : '<div class="rj-back rj-back-empty"></div>',
+      ).join('');
+      const note = s.done[them] ? `${name} ist fertig.` : count ? `${name} hat ${word(count)} von drei eingeschickt.` : `${name} sucht noch.`;
+      const newDone = s.done[them] && before && !before.done[them];
+      return `
+      <section class="rj-theirs">
+        <h3 class="rj-who">${marker(game, them)} ${name} ${s.done[them] ? `<span class="rj-done ${newDone ? 'enter' : ''}">fertig</span>` : ''}</h3>
+        <div class="rj-backs">${backs}</div>
+        <p class="muted rj-note">${note}</p>
+      </section>`;
+    })
+    .join('');
 
   let note;
   if (timeUp) note = 'Die Zeit ist um. Gleich wird bewertet.';
-  else if (done) note = `Du bist fertig. Sobald ${theirName} auch fertig ist, wird bewertet.`;
+  else if (done) {
+    note = `Du bist fertig. Sobald ${others.length === 1 ? `${e(game.name(others[0]))} auch fertig ist` : 'alle fertig sind'}, wird bewertet.`;
+  }
   else if (!mine.length) note = 'Such auf Instagram einen Racker, mach einen Screenshot und lade ihn hier hoch.';
   else note = `Nur dein bestes Bild zählt. Du kannst noch ${word(MAX - mine.length)} schicken.`;
 
@@ -329,12 +401,6 @@ function renderSearch(root, main, s, game, u) {
       ? '<button class="link" data-action="weitersuchen">Doch weitersuchen</button>'
       : '<button class="btn primary" data-action="fertig">Fertig</button>';
 
-  const theirNote = s.done[them]
-    ? `${theirName} ist fertig.`
-    : theirCount
-      ? `${theirName} hat ${word(theirCount)} von drei eingeschickt.`
-      : `${theirName} sucht noch.`;
-  const newDone = s.done[them] && before && !before.done[them];
 
   const total = s.deadline - s.startedAt;
   const left = Math.max(0, s.deadline - game.now());
@@ -360,11 +426,7 @@ function renderSearch(root, main, s, game, u) {
         <p class="status rj-note">${note}</p>
         ${actions ? `<div class="row">${actions}</div>` : ''}
       </section>
-      <section class="rj-theirs">
-        <h3 class="rj-who">${marker(game, them)} ${theirName} ${s.done[them] ? `<span class="rj-done ${newDone ? 'enter' : ''}">fertig</span>` : ''}</h3>
-        <div class="rj-backs">${backs}</div>
-        <p class="muted rj-note">${theirNote}</p>
-      </section>
+      <div class="rj-others ${others.length > 1 ? 'many' : ''}">${theirs}</div>
     </div>`;
 
   main.querySelector('.rj-file')?.addEventListener('change', (ev) => {
@@ -569,6 +631,7 @@ function openEditor(root, file, s, game, u) {
 
 // --- Gemeinsam bewerten ---
 
+const NOUN = ['', 'Eins', 'Zwei', 'Drei', 'Vier', 'Fünf', 'Sechs', 'Sieben', 'Acht', 'Neun', 'Zehn'];
 const SCRIBBLE = '<svg class="rj-wait" viewBox="0 0 120 16" aria-hidden="true"><path pathLength="1" d="M2 10 C 12 2, 20 2, 26 9 S 40 15, 48 8 S 62 2, 70 9 S 84 15, 92 8 S 108 3, 118 8"/></svg>';
 
 function bigCard(s, game, item, cls, stamp = '') {
@@ -585,8 +648,11 @@ function bigCard(s, game, item, cls, stamp = '') {
 function renderReview(main, s, game) {
   const e = game.esc;
   const item = s.order[s.index];
-  const rater = otherOf(s, item.owner);
-  const iRate = rater === game.me;
+  const raters = ratersOf(s, item);
+  const myVote = item.votes?.[game.me] ?? null;
+  const iRate = raters.includes(game.me) && !myVote;
+  const open = raters.filter((id) => !(item.voted ?? []).includes(id));
+  const names = (list_) => list(list_.map((id) => e(game.name(id))));
   const prev = game.prev;
   const moved = prev?.phase === 'bewerten' && prev.index < s.index;
   const intro = !moved && prev?.phase !== 'bewerten';
@@ -595,7 +661,7 @@ function renderReview(main, s, game) {
   if (moved) {
     const old = s.order[prev.index];
     const stamp = old.rating
-      ? `<span class="rj-stamp" style="--c:${game.color(old.owner)}"><b>${old.rating}</b></span>`
+      ? `<span class="rj-stamp" style="--c:${game.color(old.owner)}"><b>${fmtRating(old.rating)}</b></span>`
       : '<span class="rj-stamp rj-stamp-word">bewertet</span>';
     leaving = bigCard(s, game, old, 'leave', stamp);
   }
@@ -606,8 +672,22 @@ function renderReview(main, s, game) {
 
   const scale = Array.from({ length: 10 }, (_, k) => {
     const n = k + 1;
-    return `<button class="rj-score" style="--i:${k}" data-action="bewerten" data-value='{"i":${s.index},"n":${n}}'>${n}</button>`;
+    return `<button class="rj-score ${myVote === n ? 'picked' : ''}" style="--i:${k}" data-action="bewerten" data-value='{"i":${s.index},"n":${n}}'>${n}</button>`;
   }).join('');
+  const justVoted = myVote && prev?.phase === 'bewerten' && prev.index === s.index && !prev.order[s.index]?.votes?.[game.me];
+
+  let ask;
+  if (iRate) {
+    ask = `<p class="status rj-ask" data-new>Wie gut ist der Racker von ${e(game.name(item.owner))}?</p>
+           <div class="rj-scale ${intro || moved ? 'intro' : ''}" style="--c:${game.color(game.me)}">${scale}</div>`;
+  } else if (myVote) {
+    // Schon bewertet, die anderen noch nicht: eigene Note bleibt sichtbar
+    ask = `<p class="status rj-ask" ${justVoted ? '' : 'data-new'}>Du hast eine ${NOUN[myVote]} gegeben. Warte auf ${names(open)}.</p>
+           <div class="rj-scale locked" style="--c:${game.color(game.me)}">${scale}</div>`;
+  } else {
+    const who = open.length === raters.length && raters.length > 1 ? 'Die anderen bewerten' : `${names(open)} ${open.length === 1 ? 'bewertet' : 'bewerten'}`;
+    ask = `<p class="status rj-ask" data-new>${who} deinen Racker.</p>${SCRIBBLE}`;
+  }
 
   main.innerHTML = `
     <div class="rj-progress ${intro ? 'intro' : ''}">
@@ -618,12 +698,7 @@ function renderReview(main, s, game) {
       ${leaving}
       ${bigCard(s, game, item, intro ? 'intro' : moved ? 'next' : '')}
     </div>
-    ${
-      iRate
-        ? `<p class="status rj-ask" data-new>Wie gut ist der Racker von ${e(game.name(item.owner))}?</p>
-           <div class="rj-scale ${intro || moved ? 'intro' : ''}" style="--c:${game.color(game.me)}">${scale}</div>`
-        : `<p class="status rj-ask" data-new>${e(game.name(rater))} bewertet deinen Racker.</p>${SCRIBBLE}`
-    }`;
+    ${ask}`;
 
   // Sofortige Rückmeldung beim Tippen, bis die Antwort vom Server da ist
   main.querySelectorAll('.rj-score').forEach((b) =>
@@ -655,9 +730,9 @@ function renderFinal(main, s, game) {
           const j = n++;
           return `
             <figure class="rj-card rj-res ${k === 0 ? 'best' : ''}" style="--j:${j}">
-              <img src="${e(game.imageUrl(o.id))}" width="${o.w}" height="${o.h}" alt="Racker von ${e(game.name(p.id))}, ${o.rating} von zehn">
+              <img src="${e(game.imageUrl(o.id))}" width="${o.w}" height="${o.h}" alt="Racker von ${e(game.name(p.id))}, ${ratingWord(o.rating)} von zehn">
               ${k === 0 && won ? '<span class="rj-frame" aria-hidden="true"></span>' : ''}
-              <span class="rj-stamp"><b>${o.rating}</b>${k === 0 ? RING : ''}</span>
+              <span class="rj-stamp"><b>${fmtRating(o.rating)}</b>${k === 0 ? RING : ''}</span>
             </figure>`;
         })
         .join('');
@@ -668,7 +743,7 @@ function renderFinal(main, s, game) {
         </section>`;
     })
     .join('');
-  main.innerHTML = `<div class="rj-final ${play ? 'play' : ''}">${cols}</div>`;
+  main.innerHTML = `<div class="rj-final ${s.players.length > 2 ? 'many' : ''} ${play ? 'play' : ''}">${cols}</div>`;
 }
 
 export const style = `
@@ -766,6 +841,12 @@ export const style = `
   @keyframes rj-busy { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
 
   /* ---- Verdeckte Karten des anderen ---- */
+  .rj-others { display: grid; gap: 22px; }
+  .rj-others.many { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 20px; }
+  .rj-others.many .rj-who { font-size: var(--t-md); margin-bottom: 8px; }
+  .rj-others.many .rj-back { width: 40px; }
+  .rj-others.many .rj-backs { gap: 8px; }
+  .rj-others.many .rj-note { margin-top: 8px; font-size: var(--t-sm); }
   .rj-backs { display: flex; gap: 10px; perspective: 600px; }
   .rj-back { width: 56px; aspect-ratio: 4 / 5; transform: rotate(var(--tilt)); }
   .rj-back > svg { display: block; width: 100%; height: 100%; overflow: visible; }
@@ -837,6 +918,16 @@ export const style = `
   /* ---- Auflösung ---- */
   .rj-final { display: grid; gap: 32px; }
   @media (min-width: 640px) { .rj-final { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .rj-who { min-width: 0; overflow-wrap: anywhere; }
+  /* Zu mehreren: kleinere Galerien nebeneinander */
+  .rj-final.many { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 30px 18px; }
+  @media (min-width: 640px) { .rj-final.many { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .rj-final.many .rj-who { font-size: var(--t-md); margin-bottom: 8px; }
+  .rj-final.many .rj-gallery { gap: 16px 10px; }
+  .rj-final.many .rj-card { padding: 4px 4px 18px; }
+  .rj-final.many .rj-res.best img { max-height: 34vh; }
+  .rj-final.many .rj-stamp { right: -6px; bottom: -10px; min-width: 42px; height: 42px; font-size: var(--t-xl); }
+  .rj-final.many .rj-res:not(.best) .rj-stamp { min-width: 30px; height: 30px; padding: 0 3px; font-size: var(--t-md); }
   .rj-col { min-width: 0; }
   .rj-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 16px; max-width: 360px; }
   .rj-res img { display: block; width: 100%; height: auto; aspect-ratio: 4 / 5; object-fit: cover; background: var(--wash); }

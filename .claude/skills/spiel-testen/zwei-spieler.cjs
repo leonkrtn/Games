@@ -1,10 +1,12 @@
-// Zwei Spieler im Browser (Skill „spiel-testen“): legt zwei Konten an, befreundet sie, öffnet das
-// gemeinsame Spielzimmer und startet ein Spiel. Braucht einen laufenden Server (Standard: Port 3100).
+// Spieler im Browser (Skill „spiel-testen“): legt Konten an, befreundet sie, öffnet das gemeinsame
+// Spielzimmer und startet ein Spiel. Ab drei Spielern gründet Anna eine Gruppe mit allen.
+// Braucht einen laufenden Server (Standard: Port 3100).
 //
 //   const { start, sleep, touchDrag } = require('/home/user/Games/.claude/skills/spiel-testen/zwei-spieler.cjs');
 //   const { browser, A, B, errors } = await start({ game: 'schiffe-versenken' });
 //   const { A } = await start({ game: 'qwixx', options: ['Gemixxt', 'Eine Minute'] });   // Lobby-Einstellungen per Text
 //   const { A } = await start({ game: 'flip-7', width: 1000, reduced: true });           // Desktop, ohne Bewegung
+//   const { pages } = await start({ game: 'flip-7', players: 5 });                      // Gruppe: pages[0] = Anna …
 
 const path = require('node:path');
 const { execSync } = require('node:child_process');
@@ -31,7 +33,9 @@ async function api(page, url, body) {
   );
 }
 
-async function start({ game, options = [], base = 'http://localhost:3100', width = 360, height = 780, scale = 2, reduced = false } = {}) {
+const NAMES = ['Anna', 'Ben', 'Cem', 'Dora', 'Emil', 'Fiona'];
+
+async function start({ game, options = [], players = 2, base = 'http://localhost:3100', width = 360, height = 780, scale = 2, reduced = false } = {}) {
   const { chromium } = loadPlaywright();
   const browser = await chromium.launch();
   const errors = [];
@@ -51,13 +55,21 @@ async function start({ game, options = [], base = 'http://localhost:3100', width
     if (r.error) throw new Error(r.error);
     return page;
   };
-  const A = await player('Anna');
-  const B = await player('Ben');
+  const pages = [];
+  for (const name of NAMES.slice(0, players)) pages.push(await player(name));
+  const [A, B] = pages;
   const { inviteCode } = await api(A, '/api/account', { t: 'home' });
-  await api(B, '/api/account', { t: 'friend-invite', code: inviteCode });
-  const room = (await api(A, '/api/account', { t: 'home' })).friends[0].room;
-  await A.goto(`${base}/?raum=${room}`);
-  await B.goto(`${base}/?raum=${room}`);
+  for (const p of pages.slice(1)) await api(p, '/api/account', { t: 'friend-invite', code: inviteCode });
+  let room;
+  if (players > 2) {
+    const { friends } = await api(A, '/api/account', { t: 'home' });
+    const r = await api(A, '/api/account', { t: 'group-create', name: 'Testgruppe', members: friends.map((f) => f.user.id) });
+    if (r.error) throw new Error(r.error);
+    room = r.room;
+  } else {
+    room = (await api(A, '/api/account', { t: 'home' })).friends[0].room;
+  }
+  for (const p of pages) await p.goto(`${base}/?raum=${room}`);
   if (game) {
     await A.click(`[data-game="${game}"]`);
     // Spiele mit meta.options öffnen erst die Einstellungen, ohne starten sie sofort.
@@ -66,9 +78,9 @@ async function start({ game, options = [], base = 'http://localhost:3100', width
       await A.click(`[data-start="${game}"]`);
     }
     await A.waitForSelector('#game > *');
-    await B.waitForSelector('#game > *', { timeout: 10000 }); // Testmodus: B fragt jede Sekunde nach
+    for (const p of pages.slice(1)) await p.waitForSelector('#game > *', { timeout: 10000 }); // Testmodus: fragt jede Sekunde nach
   }
-  return { browser, A, B, room, errors, api: (page, body) => api(page, '/api/room', { room, ...body }) };
+  return { browser, A, B, pages, room, errors, api: (page, body) => api(page, '/api/room', { room, ...body }) };
 }
 
 // Echtes Ziehen mit dem Finger (Touch-Ereignisse über das DevTools-Protokoll). Anders als page.mouse

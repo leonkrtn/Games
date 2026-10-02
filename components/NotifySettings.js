@@ -8,7 +8,7 @@ const KINDS = [
   { key: 'turn', title: 'Du bist dran', hint: 'Ein Spiel wartet auf deinen Zug.' },
   { key: 'start', title: 'Neues Spiel', hint: 'Jemand startet ein Spiel mit dir.' },
   { key: 'end', title: 'Spielende', hint: 'Ein Spiel ist vorbei, mit dem Ergebnis.' },
-  { key: 'friends', title: 'Freundschaftsanfragen', hint: 'Neue Anfragen und angenommene Anfragen.' },
+  { key: 'friends', title: 'Freunde und Gruppen', hint: 'Neue und angenommene Anfragen, jemand holt dich in eine Gruppe.' },
 ];
 
 // Benachrichtigungen verwalten: dieses Gerät, worüber, von wem, alle Geräte des Kontos.
@@ -207,10 +207,10 @@ function ThisDevice({ push, testing, onTest }) {
   );
 }
 
-function Check({ id, title, hint, checked, onChange }) {
+export function Check({ id, title, hint, checked, onChange, disabled = false }) {
   return (
-    <label className="check" htmlFor={id}>
-      <input type="checkbox" id={id} checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <label className={`check ${disabled ? 'disabled' : ''}`} htmlFor={id}>
+      <input type="checkbox" id={id} checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       <span>
         <span className="check-title">{title}</span>
         {hint && <span className="check-hint">{hint}</span>}

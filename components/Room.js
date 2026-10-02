@@ -4,10 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { account, roomApi } from './api';
 import GameView from './GameView';
 import { createLive, relay } from './live';
+import { countWord } from './Home';
 import { getSupabase } from '@/lib/supabase-browser';
 import { playerColor } from '@/lib/colors';
 
-// Das gemeinsame Spielzimmer mit einer befreundeten Person.
+const GROUP_MAX = 6;
+
+// Das gemeinsame Spielzimmer mit einer befreundeten Person oder einer Gruppe.
 export default function Room({ code, user, goHome, showToast, onUnauthorized }) {
   const [snap, setSnap] = useState(null);
   const [online, setOnline] = useState(null); // Set von Konto-IDs, null = unbekannt
@@ -49,12 +52,16 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
   const send = useCallback(
     async (msg) => {
       try {
-        accept(await roomApi({ ...msg, room: code }));
+        const s = await roomApi({ ...msg, room: code });
+        if (s.left) return goHome(); // Gruppe verlassen
+        accept(s);
+        return true;
       } catch (err) {
         fail(err);
+        return false;
       }
     },
-    [accept, code, fail],
+    [accept, code, fail, goHome],
   );
 
   const onAction = useCallback((type, data) => send({ t: 'action', type, data }), [send]);
@@ -121,9 +128,13 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
     }
   };
 
+  const leave = () => {
+    if (confirm(`Gruppe „${snap.group.name}“ verlassen? Deine Punkte in der Gruppe sind dann weg.`)) send({ t: 'group-leave' });
+  };
+
   const back = (
     <button className="link back" id="back" onClick={goHome}>
-      Alle Freunde
+      Startseite
     </button>
   );
 
@@ -143,6 +154,7 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
       <div className="room">
         <aside className="side">
           {back}
+          {snap.group && <h1 className="room-name">{snap.group.name}</h1>}
           <p className="board-caption">Gewonnene Spiele</p>
           <Scoreboard snap={snap} online={online} />
         </aside>
@@ -169,7 +181,7 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
               />
             </div>
           ) : (
-            <Lobby snap={snap} send={send} unfriend={unfriend} />
+            <Lobby snap={snap} send={send} unfriend={unfriend} leave={leave} showToast={showToast} />
           )}
         </div>
       </div>
@@ -181,7 +193,7 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
 // Anzeigetafel: Namen und Punkte in den Spielerfarben.
 function Scoreboard({ snap, online }) {
   return (
-    <div className="scoreboard" aria-label="Punktestand">
+    <div className={`scoreboard ${snap.players.length > 2 ? 'many' : ''}`} aria-label="Punktestand">
       {snap.players.map((p) => {
         const away = online && !online.has(p.id);
         return (
@@ -223,9 +235,10 @@ function Result({ result, players, send }) {
   );
 }
 
-function Lobby({ snap, send, unfriend }) {
+function Lobby({ snap, send, unfriend, leave, showToast }) {
   const n = snap.players.length;
   const [open, setOpen] = useState(null); // Spiel mit Optionen, das gerade eingestellt wird
+  const [edit, setEdit] = useState(null); // Gruppe: 'add' | 'rename' | null
   return (
     <div id="lobby">
       <h2 className="section-title">Spiele</h2>
@@ -233,7 +246,7 @@ function Lobby({ snap, send, unfriend }) {
         {snap.games.map((g) => {
           const [min, max] = g.players;
           const fits = n >= min && n <= max;
-          const count = min === max ? `${min} Spieler` : `${min} bis ${max} Spieler`;
+          const count = min === max ? `${countWord(min)} Spieler` : `${countWord(min)} bis ${countWord(max)} Spieler`;
           const options = g.options?.length > 0;
           return (
             <li key={g.id}>
@@ -249,7 +262,7 @@ function Lobby({ snap, send, unfriend }) {
                 <span className="game-name">{g.name}</span>
                 <span className="game-desc">{g.description}</span>
                 <span className="game-meta">
-                  {fits ? count : n < min ? `braucht ${min} Spieler` : `höchstens ${max}`}
+                  {fits ? count : n < min ? `braucht ${countWord(min)} Spieler` : `höchstens ${countWord(max)}`}
                 </span>
               </button>
               {options && open === g.id && fits && (
@@ -266,15 +279,102 @@ function Lobby({ snap, send, unfriend }) {
 
       {snap.history?.length > 0 && <History items={snap.history} />}
 
+      {edit === 'add' && <AddMember snap={snap} send={send} close={() => setEdit(null)} showToast={showToast} />}
+      {edit === 'rename' && <RenameGroup snap={snap} send={send} close={() => setEdit(null)} />}
+
       <div className="room-foot">
-        <button className="link" id="unfriend" onClick={unfriend}>
-          Freundschaft beenden
-        </button>
+        {snap.group ? (
+          <>
+            {n < GROUP_MAX && (
+              <button className="link" id="group-add" aria-expanded={edit === 'add'} onClick={() => setEdit(edit === 'add' ? null : 'add')}>
+                Freund dazuholen
+              </button>
+            )}
+            <button className="link" id="group-rename" aria-expanded={edit === 'rename'} onClick={() => setEdit(edit === 'rename' ? null : 'rename')}>
+              Umbenennen
+            </button>
+            <button className="link" id="group-leave" onClick={leave}>
+              Gruppe verlassen
+            </button>
+          </>
+        ) : (
+          <button className="link" id="unfriend" onClick={unfriend}>
+            Freundschaft beenden
+          </button>
+        )}
         <span>
           Neue Spiele kommen als Datei in den Ordner <code>games/</code>.
         </span>
       </div>
     </div>
+  );
+}
+
+// Gruppe: eigene Freunde dazuholen (nur in der Lobby, die Liste kommt von der Startseite).
+function AddMember({ snap, send, close, showToast }) {
+  const [friends, setFriends] = useState(null);
+  const [chosen, setChosen] = useState('');
+  const members = snap.players.map((p) => p.id).join(' '); // nur neu laden, wenn sich die Mitglieder ändern
+  useEffect(() => {
+    let live = true;
+    account({ t: 'home' })
+      .then((r) => {
+        if (!live) return;
+        const list = r.friends.map((f) => f.user).filter((u) => !members.split(' ').includes(u.id));
+        setFriends(list);
+        setChosen(list[0]?.id ?? '');
+      })
+      .catch((err) => showToast(err.message));
+    return () => {
+      live = false;
+    };
+  }, [members, showToast]);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (chosen && (await send({ t: 'group-add', user: chosen }))) close();
+  };
+  return (
+    <form className="group-edit" onSubmit={submit}>
+      <h2 className="section-title">Freund dazuholen</h2>
+      {!friends ? (
+        <p className="muted">Lädt …</p>
+      ) : friends.length === 0 ? (
+        <p className="empty">Alle deine Freunde sind schon in der Gruppe.</p>
+      ) : (
+        <>
+          <label htmlFor="group-friend">Freund</label>
+          <div className="row nowrap">
+            <select id="group-friend" value={chosen} onChange={(e) => setChosen(e.target.value)}>
+              {friends.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+            <button className="btn">Dazuholen</button>
+          </div>
+        </>
+      )}
+    </form>
+  );
+}
+
+function RenameGroup({ snap, send, close }) {
+  const [name, setName] = useState(snap.group.name);
+  const submit = async (e) => {
+    e.preventDefault();
+    if (await send({ t: 'group-rename', name })) close();
+  };
+  return (
+    <form className="group-edit" onSubmit={submit}>
+      <h2 className="section-title">Umbenennen</h2>
+      <label htmlFor="group-new-name">Name der Gruppe</label>
+      <div className="row nowrap">
+        <input id="group-new-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={30} required />
+        <button className="btn">Speichern</button>
+      </div>
+    </form>
   );
 }
 

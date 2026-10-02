@@ -7,6 +7,7 @@ import Home from './Home';
 import Room from './Room';
 import Friends from './Friends';
 import NotifySettings from './NotifySettings';
+import NewGroup from './NewGroup';
 import {
   pushSupport,
   registerServiceWorker,
@@ -16,7 +17,7 @@ import {
   deviceLabel,
 } from '@/lib/push-client';
 
-// Ansicht aus der Adresse: ?raum=CODE (Spielzimmer) oder ?seite=freunde|benachrichtigungen
+// Ansicht aus der Adresse: ?raum=CODE (Spielzimmer) oder ?seite=freunde|gruppe|benachrichtigungen
 const roomFromUrl = () => new URLSearchParams(location.search).get('raum');
 const pageFromUrl = () => new URLSearchParams(location.search).get('seite');
 
@@ -92,6 +93,14 @@ export default function App() {
           <Room code={room} user={user} goHome={goHome} showToast={showToast} onUnauthorized={onUnauthorized} />
         ) : page === 'freunde' ? (
           <Friends
+            user={user}
+            goHome={goHome}
+            openRoom={openRoom}
+            showToast={showToast}
+            onUnauthorized={onUnauthorized}
+          />
+        ) : page === 'gruppe' ? (
+          <NewGroup
             user={user}
             goHome={goHome}
             openRoom={openRoom}

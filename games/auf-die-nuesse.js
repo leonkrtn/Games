@@ -5,12 +5,13 @@
 // Würfeln darf man weiterwürfeln, so oft man will, oder die Nüsse sichern. Ist in einem Wurf keine Nuss
 // dabei, sind die Nüsse der Runde weg. Zeigen dabei alle Würfel Eichhörnchen, beginnt die Sonderrunde
 // „Auf die Nüsse!“: ein Live-Wettlauf. Wer dran war, würfelt so schnell es geht mit allen fünf Würfeln
-// und sammelt jede Nuss, der andere würfelt seinen Hundewürfel (ein Hund, fünf Hütten), bis der Hund
-// kommt. Wer zuerst das Ziel erreicht (Einstellung in der Lobby), gewinnt.
+// und sammelt jede Nuss, alle anderen würfeln ihren Hundewürfel (ein Hund, fünf Hütten), bis der erste
+// Hund kommt. Wer zuerst das Ziel erreicht (Einstellung in der Lobby), gewinnt. Zwei bis sechs Spieler,
+// reihum.
 //
 // Wettlauf übers Netz: Der Server begrenzt das Tempo (die Würfel müssen erst landen), damit schnelles
-// Tippen fair bleibt, und nimmt mehrere Tipper in einer Anfrage an. Würfelt der andere nicht selbst,
-// rollt sein Hund nach kurzer Zeit von allein (tick).
+// Tippen fair bleibt, und nimmt mehrere Tipper in einer Anfrage an. Würfelt jemand seinen Hund nicht
+// selbst, rollt er nach kurzer Zeit von allein (tick).
 //
 // Motion: 3D-Würfel rollen über den Tisch, Nüsse fliegen in den Topf und beim Sichern in die Anzeige,
 // Tannenhäher treten zur Seite, verlorene Nüsse werden durchgestrichen, die Sonderrunde startet mit
@@ -19,7 +20,7 @@
 export const meta = {
   name: 'Auf die Nüsse!',
   description: 'Würfelt Nüsse, bis ihr euch nicht mehr traut. Wer zuerst das Ziel erreicht, gewinnt.',
-  players: [2, 2],
+  players: [2, 6],
   options: [
     {
       id: 'ziel',
@@ -37,10 +38,11 @@ const DOG_CHANCE = 1 / 6; // ein Hund, fünf Hütten
 const COUNTDOWN = 3500; // ms bis zum Start der Sonderrunde
 const NUT_MS = 450; // so oft dürfen die Nusswürfel in der Sonderrunde fliegen
 const DOG_MS = 250; // so oft der Hundewürfel
-const AUTO_AFTER = 1200; // würfelt der andere so lange nicht selbst, rollt sein Hund von allein …
+const AUTO_AFTER = 1200; // würfelt jemand so lange nicht selbst, rollt sein Hund von allein …
 const AUTO_MS = 260; // … in diesem Takt
 
-const otherOf = (s, id) => s.players.find((p) => p.id !== id).id;
+const ids = (s) => s.players.map((p) => p.id);
+const nextAfter = (s, id) => ids(s)[(ids(s).indexOf(id) + 1) % s.players.length];
 const nameOf = (s, id) => s.players.find((p) => p.id === id).name;
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 
@@ -74,27 +76,33 @@ export function action(s, { player, type, data }) {
   if (type === 'sichern' && s.phase === 'entscheiden') return bank(s);
 }
 
-// Würfelt der andere seinen Hund nicht selbst, rollt er von allein (sonst gäbe es endlos Nüsse).
+// Würfelt jemand seinen Hund nicht selbst, rollt er von allein (sonst gäbe es endlos Nüsse).
+// Mehrere Hunde rollen in der Reihenfolge, in der sie fällig waren.
 export function tick(s, now) {
   const sp = s.special;
   if (s.phase !== 'sonder' || sp.done) return;
-  while (!sp.done && sp.nextAuto <= now) {
-    sp.auto++;
-    sp.nextAuto += AUTO_MS;
-    dogRoll(s);
+  while (!sp.done) {
+    const due = sp.dogs
+      .filter((id) => sp.pack[id].nextAuto <= now)
+      .sort((a, b) => sp.pack[a].nextAuto - sp.pack[b].nextAuto)[0];
+    if (!due) return;
+    const d = sp.pack[due];
+    d.auto++;
+    d.nextAuto += AUTO_MS;
+    dogRoll(s, due);
   }
 }
 
 export function waitingFor(s) {
   if (s.phase === 'ende') return [];
-  if (s.phase === 'sonder') return [s.special.by, s.special.dog];
+  if (s.phase === 'sonder') return [s.special.by, ...s.special.dogs];
   return [s.turn];
 }
 
 export function notices(s, before, player) {
   if (s.phase === 'sonder' && before.phase !== 'sonder') {
     const by = nameOf(s, s.special.by);
-    return [{ to: s.special.dog, text: `Auf die Nüsse! ${by} würfelt um die Wette. Schnell, würfle deinen Hund.` }];
+    return s.special.dogs.map((id) => ({ to: id, text: `Auf die Nüsse! ${by} würfelt um die Wette. Schnell, würfle deinen Hund.` }));
   }
   if (s.phase === 'wuerfeln' && (before.phase !== 'wuerfeln' || before.turn !== s.turn)) {
     return [{ to: s.turn, text: `${lastText(s)} Du bist dran.` }];
@@ -157,15 +165,21 @@ function endRound(s, info) {
 }
 
 function nextTurn(s) {
-  s.turn = otherOf(s, s.turn);
+  s.turn = nextAfter(s, s.turn);
   s.phase = 'wuerfeln';
 }
 
 function won(s, id) {
   if (s.scores[id] < s.target) return false;
   s.phase = 'ende';
-  const other = otherOf(s, id);
-  s.result = { winners: [id], text: `${nameOf(s, id)} gewinnt mit ${word(s.scores[id])} zu ${word(s.scores[other])} Nüssen.` };
+  const others = ids(s).filter((x) => x !== id);
+  s.result = {
+    winners: [id],
+    text:
+      others.length === 1
+        ? `${nameOf(s, id)} gewinnt mit ${word(s.scores[id])} zu ${word(s.scores[others[0]])} Nüssen.`
+        : `${nameOf(s, id)} gewinnt mit ${word(s.scores[id])} Nüssen.`,
+  };
   return true;
 }
 
@@ -174,22 +188,23 @@ function won(s, id) {
 function startRace(s, now, lost) {
   s.phase = 'sonder';
   const startsAt = now + COUNTDOWN;
+  const dogs = [];
+  for (let id = nextAfter(s, s.turn); id !== s.turn; id = nextAfter(s, id)) dogs.push(id);
   s.special = {
     id: s.rolls,
     by: s.turn, // würfelt Nüsse
-    dog: otherOf(s, s.turn), // würfelt den Hund
+    dogs, // würfeln je ihren Hund, in Spielreihenfolge
     lost, // Nüsse der Runde, die durch die Eichhörnchen weg sind
     startsAt,
     rolls: 0,
     nuts: 0,
     faces: null, // letzter Wurf der fünf Würfel
-    dogRolls: 0,
-    dogFace: null, // 'hund' | 'huette'
-    manual: 0, // selbst gewürfelte Hundewürfe
-    auto: 0, // von allein gerollte
     nutReady: startsAt,
-    dogReady: startsAt,
-    nextAuto: startsAt + AUTO_AFTER,
+    // pro Hund: Würfe, letzte Seite ('hund' | 'huette'), selbst und von allein gerollt, Tempo
+    pack: Object.fromEntries(
+      dogs.map((id) => [id, { rolls: 0, face: null, manual: 0, auto: 0, ready: startsAt, nextAuto: startsAt + AUTO_AFTER }]),
+    ),
+    winner: null, // wessen Hund kam
     done: false,
   };
 }
@@ -209,21 +224,24 @@ function raceAction(s, player, type, data, now) {
     }
     return;
   }
-  if (player !== sp.dog) throw new Error('Du würfelst Nüsse.');
-  for (let k = 0; k < taps && now >= sp.dogReady && !sp.done; k++) {
-    sp.dogReady = Math.max(sp.dogReady, now - DOG_MS) + DOG_MS;
-    sp.manual++;
-    sp.nextAuto = now + AUTO_AFTER; // wer selbst würfelt, braucht keine Hilfe
-    dogRoll(s);
+  if (!sp.dogs.includes(player)) throw new Error('Du würfelst Nüsse.');
+  const d = sp.pack[player];
+  for (let k = 0; k < taps && now >= d.ready && !sp.done; k++) {
+    d.ready = Math.max(d.ready, now - DOG_MS) + DOG_MS;
+    d.manual++;
+    d.nextAuto = now + AUTO_AFTER; // wer selbst würfelt, braucht keine Hilfe
+    dogRoll(s, player);
   }
 }
 
-function dogRoll(s) {
+function dogRoll(s, id) {
   const sp = s.special;
-  sp.dogRolls++;
-  sp.dogFace = Math.random() < DOG_CHANCE ? 'hund' : 'huette';
-  if (sp.dogFace !== 'hund') return;
+  const d = sp.pack[id];
+  d.rolls++;
+  d.face = Math.random() < DOG_CHANCE ? 'hund' : 'huette';
+  if (d.face !== 'hund') return;
   sp.done = true;
+  sp.winner = id;
   s.scores[sp.by] += sp.nuts;
   endRound(s, { kind: 'sonder', nuts: sp.nuts, lost: sp.lost });
   if (!won(s, sp.by)) nextTurn(s);
@@ -438,6 +456,7 @@ function local(el, game) {
 }
 
 export function render(el, s, game) {
+  if (s.special && !s.special.dogs) s = { ...s, special: null }; // Sonderrunde aus der Zeit vor mehreren Hunden
   const u = local(el, game);
   u.ctrl?.abort();
   u.ctrl = new AbortController();
@@ -533,7 +552,7 @@ function statusHTML(s, game) {
   if (s.phase === 'sonder') {
     const sp = s.special;
     return sp.by === me
-      ? `${marker(game, me)} Alle Würfel zeigen Eichhörnchen. Würfle so schnell du kannst, bis der Hund kommt.`
+      ? `${marker(game, me)} Alle Würfel zeigen Eichhörnchen. Würfle so schnell du kannst, bis ${sp.dogs.length > 1 ? 'ein' : 'der'} Hund kommt.`
       : `${marker(game, me)} Würfle deinen Hund, bevor ${name(sp.by)} zu viele Nüsse sammelt.`;
   }
   const who = marker(game, s.turn);
@@ -669,25 +688,29 @@ function renderRace(box, s, game, u, fx) {
 function buildRace(box, s, game, u, fx) {
   const sp = s.special;
   const me = game.me;
-  const role = sp.by === me ? 'sonder' : sp.dog === me ? 'hund' : null;
+  const role = sp.by === me ? 'sonder' : sp.dogs.includes(me) ? 'hund' : null;
   const nm = (id) => (id === me ? 'Du' : game.esc(game.name(id)));
-  box.innerHTML = `<section class="adn-sp ${fx.raceStart ? 'arrive' : ''}" style="--a:${game.color(sp.by)};--b:${game.color(sp.dog)}" aria-label="Sonderrunde">
+  box.innerHTML = `<section class="adn-sp ${fx.raceStart ? 'arrive' : ''}" style="--a:${game.color(sp.by)}" aria-label="Sonderrunde">
     <h3 class="adn-sp-title">Auf die Nüsse!</h3>
     <div class="adn-lane adn-lane-nuts">
       <span class="adn-lane-who">${marker(game, sp.by)} ${nm(sp.by)}</span>
       <span class="adn-sp-dice">${Array.from({ length: 5 }, () => `<span class="adn-fdie">${ICON.hoernchen}</span>`).join('')}</span>
       <span class="adn-sp-num num" data-nuts aria-label="Nüsse">0</span>
     </div>
-    <div class="adn-lane adn-lane-dog">
-      <span class="adn-lane-who">${marker(game, sp.dog)} ${nm(sp.dog)}</span>
+    ${sp.dogs
+      .map(
+        (id) => `<div class="adn-lane adn-lane-dog" data-lane="${id}" style="--b:${game.color(id)}">
+      <span class="adn-lane-who">${marker(game, id)} ${nm(id)}</span>
       <span class="adn-fdie adn-dogdie" data-dog>${ICON.huette}</span>
       <span class="adn-dognote"><span data-dognote></span><span class="adn-wuff" data-wuff hidden>Wuff! Wuff!</span></span>
-    </div>
+    </div>`,
+      )
+      .join('')}
     ${role ? `<button type="button" class="btn primary adn-tap" data-tap disabled>${role === 'sonder' ? 'Würfeln' : 'Hund würfeln'}</button>` : ''}
     <p class="adn-sp-result" data-result></p>
     <div class="adn-count" data-count hidden></div>
   </section>`;
-  u.shown = { rolls: 0, dogRolls: 0, nuts: 0, fresh: !fx.raceStart }; // fresh: ohne Animation nachholen
+  u.shown = { rolls: 0, dogs: {}, nuts: 0, fresh: !fx.raceStart }; // fresh: ohne Animation nachholen
   u.pending = 0;
   box.querySelector('[data-tap]')?.addEventListener('click', () => tap(box, game, u, role), { signal: game.signal });
 }
@@ -717,24 +740,28 @@ function updateRace(box, s, game, u, fx) {
     u.shown.nuts = sp.nuts;
   }
 
-  const dog = box.querySelector('[data-dog]');
-  if (sp.dogRolls !== u.shown.dogRolls) {
-    dog.innerHTML = ICON[sp.dogFace];
-    dog.classList.toggle('is-dog', sp.dogFace === 'hund');
-    if (!quiet && !recent('hund')) toss([dog], DOG_MS);
-    u.shown.dogRolls = sp.dogRolls;
+  for (const id of sp.dogs) {
+    const d = sp.pack[id];
+    const lane = box.querySelector(`[data-lane="${id}"]`);
+    const dog = lane.querySelector('[data-dog]');
+    if (d.rolls !== (u.shown.dogs[id] ?? 0)) {
+      dog.innerHTML = ICON[d.face];
+      dog.classList.toggle('is-dog', d.face === 'hund');
+      if (!quiet && !(id === game.me && recent('hund'))) toss([dog], DOG_MS);
+      u.shown.dogs[id] = d.rolls;
+    }
+    let note = '';
+    if (!sp.done) {
+      note = d.rolls ? 'Hütte. Noch kein Hund.' : 'Noch nicht gewürfelt.';
+      if (d.auto > 0 && id !== game.me) note = 'Der Hund würfelt von allein.';
+    }
+    lane.querySelector('[data-dognote]').textContent = note;
+    lane.classList.toggle('won', sp.winner === id);
+    lane.querySelector('[data-wuff]').hidden = sp.winner !== id;
   }
-  let note = '';
-  if (!sp.done) {
-    note = sp.dogRolls ? 'Hütte. Noch kein Hund.' : 'Noch nicht gewürfelt.';
-    if (sp.auto > 0 && sp.dog !== game.me) note = 'Der Hund würfelt von allein.';
-  }
-  box.querySelector('[data-dognote]').textContent = note;
 
   const btn = box.querySelector('[data-tap]');
   if (sp.done) btn?.remove();
-  const wuff = box.querySelector('[data-wuff]');
-  wuff.hidden = !sp.done;
   const result = box.querySelector('[data-result]');
   if (sp.done) {
     const you = sp.by === game.me;
@@ -913,8 +940,8 @@ function rulesHTML(s) {
       <li>Jede Nuss zählt für diese Runde. Tannenhäher bleiben liegen, mit den übrigen Würfeln darf man weiterwürfeln.</li>
       <li>Nach jedem Wurf heißt es: weiterwürfeln oder die Nüsse sichern.</li>
       <li>Ist in einem Wurf keine Nuss dabei, sind die Nüsse der Runde weg.</li>
-      <li>Zeigen dabei alle Würfel Eichhörnchen, heißt es „Auf die Nüsse!“. Wer dran war, würfelt so schnell es geht mit allen fünf Würfeln und sammelt jede Nuss. Der andere würfelt seinen Hundewürfel, bis der Hund kommt. Dann zählen die gesammelten Nüsse.</li>
-      <li>Würfelt der andere nicht selbst, rollt sein Hund nach kurzer Zeit von allein.</li>
+      <li>Zeigen dabei alle Würfel Eichhörnchen, heißt es „Auf die Nüsse!“. Wer dran war, würfelt so schnell es geht mit allen fünf Würfeln und sammelt jede Nuss. ${s.players.length > 2 ? 'Alle anderen würfeln ihren Hundewürfel, bis der erste Hund kommt' : 'Der andere würfelt seinen Hundewürfel, bis der Hund kommt'}. Dann zählen die gesammelten Nüsse.</li>
+      <li>Würfelt jemand seinen Hund nicht selbst, rollt er nach kurzer Zeit von allein.</li>
       <li>Wer zuerst ${word(s.target)} Nüsse hat, gewinnt.</li>
     </ol>
   </details>`;
@@ -1010,6 +1037,8 @@ export const style = `
   .adn-sp-title { font: 800 var(--t-3xl) / 1 var(--font-display); text-align: center; }
   .adn-lane { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 52px; }
   .adn-lane + .adn-lane { padding-top: 10px; border-top: 1px solid var(--hairline); }
+  /* Hunde: der Würfel steht in jeder Bahn an derselben Stelle, egal wie lang der Hinweis ist */
+  .adn-lane-dog { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.3fr); }
   .adn-lane-who { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 700; }
   .adn-sp-dice { display: flex; gap: 4px; }
   .adn-fdie { display: grid; place-items: center; width: 30px; height: 30px; border: 1.5px solid var(--ink); border-radius: 18%; background: var(--paper); }
@@ -1018,7 +1047,7 @@ export const style = `
   .adn-sp-num { min-width: 2.2ch; color: var(--a); font: 800 var(--t-2xl) / 1 var(--font-display); font-variant-numeric: tabular-nums; text-align: right; }
   .adn-dogdie { width: 48px; height: 48px; }
   .adn-dogdie.is-dog { border: 3px solid var(--b); }
-  .adn-dognote { min-width: 9.5em; color: var(--muted); font-size: var(--t-sm); }
+  .adn-dognote { color: var(--muted); font-size: var(--t-sm); }
   .adn-tap { width: 100%; min-height: 64px; font: 800 var(--t-xl) / 1 var(--font-display); }
   .adn-tap:active:not(:disabled) { transform: scale(.97); }
   .adn-count {
@@ -1039,8 +1068,9 @@ export const style = `
     transform: rotate(-6deg);
   }
   .adn-wuff[hidden] { display: none; }
-  .adn-sp.just-done .adn-wuff { animation: adn-stamp 360ms cubic-bezier(.2,.8,.2,1) both; }
-  .adn-sp.just-done .adn-dogdie { animation: adn-dog 420ms cubic-bezier(.2,.8,.2,1) both; }
+  .adn-sp.just-done .won .adn-wuff { animation: adn-stamp 360ms cubic-bezier(.2,.8,.2,1) both; }
+  .adn-sp.just-done .won .adn-dogdie { animation: adn-dog 420ms cubic-bezier(.2,.8,.2,1) both; }
+  .adn-sp.done .adn-lane-dog:not(.won) { opacity: .45; transition: opacity 300ms ease-out 500ms; }
   .adn-sp.just-done .adn-sp-result { animation: adn-rise 320ms cubic-bezier(.2,.8,.2,1) 380ms both; }
   @keyframes adn-stamp { from { opacity: 0; transform: rotate(-6deg) scale(1.8); } }
   @keyframes adn-dog { 40% { transform: scale(1.25); } }
