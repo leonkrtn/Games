@@ -105,6 +105,7 @@ Regeln und Tipps:
 - `state` muss reines JSON sein (keine Funktionen, `Map`, `Set`, `Date`-Objekte) und klein bleiben, denn er wird bei jedem Zug komplett in Postgres gespeichert.
 - `action` kann bei gleichzeitigen Zügen mehrmals auf einer frischen Kopie laufen: keine Nebenwirkungen außerhalb von `state`.
 - Zufall (`Math.random`) nur in `setup`/`action`, **nie in `render`**.
+- Verweist der `state` mit Indizes auf eine Liste im Code (z.B. `deck` auf `SUGGESTIONS` in `montagsmaler.js`), neue Einträge nur hinten anhängen und nichts umsortieren oder löschen: Laufende Partien zeigen sonst auf andere Einträge. Vorschlagslisten (`IDEAS` in `kennst-du-mich.js`, `SUGGESTIONS`) auf doppelte Einträge prüfen.
 - Jede Aktion prüfen: ist der Spieler dran, ist er Teil des Spiels, ist die Phase richtig, sind die Daten gültig.
 - Geheimes (Handkarten, Antworten, Wahl des Gegners) immer in `view` für die anderen entfernen. Der Browser bekommt nur, was `view` liefert.
 - Texte von Spielern und Spielernamen in `render` immer mit `game.esc()` einsetzen.

@@ -172,7 +172,16 @@ const SUGGESTIONS = `Haus Baum Sonne Mond Stern Auto Fahrrad Schiff Flugzeug Rak
   Zahn Skelett Feuer Rutsche Schaukel Karussell Ampel Zaun Brunnen Windmühle Iglu Pyramide Traktor Bagger
   Hubschrauber U-Boot Segelboot Würfel Schatzkiste Sanduhr Zauberstab Magnet Glühbirne Taschenlampe
   Fallschirm Heißluftballon Weihnachtsbaum Osterei Kürbis Schneeflocke Nest Spinnennetz Sandburg Muschel
-  Palme Wasserfall Feuerwehrauto Zahnarzt Kran Kaffeemaschine Mikrofon Kopfhörer Briefkasten Vogelscheuche`
+  Palme Wasserfall Feuerwehrauto Zahnarzt Kran Kaffeemaschine Mikrofon Kopfhörer Briefkasten Vogelscheuche
+  Eichhörnchen Fledermaus Flamingo Papagei Pfau Storch Adler Taube Rabe Specht Hamster Nashorn Nilpferd
+  Kamel Känguru Koala Panda Eisbär Wolf Hirsch Elch Seepferdchen Qualle Seestern Delfin Tintenfisch Libelle
+  Ameise Raupe Käfer Gorilla Esel Ziege Truthahn Robbe Otter Biber Faultier Waschbär Brot Käse Spiegelei
+  Hamburger Pommes Popcorn Lutscher Schokolade Keks Donut Wassermelone Zitrone Orange Weintraube Mais
+  Brokkoli Zwiebel Paprika Gurke Kartoffel Spaghetti Muffin Kokosnuss Eimer Handtuch Staubsauger Kamin
+  Kissen Vorhang Teppich Regal Tisch Uhr Radio Computer Bleistift Handtasche Mütze Jacke Kleid Sonnenbrille
+  Angel Fackel Laterne Waage Zeitung Motorrad Skateboard Schlitten Kanu Raumschiff Bus Straßenbahn
+  Schornstein Tür Turm Strand Wald Tennisschläger Basketball Bogen Pfeil Schwert Schild Puzzle Schlittschuh
+  Ski Surfbrett Trampolin Hängematte Vampir Zombie Riese Weihnachtsmann`
   .split(/\s+/)
   .filter(Boolean);
 const SUGGEST_EACH = 6; // so viele Vorschläge bekommt ein Zeichner pro Runde
