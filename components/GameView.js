@@ -26,7 +26,7 @@ const parseValue = (v) => {
  * Die Spieldateien arbeiten direkt mit HTML (nicht mit React), damit sie einfach
  * zu schreiben sind und auf Server und im Browser laufen.
  */
-export default function GameView({ game, players, me, room, now, onAction, onRefresh }) {
+export default function GameView({ game, players, me, room, now, onAction, onRefresh, live }) {
   const ref = useRef(null);
   const [failure, setFailure] = useState(null); // { key, message }
   const entry = games.get(game.id);
@@ -73,6 +73,20 @@ export default function GameView({ game, players, me, room, now, onAction, onRef
       // Zeit: Serverzeit in ms (für Countdowns), refresh() fragt neu nach (z.B. wenn eine Frist abläuft)
       now,
       refresh: onRefresh,
+      // Live: schnelle Nachrichten an die anderen Browser im Raum, ohne Speichern und ohne Garantie
+      // (z.B. Striche beim Zeichnen). on(fn) einmal pro Partie anmelden, fn(data, vonId);
+      // endet die Partie, wird fn automatisch abgemeldet.
+      live: {
+        send: (data) => live?.send({ g: instance, from: me, data }),
+        on: (fn) => {
+          const off =
+            live?.on((m) => {
+              if (m?.g === instance && m.from !== me) fn(m.data, m.from);
+            }) ?? (() => {});
+          controller.signal.addEventListener('abort', off);
+          return off;
+        },
+      },
       // Für Animationen:
       prev, // Stand vor dieser Änderung (null beim ersten Zeichnen einer Partie)
       first: prev === null,

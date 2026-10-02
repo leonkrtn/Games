@@ -86,7 +86,15 @@ console.log(await A.evaluate(() => scrollY) === y0); // true: gezogen, nicht ges
 ```
 
 Immer beides prüfen: Ziehen auf dem Spielstück scrollt nicht, Wischen daneben scrollt weiterhin.
-Tippen: `A.touchscreen.tap(x, y)`.
+Tippen: `A.touchscreen.tap(x, y)`. Über mehrere Punkte (Malen, Wischgesten): `touchPath(A, [{ x, y }, …])`.
+
+## 4. Live-Nachrichten (`game.live`)
+
+Im Testmodus laufen sie über den Server (`t: 'live'`), sie lassen sich also wie alles andere testen.
+Weil sie verloren gehen dürfen, einmal ohne sie spielen: beim Empfänger
+`page.route('**/api/room', (r) => (r.request().postData() ?? '').includes('"t":"live"') ? r.abort() : r.continue())`
+und neu laden. Die Ansicht muss dann allein aus dem gespeicherten Stand stimmen. Die abgebrochenen
+Anfragen erscheinen als `ERR_FAILED` unter den Konsolenfehlern (erwartet). Malflächen: Skill `malflaeche`.
 
 ## Prüfliste
 
@@ -95,4 +103,5 @@ Tippen: `A.touchscreen.tap(x, y)`.
 - [ ] Bildschirmfotos von Auftakt, Zug, Höhepunkt und Ende angesehen.
 - [ ] Mit `reduced: true` und mit `width: 1000` angesehen.
 - [ ] Gesten (Ziehen, Tippen) mit `touchDrag` bzw. `touchscreen.tap` geprüft, falls das Spiel welche hat.
+- [ ] Bei `game.live`: einmal ohne Live-Nachrichten gespielt, Ansicht stimmt trotzdem.
 - [ ] `npm run check` und `npm run build` fehlerfrei.

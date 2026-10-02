@@ -80,6 +80,8 @@ export function waitingFor(state) {
 //    Für Animationen: game.prev (Stand vor der Änderung), game.first, game.signal, game.reducedMotion.
 //    Bilder: await game.upload(datei oder canvas) → { id, width, height }, anzeigen mit game.imageUrl(id).
 //    Zeit: game.now() (Serverzeit in ms), game.refresh() (Stand neu laden).
+//    Live: game.live.send(data) / game.live.on((data, von) => …) für schnelle Vorschauen ohne Speichern
+//    (z.B. Striche beim Zeichnen). Beispiel: montagsmaler.js
 //    Jedes Spiel soll hochwertige Animationen haben, siehe CLAUDE.md, Abschnitt „Motion und Optik“.
 //
 //    Abkürzung: <button data-action="zaehlen" data-value="2"> sendet den Zug automatisch.

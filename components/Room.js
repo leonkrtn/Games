@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { account, roomApi } from './api';
 import GameView from './GameView';
+import { createLive, relay } from './live';
 import { getSupabase } from '@/lib/supabase-browser';
 import { playerColor } from '@/lib/colors';
 
@@ -13,6 +14,7 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
   const [connected, setConnected] = useState(true);
   const versionRef = useRef(-1);
   const clockRef = useRef(0); // Serverzeit minus eigene Uhr
+  const live = useMemo(() => createLive(), [code]); // game.live: schnelle Nachrichten zwischen den Browsern
 
   // Nur neuere Stände übernehmen (Antworten können in anderer Reihenfolge ankommen).
   const accept = useCallback((s) => {
@@ -68,19 +70,24 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
 
     if (!supabase) {
       const timer = setInterval(refresh, 1000);
+      const stopLive = relay(live, code);
       return () => {
         clearInterval(timer);
+        stopLive();
         document.removeEventListener('visibilitychange', onVisible);
       };
     }
 
+    let joined = false;
     const channel = supabase.channel(`room:${code}`, { config: { presence: { key: user.id } } });
     channel
       .on('broadcast', { event: 'update' }, ({ payload }) => {
         if (!(payload?.version <= versionRef.current)) refresh();
       })
+      .on('broadcast', { event: 'live' }, ({ payload }) => live.receive(payload))
       .on('presence', { event: 'sync' }, () => setOnline(new Set(Object.keys(channel.presenceState()))))
       .subscribe((status) => {
+        joined = status === 'SUBSCRIBED';
         if (status === 'SUBSCRIBED') {
           setConnected(true);
           channel.track({ since: Date.now() });
@@ -89,13 +96,18 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
           setConnected(false);
         }
       });
+    // Live-Nachrichten der Spiele direkt an die anderen Browser (ohne Verbindung: verwerfen, nicht nachschicken)
+    const stopLive = live.use((payload) => {
+      if (joined) channel.send({ type: 'broadcast', event: 'live', payload });
+    });
 
     return () => {
+      stopLive();
       document.removeEventListener('visibilitychange', onVisible);
       supabase.removeChannel(channel);
       setOnline(null);
     };
-  }, [code, refresh, user.id]);
+  }, [code, refresh, user.id, live]);
 
   const unfriend = async () => {
     const other = snap.players.find((p) => p.id !== user.id);
@@ -153,6 +165,7 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
                 now={now}
                 onAction={onAction}
                 onRefresh={refresh}
+                live={live}
               />
             </div>
           ) : (

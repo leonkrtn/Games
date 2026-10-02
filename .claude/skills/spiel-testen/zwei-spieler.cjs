@@ -85,6 +85,21 @@ async function touchDrag(page, from, to, { steps = 12, hold = 0 } = {}) {
   await touch('touchEnd');
 }
 
+// Finger über mehrere Punkte ziehen (z.B. auf einer Malfläche): [{ x, y }, …], dazwischen `steps` Zwischenschritte
+async function touchPath(page, points, { steps = 4 } = {}) {
+  const cdp = page._svCdp ?? (page._svCdp = await page.context().newCDPSession(page));
+  const touch = (type, p) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: p ? [{ x: p.x, y: p.y }] : [] });
+  await touch('touchStart', points[0]);
+  for (let i = 1; i < points.length; i++) {
+    const [a, b] = [points[i - 1], points[i]];
+    for (let k = 1; k <= steps; k++) {
+      await touch('touchMove', { x: a.x + ((b.x - a.x) * k) / steps, y: a.y + ((b.y - a.y) * k) / steps });
+      await sleep(12);
+    }
+  }
+  await touch('touchEnd');
+}
+
 // Mitte eines Elements in Fensterkoordinaten, z.B. für touchDrag oder page.mouse
 const center = (page, selector) =>
   page.$eval(selector, (n) => {
@@ -92,4 +107,4 @@ const center = (page, selector) =>
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   });
 
-module.exports = { start, sleep, touchDrag, center, loadPlaywright };
+module.exports = { start, sleep, touchDrag, touchPath, center, loadPlaywright };

@@ -1,15 +1,16 @@
 import { NextResponse, after } from 'next/server';
-import { handle } from '@/lib/room';
+import { handle, live } from '@/lib/room';
 import { readRequest, errorResponse } from '@/lib/http';
 import { getStore } from '@/lib/store';
 import { sendPushes } from '@/lib/push';
 
-// Alles im Spielzimmer: { t: 'state' | 'choose' | 'restart' | 'lobby' | 'action', room, ... }
+// Alles im Spielzimmer: { t: 'state' | 'choose' | 'restart' | 'lobby' | 'action' | 'live', room, ... }
 export async function POST(request) {
   const { msg, user, error } = await readRequest(request);
   if (error) return error;
   if (!user) return NextResponse.json({ error: 'Bitte melde dich an.' }, { status: 401 });
   try {
+    if (msg?.t === 'live') return NextResponse.json(await live(msg, user)); // Ersatzweg für game.live
     const { snapshot, changed, notes } = await handle(msg, user);
     if (changed) {
       const origin = new URL(request.url).origin;
