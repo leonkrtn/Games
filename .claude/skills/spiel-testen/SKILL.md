@@ -117,6 +117,28 @@ Mit `prev` (Zustand davor) wird erst dieser gezeichnet und dann der Wechsel anim
 `wait` bestimmt, wann das Foto entsteht. `inspect` (eine Funktion) läuft danach in der Seite, ihr Ergebnis
 steht in `seen`, z.B. Maße und Stile von Elementen, wenn auf dem Foto etwas fehlt:
 `inspect: () => [...document.querySelectorAll('.zeile > *')].map((e) => [e.className, JSON.stringify(e.getBoundingClientRect())])`.
+`act` (async, bekommt die Playwright-Seite) läuft vor dem Foto, z.B. `act: (page) => page.click('.fertig')`
+für Zustände nach einem Tipp (Bestätigen-Texte, aufgeklappte Leisten, Großansichten); `width`/`height`
+setzen die Fenstergröße.
+
+**Schmale Textspalten automatisch finden** (Text neben einer Abbildung oder einem Knopf, der zu einer
+schmalen Spalte zusammengedrückt wird): jede Ansicht in den iPhone-Breiten 320, 375, 390 und 430 zeichnen,
+mit sechs langen Namen (z.B. „Maximilian Alexander“), und als `inspect` melden, was drei oder mehr Zeilen
+hat und schmaler als 220 px ist, sowie alles, was über den rechten Rand ragt:
+
+```js
+inspect: () => [...document.querySelectorAll('#game *')].flatMap((el) => {
+  const text = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim();
+  const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+  const lines = Math.round(r.height / (parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.3));
+  return [...(r.right > innerWidth + 1 ? [`Rand: ${el.className}`] : []),
+          ...(text.length >= 8 && lines >= 3 && r.width < 220 ? [`schmal: ${el.className} ${Math.round(r.width)}px`] : [])];
+}),
+```
+
+Es gibt nur Chromium, kein WebKit: Für das iPhone mit `width: 390, height: 844, scale: 3` (bei `start`)
+testen, Safari-Eigenheiten lassen sich so nicht prüfen.
+
 Die Bilder sind Platzhalter, also Bilder-Layouts zusätzlich
 im echten Spiel ansehen. Den ersten Wurf zeigt `game.first`: Ein Auftakt mit vielen Karten kann beim Foto
 noch laufen (dann `wait` erhöhen, oder es ist ein Hinweis, dass der Auftakt zu lang ist).

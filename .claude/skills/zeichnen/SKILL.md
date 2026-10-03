@@ -61,6 +61,9 @@ Passend zur Plattform (siehe `CLAUDE.md`, „Gestaltung der Plattform“ und „
   (`style="fill:var(--pc)"`), nicht in `fill="var(--x)"`.
 - Pfade sauber: `M … C … Z`, keine Riesenpfade aus Zeichenprogrammen. Lieber mehrere einfache Formen
   (Kreis, Ellipse, kurzer Pfad) als eine unlesbare.
+- Schattierung (dunklere Sichel unten rechts) innerhalb der Kontur halten: als Fläche zwischen dem Umriss und
+  einem leicht nach oben links versetzten Kreis (zwei Bögen durch deren Schnittpunkte, siehe die Gesichter in
+  `components/Reactions.js`). Ragt sie über die Kontur, wirkt sie wie ein Schlagschatten.
 - Konturen, die sich einzeichnen sollen, mit `pathLength="1"` (siehe `games/tic-tac-toe.js`). Nicht mit
   `vector-effect="non-scaling-stroke"` mischen: Dann stimmen die Strichlängen nicht und die Linie
   zeichnet sich stückweise an falschen Stellen ein. `non-scaling-stroke` ist gut für Rahmen, die in

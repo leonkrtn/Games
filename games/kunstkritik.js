@@ -1221,15 +1221,18 @@ function rulesHtml(s) {
 // Bilder einer Runde, beste zuerst (bei gleicher Summe in der Reihenfolge der Bewertung)
 const ranked = (pics) => [...pics].sort((a, b) => b.sum - a.sum);
 
-function wallHtml(pics, game, offset = 0) {
+// zoom: Die Rahmen sind Knöpfe für die Großansicht (nur am Ende); data-i zählt über alle Wände.
+function wallHtml(pics, game, offset = 0, zoom = false) {
   const best = pics[0]?.sum;
   return `<ol class="kk-wall">${pics
     .map((p, i) => {
       const top = pics.length > 1 && p.sum === best;
+      const label = `Bild von ${who(game, p.by, 'dir')}, ${points(p.sum)}`;
+      const inner = `<canvas width="500" height="500" ${zoom ? 'aria-hidden="true"' : `role="img" aria-label="${label}"`}></canvas>${FRAME}
+          ${top ? `<span class="kk-rosette">${rosette(game.color(p.by))}</span>` : ''}`;
       return `<li class="kk-piece kk-small" style="--i:${offset + i};--tilt:${TILT[(offset + i) % TILT.length]}deg;--c:${game.color(p.by)}">
         ${HANGER}
-        <div class="kk-frame"><canvas width="500" height="500" role="img" aria-label="Bild von ${who(game, p.by, 'dir')}, ${points(p.sum)}"></canvas>${FRAME}
-          ${top ? `<span class="kk-rosette">${rosette(game.color(p.by))}</span>` : ''}</div>
+        ${zoom ? `<button type="button" class="kk-frame kk-zoom" data-i="${offset + i}" aria-label="${label}. Groß ansehen.">${inner}</button>` : `<div class="kk-frame">${inner}</div>`}
         <p class="kk-piece-cap">${marker(game, p.by)}<span class="kk-piece-name">${game.esc(game.name(p.by))}</span><b class="kk-piece-sum">${p.sum}</b></p>
       </li>`;
     })
@@ -1376,8 +1379,8 @@ function toolsHtml() {
       <div class="kk-seg" role="group" aria-label="Dicke">${sizes}</div>
     </div>
     <div class="kk-toolrow kk-cmds">
-      <button type="button" class="btn kk-cmd" data-cmd="u">${ICON.zurueck}<span>Zurück</span></button>
-      <button type="button" class="btn kk-cmd" data-cmd="r">${ICON.vor}<span>Vor</span></button>
+      <button type="button" class="btn kk-cmd" data-cmd="u" aria-label="Zurück">${ICON.zurueck}<span>Zurück</span></button>
+      <button type="button" class="btn kk-cmd" data-cmd="r" aria-label="Vor">${ICON.vor}<span>Vor</span></button>
       <button type="button" class="btn kk-cmd" data-cmd="c">${ICON.leeren}<span>Alles löschen</span></button>
     </div>
   </div>`;
@@ -1403,8 +1406,8 @@ function renderBoard(stage, s, game, u) {
       </div>
       ${toolsHtml()}
       <div class="kk-finish">
-        <p class="status kk-note" aria-live="polite"></p>
         <button type="button" class="btn kk-done">Fertig</button>
+        <p class="status kk-note" aria-live="polite"></p>
       </div>
       <ul class="kk-chips" aria-label="Wie weit die anderen sind"></ul>
     </div>`;
@@ -1444,10 +1447,11 @@ function renderBoard(stage, s, game, u) {
   requestAnimationFrame(() => {
     if (signal.aborted) return;
     const top = board.querySelector('.kk-wordline').getBoundingClientRect().top;
-    const bottom = board.querySelector('.kk-tools').getBoundingClientRect().bottom;
+    const bottom = board.querySelector('.kk-finish').getBoundingClientRect().bottom;
+    const free = innerHeight - 64; // unten rechts schwebt der Reaktionsknopf der Plattform
     let dy = 0;
-    if (top < 0 || bottom - top > innerHeight - 16) dy = top - 8;
-    else if (bottom > innerHeight) dy = bottom - innerHeight + 8;
+    if (top < 0 || bottom - top > free - 16) dy = top - 8;
+    else if (bottom > free) dy = bottom - free + 8;
     if (dy) window.scrollBy({ top: dy, behavior: game.reducedMotion ? 'auto' : 'smooth' });
   });
 }
@@ -1590,7 +1594,7 @@ function bindDone(u, signal) {
         finishDrawing(u);
         return;
       }
-      btn.textContent = 'Wirklich fertig? Nochmal tippen.';
+      btn.textContent = 'Sicher? Nochmal tippen.';
       armed = setTimeout(() => {
         armed = null;
         btn.textContent = 'Fertig';
@@ -2152,7 +2156,7 @@ function renderEnd(stage, s, game, u) {
       const pics = ranked(r.pics);
       const html = `<section class="kk-round-wall">
         <h4 class="kk-h4">„${game.esc(r.word)}“ <small>Runde ${zahl(ri + 1)}, ${fromText(game, r.by)}</small></h4>
-        ${pics.length ? wallHtml(pics, game, offset) : ''}
+        ${pics.length ? wallHtml(pics, game, offset, true) : ''}
         ${r.blank.length ? `<p class="muted kk-blank">${blankText(game, r.blank)}</p>` : ''}
       </section>`;
       offset += pics.length;
@@ -2178,13 +2182,106 @@ function renderEnd(stage, s, game, u) {
       countUp(num, 0, Number(num.dataset.to), 250 + i * 140 + 200, signal);
     });
   }
-  // Alle Bilder nacheinander malen
+  // Alle Bilder nacheinander malen; antippen zeigt eins groß
   const all = s.past.flatMap((r) => ranked(r.pics));
   paintWall(stage.querySelector('.kk-gallery'), all, signal);
+  stage.querySelector('.kk-gallery').addEventListener(
+    'click',
+    (e) => {
+      const btn = e.target.closest('.kk-zoom');
+      if (btn) openZoom(u, all[Number(btn.dataset.i)], btn);
+    },
+    { signal },
+  );
+}
+
+// --- Großansicht eines Bildes (am Ende) ---
+
+const CLOSE = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6 L18 18 M18 6 L6 18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>`;
+
+// Das Bild wächst aus seinem Platz an der Wand (FLIP) und schrumpft beim Schließen dorthin zurück.
+function openZoom(u, pic, btn) {
+  const { game } = u;
+  if (!pic) return;
+  closeZoom(u, true);
+  const layer = document.createElement('div');
+  layer.className = 'kk-zoom-layer';
+  layer.setAttribute('role', 'dialog');
+  layer.setAttribute('aria-modal', 'true');
+  layer.setAttribute('aria-label', `Bild von ${game.name(pic.by)}`);
+  layer.innerHTML = `<div class="kk-zoom-back"></div>
+    <figure class="kk-zoom-piece" style="--c:${game.color(pic.by)}">
+      <div class="kk-frame"><canvas width="${S}" height="${S}" role="img" aria-label="Bild von ${who(game, pic.by, 'dir')}, ${points(pic.sum)}"></canvas>${FRAME}</div>
+      <figcaption class="kk-zoom-cap">${marker(game, pic.by)}<span class="kk-zoom-name">${game.esc(game.name(pic.by))}</span>
+        <b class="kk-zoom-sum">${pic.sum}</b><span class="kk-zoom-unit">${pic.sum === 1 ? 'Punkt' : 'Punkte'}</span></figcaption>
+    </figure>
+    <button type="button" class="kk-zoom-close" aria-label="Schließen">${CLOSE}</button>`;
+  document.body.append(layer);
+  drawPicture(layer.querySelector('canvas'), pic.ops);
+  document.documentElement.classList.add('kk-locked');
+
+  const ctrl = new AbortController();
+  u.zoom = { layer, btn, ctrl };
+  const opts = { signal: ctrl.signal };
+  layer.addEventListener('click', (e) => !e.target.closest('.kk-frame') && closeZoom(u), opts);
+  document.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.key === 'Escape') closeZoom(u);
+      else if (e.key === 'Tab') {
+        e.preventDefault(); // einziger Knopf im Fenster: der Fokus bleibt auf „Schließen“
+        layer.querySelector('.kk-zoom-close').focus();
+      }
+    },
+    opts,
+  );
+  u.stage.signal.addEventListener('abort', () => closeZoom(u, true), opts);
+  layer.querySelector('.kk-zoom-close').focus({ preventScroll: true });
+
+  if (game.reducedMotion) return;
+  const frame = layer.querySelector('.kk-frame');
+  frame.animate([{ transform: flipFrom(btn, frame) }, { transform: 'none' }], { duration: 420, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  layer.querySelector('.kk-zoom-back').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 240, easing: 'ease-out' });
+  for (const el of layer.querySelectorAll('.kk-zoom-cap, .kk-zoom-close')) {
+    el.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 260, delay: 260, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' });
+  }
+}
+
+// Verschiebung und Maßstab, mit denen der große Rahmen genau auf dem kleinen liegt (Ursprung oben links)
+function flipFrom(small, big) {
+  const a = small.getBoundingClientRect();
+  const b = big.getBoundingClientRect();
+  return `translate(${a.left - b.left}px, ${a.top - b.top}px) scale(${a.width / b.width})`;
+}
+
+function closeZoom(u, instant = false) {
+  const z = u.zoom;
+  if (!z) return;
+  u.zoom = null;
+  z.ctrl.abort();
+  document.documentElement.classList.remove('kk-locked');
+  const back = z.btn.isConnected;
+  if (!instant && back) z.btn.focus({ preventScroll: true });
+  if (instant || u.game.reducedMotion || !back) {
+    z.layer.remove();
+    return;
+  }
+  z.layer.style.pointerEvents = 'none';
+  const frame = z.layer.querySelector('.kk-frame');
+  const fade = [{ opacity: 1 }, { opacity: 0 }];
+  for (const el of z.layer.querySelectorAll('.kk-zoom-back, .kk-zoom-cap, .kk-zoom-close')) el.animate(fade, { duration: 200, easing: 'ease-in', fill: 'forwards' });
+  frame
+    .animate([{ transform: 'none' }, { transform: flipFrom(z.btn, frame) }], { duration: 320, easing: 'cubic-bezier(.6,0,.2,1)', fill: 'forwards' })
+    .finished.then(
+      () => z.layer.remove(),
+      () => z.layer.remove(),
+    );
 }
 
 export const style = `
   .kk { display: grid; gap: 22px; min-width: 0; }
+  /* Spalten nie breiter als der Platz: sonst drücken Namen mit nowrap ihre volle Breite durch (seitliches Scrollen) */
+  .kk, .kk-head, .kk-col, .kk-word-phase, .kk-board, .kk-rate, .kk-end { grid-template-columns: minmax(0, 1fr); }
   .kk-stage { min-width: 0; }
   .kk-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
@@ -2199,7 +2296,7 @@ export const style = `
   .kk-rounds.intro li { animation: kk-pop 300ms cubic-bezier(.2,.8,.2,1) calc(var(--i) * 70ms) backwards; }
   .kk-track-cap { font-size: var(--t-sm); color: var(--muted); }
   .kk-pts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; border-top: 1px solid var(--line); }
-  .kk-pts.many { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .kk-pts.many { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
   .kk-pts li { position: relative; display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--hairline); min-width: 0; }
   .kk-pts-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .kk-pts-num { font-family: var(--font-display); font-weight: 800; font-size: var(--t-lg); line-height: 1; font-variant-numeric: tabular-nums; }
@@ -2224,8 +2321,8 @@ export const style = `
   .kk-chips { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: var(--t-sm); }
   .kk-chips:empty { display: none; }
   .kk-chip { position: relative; display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
-  .kk-chip small { font-size: inherit; color: var(--muted); }
-  .kk-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 11em; }
+  .kk-chip small { flex: none; font-size: inherit; color: var(--muted); white-space: nowrap; }
+  .kk-chip-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 11em; }
   .kk-check { width: 16px; height: 16px; flex: none; overflow: visible; }
   .kk-check path { fill: none; stroke: var(--ok); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
   .kk-chip.fresh .kk-check path { stroke-dasharray: 1; stroke-dashoffset: 1; animation: kk-draw 300ms cubic-bezier(.3,.7,.2,1) 80ms forwards; }
@@ -2238,8 +2335,9 @@ export const style = `
   .kk-wordform .row.nowrap { gap: 8px; }
   .kk-wordform input { flex: 1; min-width: 0; }
   .kk-wordform .row:last-child { margin-top: 16px; }
-  .kk-wait, .kk-intro, .kk-donebox { display: flex; align-items: center; gap: 18px; min-width: 0; }
-  .kk-wait-text, .kk-intro-text, .kk-done-text { display: grid; gap: 6px; justify-items: start; min-width: 0; }
+  /* Text neben Staffelei oder Rahmen rutscht darunter, sobald er schmaler als etwa dreizehn Zeichen würde */
+  .kk-wait, .kk-intro, .kk-donebox { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 18px; min-width: 0; }
+  .kk-wait-text, .kk-intro-text, .kk-done-text { flex: 1 1 13em; display: grid; gap: 6px; justify-items: start; min-width: 0; }
   .kk-intro-text .row { margin-top: 8px; }
   .kk-myword { font-family: var(--font-display); font-weight: 800; font-size: var(--t-xl); line-height: 1.05; overflow-wrap: anywhere; }
   .kk-wait-text .label { margin: 0; }
@@ -2321,13 +2419,15 @@ export const style = `
   .kk-size i { width: var(--d); height: var(--d); border-radius: 50%; background: var(--kk-cur); box-shadow: 0 0 0 1.5px var(--ink); }
   .kk-board[data-tool="radierer"] .kk-size i { background: #fff; }
   .kk-cmds { justify-content: flex-start; gap: 6px; }
-  .kk-cmd { min-height: 44px; padding: 6px 10px; gap: 4px; font-size: var(--t-sm); flex: 0 1 auto; }
+  .kk-cmd { min-height: 44px; padding: 6px 10px; gap: 4px; font-size: var(--t-sm); flex: 0 1 auto; white-space: nowrap; }
+  @media (max-width: 359px) { .kk-cmd[data-cmd="u"] span, .kk-cmd[data-cmd="r"] span { display: none; } }
   .kk-cmd svg { width: 22px; height: 22px; flex: none; }
   .kk-cmd[data-cmd="c"] { margin-left: auto; }
   .kk-cmd:active:not(:disabled) { transform: scale(.96); }
-  .kk-finish { display: flex; align-items: center; gap: 12px; min-height: 44px; }
-  .kk-finish .kk-note { flex: 1; min-width: 0; }
-  .kk-done { margin-left: auto; flex: none; }
+  .kk-finish { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 44px; }
+  .kk-finish .kk-note { flex: 1 1 12em; min-width: 0; }
+  .kk-finish .kk-note:empty { display: none; }
+  .kk-done { flex: none; } /* links: unten rechts schwebt der Reaktionsknopf der Plattform */
 
   /* Bilder im Goldrahmen */
   .kk-piece { margin: 0; min-width: 0; position: relative; }
@@ -2432,6 +2532,34 @@ export const style = `
   .kk-rosette svg { display: block; width: 100%; height: auto; overflow: visible; }
   .kk-small .kk-rosette { animation: kk-rosette 480ms cubic-bezier(.2,.8,.2,1) calc(var(--wall-delay, 150ms) + var(--i) * var(--step, 90ms) + 380ms) backwards; }
   @keyframes kk-rosette { from { opacity: 0; transform: scale(1.3) rotate(-40deg); } }
+
+  /* Großansicht: Rahmen der Ausstellung sind Knöpfe */
+  button.kk-frame { appearance: none; display: block; width: 100%; padding: 0; border: 0; border-radius: 0; background: #fff; cursor: zoom-in; transition: transform 160ms cubic-bezier(.2,.8,.2,1); }
+  button.kk-frame:hover { transform: translateY(-3px); }
+  button.kk-frame:active { transform: scale(.97); }
+  button.kk-frame:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+  html.kk-locked { overflow: hidden; }
+  .kk-zoom-layer {
+    position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; overscroll-behavior: contain;
+    padding: max(64px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+  .kk-zoom-back { position: absolute; inset: 0; background: rgba(255, 255, 255, .97); }
+  .kk-zoom-piece { position: relative; margin: 0; width: min(100%, 720px, 100svh - 180px); display: grid; gap: 16px; }
+  .kk-zoom-piece .kk-frame { transform-origin: 0 0; cursor: default; }
+  .kk-zoom-cap { display: flex; align-items: baseline; justify-content: center; gap: 8px; min-width: 0; }
+  .kk-zoom-cap .marker { align-self: center; }
+  .kk-zoom-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-weight: 800; font-size: var(--t-lg); line-height: 1.1; }
+  .kk-zoom-sum { flex: none; margin-left: 6px; font-family: var(--font-display); font-weight: 800; font-size: var(--t-xl); line-height: 1; color: var(--c); }
+  .kk-zoom-unit { flex: none; font-size: var(--t-sm); color: var(--muted); }
+  .kk-zoom-close {
+    position: absolute; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right));
+    width: 44px; height: 44px; display: grid; place-items: center; padding: 0; cursor: pointer;
+    border: 2px solid var(--ink); border-radius: var(--radius-m); background: #fff; color: var(--ink);
+    transition: background-color 120ms ease-out, transform 120ms ease-out;
+  }
+  .kk-zoom-close svg { width: 22px; height: 22px; }
+  .kk-zoom-close:hover { background: var(--wash); }
+  .kk-zoom-close:active { transform: scale(.96); }
 
   /* Ende */
   .kk-end { display: grid; gap: 30px; min-width: 0; }

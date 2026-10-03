@@ -10,7 +10,8 @@
 //   await close();
 //
 // Optionen: me (Sicht dieses Spielers, über view()), prev (Zustand davor: wird zuerst gezeichnet, dann
-// animiert der Wechsel wie im Spiel), width (Standard 360), wait (ms bis zum Foto), reduced (ohne Bewegung),
+// animiert der Wechsel wie im Spiel), width (Standard 360), height (Standard 800), wait (ms bis zum Foto), reduced (ohne Bewegung),
+// act (async (page) => …, läuft vor dem Warten: Knöpfe antippen, z.B. page.click('.fertig')),
 // inspect (Funktion, läuft nach dem Foto in der Seite, ihr Ergebnis steht in `seen`: z.B. Maße von Elementen).
 // Bilder (game.imageUrl) sind graue Platzhalter. Schriften und globals.css sind die echten.
 
@@ -84,14 +85,14 @@ async function start() {
   port = server.address().port;
 }
 
-export async function shot(game, G, state, { me = state.players[0].id, prev = null, file, width = 360, wait = 1600, reduced = false, inspect } = {}) {
+export async function shot(game, G, state, { me = state.players[0].id, prev = null, file, width = 360, height = 800, wait = 1600, reduced = false, inspect, act } = {}) {
   await start();
   const players = state.players.map(({ id, name }) => ({ id, name }));
   const see = (s) => (G.view ? G.view(s, me) : s);
   current = { game, view: see(state), prev: prev ? see(prev) : null, me, players };
   browser ??= await loadPlaywright().chromium.launch();
   const ctx = await browser.newContext({
-    viewport: { width, height: 800 },
+    viewport: { width, height },
     deviceScaleFactor: 2,
     hasTouch: true,
     reducedMotion: reduced ? 'reduce' : 'no-preference',
@@ -102,6 +103,7 @@ export async function shot(game, G, state, { me = state.players[0].id, prev = nu
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   await page.goto(`http://localhost:${port}/`);
   await page.waitForFunction(() => window.ready, null, { timeout: 5000 }).catch(() => errors.push('render() ist nicht fertig geworden'));
+  if (act) await act(page); // z.B. einen Knopf antippen, bevor das Foto entsteht
   await new Promise((r) => setTimeout(r, wait));
   if (file) await page.screenshot({ path: file, fullPage: true });
   const scroll = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]);

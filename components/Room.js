@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { account, roomApi } from './api';
 import GameView from './GameView';
+import Reactions, { Face } from './Reactions';
 import { createLive, relay } from './live';
 import { countWord } from './Home';
 import { getSupabase } from '@/lib/supabase-browser';
@@ -18,6 +19,7 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
   const versionRef = useRef(-1);
   const clockRef = useRef(0); // Serverzeit minus eigene Uhr
   const live = useMemo(() => createLive(), [code]); // game.live: schnelle Nachrichten zwischen den Browsern
+  const [recent, setRecent] = useState({}); // Reaktion, die gerade neben einem Namen steht: { [id]: { face, key } }
 
   // Nur neuere Stände übernehmen (Antworten können in anderer Reihenfolge ankommen).
   const accept = useCallback((s) => {
@@ -128,6 +130,13 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
     }
   };
 
+  // Eine Reaktion steht gut zwei Sekunden neben dem Namen (eine neuere ersetzt sie).
+  const onReact = useCallback((from, face) => {
+    const key = `${Date.now()}-${Math.random()}`;
+    setRecent((r) => ({ ...r, [from]: { face, key } }));
+    setTimeout(() => setRecent((r) => (r[from]?.key === key ? { ...r, [from]: null } : r)), 2600);
+  }, []);
+
   const leave = () => {
     if (confirm(`Gruppe „${snap.group.name}“ verlassen? Deine Punkte in der Gruppe sind dann weg.`)) send({ t: 'group-leave' });
   };
@@ -156,7 +165,7 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
           {back}
           {snap.group && <h1 className="room-name">{snap.group.name}</h1>}
           <p className="board-caption">Gewonnene Spiele</p>
-          <Scoreboard snap={snap} online={online} />
+          <Scoreboard snap={snap} online={online} recent={recent} />
         </aside>
 
         <div>
@@ -185,13 +194,14 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
           )}
         </div>
       </div>
+      <Reactions live={live} players={players} me={snap.me} onShow={onReact} />
       <ConnectionNote show={!connected} />
     </>
   );
 }
 
 // Anzeigetafel: Namen und Punkte in den Spielerfarben.
-function Scoreboard({ snap, online }) {
+function Scoreboard({ snap, online, recent = {} }) {
   return (
     <div className={`scoreboard ${snap.players.length > 2 ? 'many' : ''}`} aria-label="Punktestand">
       {snap.players.map((p) => {
@@ -203,6 +213,7 @@ function Scoreboard({ snap, online }) {
                 <span className="marker" style={{ color: playerColor(snap.players, p.id) }} aria-hidden="true" />
                 {p.name}
                 {p.id === snap.me && <small>du</small>}
+                {recent[p.id] && <Face id={recent[p.id].face} key={recent[p.id].key} className="team-react" />}
               </div>
               {away && <span className="team-away">gerade nicht da</span>}
             </div>

@@ -1141,9 +1141,10 @@ function renderBoard(stage, s, game, u) {
     if (signal.aborted) return;
     const top = board.querySelector('.mm-wordline').getBoundingClientRect().top;
     const bottom = board.querySelector(drawer ? '.mm-tools' : '.mm-guess').getBoundingClientRect().bottom;
+    const free = innerHeight - 64; // unten rechts schwebt der Reaktionsknopf der Plattform
     let dy = 0;
-    if (top < 0 || bottom - top > innerHeight - 16) dy = top - 8;
-    else if (bottom > innerHeight) dy = bottom - innerHeight + 8;
+    if (top < 0 || bottom - top > free - 16) dy = top - 8;
+    else if (bottom > free) dy = bottom - free + 8;
     if (dy) window.scrollBy({ top: dy, behavior: game.reducedMotion ? 'auto' : 'smooth' });
   });
 }
