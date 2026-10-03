@@ -80,9 +80,9 @@ for (const p of pages) { const b = await p.$('[data-action="ziehen"]'); if (b) a
   jedes Foto mit dem Read-Werkzeug ansehen. Einmal mit `reduced: true` spielen: dann muss sofort der
   Endzustand dastehen. Mehrere Fotos auf einmal vergleichen: `nebeneinander.cjs` in diesem Ordner legt
   denselben Ausschnitt nebeneinander (`node nebeneinander.cjs aus.png 150:1050 a.png b.png c.png`).
-- **Fristen und mehrere Spieler:** Läuft eine Phase gegen die Uhr (Lasso: fünfzehn Sekunden), die Gesten
+- **Fristen und mehrere Spieler:** Läuft eine Phase gegen die Uhr (Kunstkritik: dreißig Sekunden ab „Los“), die Gesten
   aller Seiten gleichzeitig ausführen (`Promise.all(pages.map(…))`), sonst ist die Zeit um, bevor die
-  letzte Seite dran war. Vor jeder Runde auf die neue Phase warten (z.B. `.ls[data-phase="zeichnen"]`),
+  letzte Seite dran war. Vor jeder Runde auf die neue Phase warten (z.B. `.kk[data-phase="bewerten"]`),
   nicht nur auf ein Element, das es auch in der vorigen Phase schon gab.
 - **Element-Handles werden ungültig,** wenn das Spiel neu zeichnet („not attached to the DOM“): lieber
   mit Selektoren klicken (`page.click('.chip >> nth=0')`). Kommt das bei Knöpfen vor, die ein Mensch drückt,
