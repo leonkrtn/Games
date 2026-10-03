@@ -107,9 +107,9 @@ Regeln und Tipps:
 - `state` muss reines JSON sein (keine Funktionen, `Map`, `Set`, `Date`-Objekte) und klein bleiben, denn er wird bei jedem Zug komplett in Postgres gespeichert.
 - `action` kann bei gleichzeitigen Zügen mehrmals auf einer frischen Kopie laufen: keine Nebenwirkungen außerhalb von `state`.
 - Zufall (`Math.random`) nur in `setup`/`action`, **nie in `render`**.
-- Verweist der `state` mit Indizes auf eine Liste im Code (z.B. `deck` auf `SUGGESTIONS` in `montagsmaler.js`), neue Einträge nur hinten anhängen und nichts umsortieren oder löschen: Laufende Partien zeigen sonst auf andere Einträge. Vorschlagslisten (`IDEAS` in `kennst-du-mich.js`, `SUGGESTIONS`) auf doppelte Einträge prüfen.
+- Verweist der `state` mit Indizes auf eine Liste im Code (z.B. `deck` auf `SUGGESTIONS` in `montagsmaler.js`), neue Einträge nur hinten anhängen und nichts umsortieren oder löschen: Laufende Partien zeigen sonst auf andere Einträge. Muss eine Liste doch ersetzt werden (Kunstkritik hat jetzt eigene Vorschläge statt der von Montagsmaler), mit `% LISTE.length` lesen, damit alte Indizes keine Lücken ergeben. Vorschlagslisten (`IDEAS` in `kennst-du-mich.js`, `SUGGESTIONS`) auf doppelte Einträge prüfen.
 - Jede Aktion prüfen: ist der Spieler dran, ist er Teil des Spiels, ist die Phase richtig, sind die Daten gültig.
-- Geheimes (Handkarten, Antworten, Wahl des Gegners) immer in `view` für die anderen entfernen. Der Browser bekommt nur, was `view` liefert.
+- Geheimes (Handkarten, Antworten, Wahl des Gegners) immer in `view` für die anderen entfernen. Der Browser bekommt nur, was `view` liefert. Auch `waitingFor` ist öffentlich (die Startseite zeigt, wer dran ist): Darf niemand wissen, wer etwas gemacht hat (anonyme Bewertung), dort keine Liste liefern, aus der es folgt, sondern bis zur Auflösung alle (`kunstkritik.js`).
 - Texte von Spielern und Spielernamen in `render` immer mit `game.esc()` einsetzen.
 - Klicks: `<button data-action="typ" data-value="3">` sendet automatisch `send('typ', 3)` (`data-value` wird als JSON gelesen, sonst als Text). Formulare: `<form data-action="typ">` mit `<input name="x">` sendet `{ x: '...' }`.
 - Rein lokale Interaktion (z.B. Vorschlag in ein Feld schreiben) per `el.querySelector(...).addEventListener` nach dem Setzen von `innerHTML`.

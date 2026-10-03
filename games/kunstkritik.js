@@ -171,31 +171,43 @@ function finalOps(d) {
 
 const MAX_WORD = 24;
 const SUGGEST_EACH = 6; // so viele Ideen bekommt jeder pro Runde
-// Vorschläge: Dinge, die man gut zeichnen kann
-const SUGGESTIONS = `Haus Baum Sonne Mond Stern Auto Fahrrad Schiff Flugzeug Rakete Zug Brücke Leuchtturm Burg Zelt
-  Kirche Berg Vulkan Insel Wolke Regenbogen Blitz Schneemann Regenschirm Blume Kaktus Pilz Apfel Banane Birne
-  Kirsche Erdbeere Ananas Karotte Tomate Brezel Pizza Eis Torte Tasse Flasche Gabel Löffel Topf Toaster
-  Kühlschrank Lampe Kerze Stuhl Bett Sofa Fenster Treppe Schlüssel Schloss Wecker Brille Hut Krone Stiefel
-  Socke Hose Handschuh Schal Rucksack Koffer Geschenk Luftballon Drachen Fußball Gitarre Trommel Klavier
-  Trompete Glocke Buch Brief Schere Pinsel Kamera Telefon Fernseher Roboter Anker Kompass Fernglas Lupe
-  Hammer Säge Leiter Schaufel Gießkanne Besen Zahnbürste Spiegel Badewanne Katze Hund Maus Elefant Giraffe
-  Löwe Zebra Affe Bär Pinguin Eule Ente Schwan Fisch Hai Wal Krake Krebs Schnecke Schmetterling Biene
-  Spinne Marienkäfer Schlange Frosch Schildkröte Krokodil Hase Igel Fuchs Pferd Kuh Schwein Schaf Huhn
-  Dinosaurier Einhorn Gespenst Hexe Pirat Ritter König Clown Engel Zauberer Meerjungfrau Herz Auge Hand
-  Zahn Skelett Feuer Rutsche Schaukel Karussell Ampel Zaun Brunnen Windmühle Iglu Pyramide Traktor Bagger
-  Hubschrauber U-Boot Segelboot Würfel Schatzkiste Sanduhr Zauberstab Magnet Glühbirne Taschenlampe
-  Fallschirm Heißluftballon Weihnachtsbaum Osterei Kürbis Schneeflocke Nest Spinnennetz Sandburg Muschel
-  Palme Wasserfall Feuerwehrauto Zahnarzt Kran Kaffeemaschine Mikrofon Kopfhörer Briefkasten Vogelscheuche
-  Eichhörnchen Fledermaus Flamingo Papagei Pfau Storch Adler Taube Rabe Specht Hamster Nashorn Nilpferd
-  Kamel Känguru Koala Panda Eisbär Wolf Hirsch Elch Seepferdchen Qualle Seestern Delfin Tintenfisch Libelle
-  Ameise Raupe Käfer Gorilla Esel Ziege Truthahn Robbe Otter Biber Faultier Waschbär Brot Käse Spiegelei
-  Hamburger Pommes Popcorn Lutscher Schokolade Keks Donut Wassermelone Zitrone Orange Weintraube Mais
-  Brokkoli Zwiebel Paprika Gurke Kartoffel Spaghetti Muffin Kokosnuss Eimer Handtuch Staubsauger Kamin
-  Kissen Vorhang Teppich Regal Tisch Uhr Radio Computer Bleistift Handtasche Mütze Jacke Kleid Sonnenbrille
-  Angel Fackel Laterne Waage Zeitung Motorrad Skateboard Schlitten Kanu Raumschiff Bus Straßenbahn
-  Schornstein Tür Turm Strand Wald Tennisschläger Basketball Bogen Pfeil Schwert Schild Puzzle Schlittschuh
-  Ski Surfbrett Trampolin Hängematte Vampir Zombie Riese Weihnachtsmann`
-  .split(/\s+/)
+// Ideen für die Vorschläge (200): Motive mit einem Dreh, Orte, Leute, Stimmungen. Jede muss durch cleanWord
+// passen (nur Buchstaben, Leerzeichen, Bindestriche, höchstens vierundzwanzig Zeichen). Neue nur hinten anhängen.
+const SUGGESTIONS = `Katze im Weltall, Hund mit Sonnenbrille, Pinguin auf Skiern, Elefant im Ballett, Giraffe mit Schal, Schnecke mit Turbo
+  Krake beim Jonglieren, Eule mit Brille, Goldfisch im Glas, Bär beim Picknick, Kuh auf dem Mond, Huhn mit Krone
+  Froschkönig, Hase mit Regenschirm, Igel mit Luftballons, Pferd mit Flügeln, Schwein im Schlamm, Löwe beim Friseur
+  Maus mit Käse, Affe auf der Palme, Ente in der Badewanne, Fuchs im Schnee, Wal mit Fontäne, Delfin im Sprung
+  Hai mit Zahnspange, Biene auf der Blume, Krokodil mit Zahnbürste, Schildkröte beim Rennen, Flamingo auf einem Bein, Papagei am Telefon
+  Känguru mit Rucksack, Panda mit Bambus, Eisbär auf der Scholle, Dackel im Pullover, Kamel in der Wüste, Spinne im Netz
+  Hamster im Laufrad, Tintenfisch mit Tinte, Storch mit Baby, Raupe beim Essen, Waschbär im Mülleimer, Drache trinkt Tee
+  Einhorn im Regen, Roboter beim Kochen, Monster unter dem Bett, Gespenst im Schloss, Hexe auf dem Besen, Zauberer mit Hut
+  Meerjungfrau am Felsen, Ritter gegen Drachen, Außerirdischer im Ufo, Vampir beim Zahnarzt, Riese in der Stadt, Gartenzwerg
+  Fee im Blumenbeet, Pirat mit Holzbein, Superheld im Flug, Yeti im Schnee, Zombie beim Tanzen, Troll unter der Brücke
+  Kobold mit Goldtopf, Werwolf bei Vollmond, Schneemann im Sommer, Weihnachtsmann im Urlaub, Osterhase bei der Arbeit, Zahnfee bei Nacht
+  Mumie im Museum, Sonnenuntergang am Meer, Leuchtturm im Sturm, Burg auf dem Berg, Insel mit Palme, Vulkanausbruch
+  Wasserfall im Dschungel, Iglu am Nordpol, Baumhaus im Wald, Stadt bei Nacht, Jahrmarkt, Unterwasserwelt
+  Wüste mit Kaktus, Bauernhof, Zeltlager am See, Riesenrad, Achterbahn, Strand mit Sandburg
+  Gipfelkreuz, Raumstation, Mondlandung, Regenbogen über Feldern, Gewitter über der Stadt, Herbstwald
+  Winterlandschaft, Garten im Frühling, Hafen mit Schiffen, Bibliothek, Montagmorgen, Stau auf der Autobahn
+  Pizza mit allem, Geburtstagstorte, Kaffee am Morgen, Verlorene Socke, Wäscheleine im Wind, Picknick im Park
+  Grillabend, Wackelzahn, Schnupfen, Sonnenbrand, Zu viel Gepäck, Regenschirm im Sturm
+  Eis am Stiel, Wecker klingelt, Erster Schultag, Familienfoto, Kissenschlacht, Schneeballschlacht
+  Seifenblasen, Feuerwehrfrau, Astronautin, Koch mit Mütze, Gärtnerin, Clown im Zirkus
+  Dirigent, Bäckerin, Taucher, Detektiv mit Lupe, Bergsteiger, Malerin an der Staffelei
+  Fußballspieler, Ballerina, Cowboy auf dem Pferd, Skateboarder, Ärztin, Lehrer an der Tafel
+  Pilotin im Cockpit, Zauberkünstler, Fliegender Teppich, Kaputtes Fahrrad, Rakete zum Mars, Heißluftballon
+  U-Boot, Dampflok, Traktor auf dem Feld, Feuerwehrauto, Segelschiff im Sturm, Zeitmaschine
+  Schatzkarte, Schatztruhe, Zauberstab, Sanduhr, Kronleuchter, Riesenhamburger
+  Kuckucksuhr, Schaukelstuhl, Leiter in den Himmel, Liebe, Langeweile, Glück
+  Wut, Angst im Dunkeln, Musik, Traum, Überraschung, Silvester
+  Hochzeit, Karneval, Halloween, Selbstporträt, Mein Lieblingsessen, Mein Traumhaus
+  Mein Haustier, Die Zukunft, Oma beim Stricken, Opa im Garten, Baby beim Krabbeln, Tanzendes Gemüse
+  Banane im Urlaub, Wolke mit Gesicht, Mond mit Schlafmütze, Sonne mit Sonnenbrille, Kaktus mit Blume, Pilz im Wald
+  Apfel mit Wurm, Kürbis mit Gesicht, Brezel mit Senf, Spiegelei, Pommes mit Ketchup, Popcorn im Kino
+  Toaster mit Toast, Handy mit Sprung, Fernseher ohne Bild, Gitarre am Lagerfeuer, Trommelwirbel, Klavier im Regen
+  Mikrofon auf der Bühne, Fußballstadion, Skispringer, Schwimmbad, Kanu auf dem Fluss, Surfer auf der Welle
+  Zelt im Regen, Hängebrücke`
+  .split(/\s*,\s*|\n\s*/)
   .filter(Boolean);
 
 function cleanWord(text) {
@@ -463,6 +475,9 @@ export function waitingFor(s) {
   if (s.phase === 'wort') return ids(s).filter((id) => !s.words[id]);
   if (s.phase === 'malen') return ids(s).filter((id) => !s.draw[id].done);
   if (s.phase === 'bewerten' && !s.shown) {
+    // Ab drei Spielern alle, bis das Bild aufgelöst ist: Die Startseite zeigt diese Liste, und stünden dort
+    // nur die Bewerter, die noch fehlen, verriete sie, wer das Bild gemalt hat (der steht nie darin).
+    if (s.players.length > 2) return ids(s);
     const pic = s.pics[s.index];
     return ratersOf(s, pic).filter((id) => !pic.votes[id]);
   }
@@ -501,7 +516,8 @@ export function view(s, me) {
     v.words = { [me]: s.words[me] ?? null };
     v.sent = ids(s).filter((id) => s.words[id]);
     const k = ids(s).indexOf(me);
-    v.suggestions = Array.from({ length: SUGGEST_EACH }, (_, j) => SUGGESTIONS[deck[(deckPos + k * SUGGEST_EACH + j) % deck.length]]);
+    // % SUGGESTIONS.length: Partien von vor dem Wechsel auf die eigene Liste haben noch Indizes bis 301.
+    v.suggestions = Array.from({ length: SUGGEST_EACH }, (_, j) => SUGGESTIONS[deck[(deckPos + k * SUGGEST_EACH + j) % deck.length] % SUGGESTIONS.length]);
   } else if (s.phase === 'malen') {
     v.word = s.draw[me].at ? s.word : null;
     v.draw = Object.fromEntries(ids(s).map((id) => [id, id === me ? s.draw[id] : { ...s.draw[id], d: null }]));
