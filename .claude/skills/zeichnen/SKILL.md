@@ -61,7 +61,14 @@ Passend zur Plattform (siehe `CLAUDE.md`, „Gestaltung der Plattform“ und „
   (`style="fill:var(--pc)"`), nicht in `fill="var(--x)"`.
 - Pfade sauber: `M … C … Z`, keine Riesenpfade aus Zeichenprogrammen. Lieber mehrere einfache Formen
   (Kreis, Ellipse, kurzer Pfad) als eine unlesbare.
-- Konturen, die sich einzeichnen sollen, mit `pathLength="1"` (siehe `games/tic-tac-toe.js`).
+- Konturen, die sich einzeichnen sollen, mit `pathLength="1"` (siehe `games/tic-tac-toe.js`). Nicht mit
+  `vector-effect="non-scaling-stroke"` mischen: Dann stimmen die Strichlängen nicht und die Linie
+  zeichnet sich stückweise an falschen Stellen ein. `non-scaling-stroke` ist gut für Rahmen, die in
+  vielen Größen gleich dicke Konturen haben sollen (Goldrahmen in `games/kunstkritik.js`).
+- **Kein `clipPath`, `mask` oder `pattern` mit `id`**, wenn dieselbe Zeichnung mehrfach auf der Seite steht:
+  Alle verweisen auf die erste Definition, und ist die versteckt (`display: none`, z.B. eine verdeckte
+  Ansicht oder die Vorschau), greift sie nirgends. Schraffuren selbst auf das Rechteck zuschneiden
+  (`hatch` in `games/kunstkritik.js`).
 - Teile, die sich bewegen sollen (Schwanz wedelt, Ohr zuckt, Deckel klappt), als eigene Gruppe mit
   `transform-box: fill-box; transform-origin: …` im Spiel-CSS. Nur `transform` und `opacity`
   animieren.

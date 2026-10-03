@@ -1,6 +1,6 @@
 ---
 name: malflaeche
-description: Spiele bauen, in denen jemand malt und der andere live zusieht (Malfläche mit Farben, Dicken, Eimer, Radierer, Zurück/Vor). Wie die Zeichnung gespeichert, live übertragen und in jedem Browser gleich gemalt wird, wie die Malfläche auf dem Handy nicht scrollt und wie man das testet. Laden, bevor eine Malfläche gebaut oder geändert wird. Vorbild ist games/montagsmaler.js.
+description: Spiele bauen, in denen gemalt wird, ob einer malt und die anderen live zusehen oder alle gleichzeitig geheim malen (Malfläche mit Farben, Dicken, Eimer, Radierer, Zurück/Vor). Wie die Zeichnung gespeichert, live übertragen und in jedem Browser gleich gemalt wird, wie die Malfläche auf dem Handy nicht scrollt und wie man das testet. Laden, bevor eine Malfläche gebaut oder geändert wird. Vorbilder sind games/montagsmaler.js und games/kunstkritik.js.
 ---
 
 # Malfläche mit Live-Übertragung
@@ -33,6 +33,24 @@ Live-Vorschau); hier steht, warum sie so gebaut sind.
 - Die Runde (`r`) gehört in jede Nachricht: Nummern fangen jede Runde neu an.
 - Alles Live ist nur Vorschau. Die Anzeige muss allein aus dem gespeicherten Stand stimmen (Neuladen,
   verlorene Nachricht). Testen, indem man beim Rater die Live-Anfragen blockiert (siehe unten).
+
+## Alle malen gleichzeitig (ohne Zuschauer)
+
+Vorbild: `games/kunstkritik.js`. Jeder malt geheim, niemand sieht live zu:
+
+- Kein `game.live`. Pro Spieler eine eigene Zeichnung `draw[id] = { at, end, done, d }` im Zustand, in
+  `view` für die anderen ohne `d`.
+- Eigene Uhr pro Spieler ab seinem Tipp auf „Los“ (`at`, `end = at + Vorlauf + Malzeit`): So geht es auch,
+  wenn nicht alle gleichzeitig da sind. Das Wort steht erst nach „Los“ in seiner `view`.
+- **Speichern drosseln** (höchstens alle zwei Sekunden, `SAVE_EVERY`): Bis zu sechs Leute schreiben in
+  denselben Raum, und jede Speicherung schreibt den ganzen Zustand mit allen Bildern (Versionskonflikte).
+  Bei null schickt der Browser den Rest mit `fertig: true`, der Server nimmt Striche bis `end + GRACE`.
+- `tick` beendet das Malen, wenn alle fertig sind oder ihre Zeit samt Nachfrist um ist; wer schon fertig
+  ist, fragt dann regelmäßig nach (`game.refresh`), damit es ohne den Letzten weitergeht.
+- Fertige Bilder klein halten: nur die sichtbaren Schritte ab dem letzten „Alles löschen“, ohne
+  Nummern (`finalOps`), und eine niedrigere Obergrenze pro Bild, denn alle Bilder der Partie bleiben
+  für die Galerie im Zustand.
+- Neu laden mitten im Malen: Der gespeicherte Stand kommt wieder, höchstens die letzten zwei Sekunden fehlen.
 
 ## Raster statt Canvas-Linien
 

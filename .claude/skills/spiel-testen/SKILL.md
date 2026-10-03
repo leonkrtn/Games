@@ -51,7 +51,8 @@ npm run build && (npx next start -p 3100 > <scratchpad>/server.log 2>&1 &)
 ps -eo pid,cmd | grep -E "next start|next-server" | grep -v grep | awk '{print $1}' | xargs -r kill
 ```
 
-Nach jeder Änderung am Spiel neu bauen und den Server neu starten.
+Nach jeder Änderung am Spiel neu bauen und den Server neu starten. Im frischen Container fehlt
+`node_modules` (Build bricht mit „Cannot find package 'pg'“ ab): zuerst `npm ci`.
 
 `zwei-spieler.cjs` in diesem Ordner legt Konten an, befreundet sie und startet das Spiel. Mit
 `players: 3` bis `6` gründet Anna eine Gruppe mit allen; `pages` enthält dann alle Seiten (Anna zuerst):
@@ -89,6 +90,9 @@ for (const p of pages) { const b = await p.$('[data-action="ziehen"]'); if (b) a
 - **Finger auf das Feld setzen:** Punkte für `touchPath` innerhalb der Fläche berechnen; ein Start daneben
   scrollt die Seite (richtig so) und sieht aus wie ein Fehler im Spiel.
 - **Drei Größen:** 360 px (Handy), `width: 1000` (Desktop), und alles mit `fullPage: true` prüfen.
+  Ein `fullPage`-Foto kann breiter sein als die Seite, wenn etwas gerade über den Rand ragt (z.B. am
+  Anfang einer Animation), obwohl `overflow-x: clip` das Scrollen verhindert. Maßgeblich ist
+  `scrollWidth === innerWidth`; trotzdem nachsehen, was da übersteht.
 - Klicks von Playwright verweigern Elemente, die verdeckt sind („intercepts pointer events“). Das ist
   meist richtig: dann das Element anklicken, das ein Mensch trifft (z.B. das Schiff statt der Zelle
   darunter).
