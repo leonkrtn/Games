@@ -1,7 +1,8 @@
 // Kunstkritik: Alle malen dasselbe Wort gegen die Uhr, dann wird jedes Bild ohne Namen bewertet.
 // Zwei bis sechs Spieler.
 //
-// Ablauf einer Runde: Jeder schlägt geheim ein Wort vor → das Los wählt eins davon → jeder tippt auf
+// Ablauf einer Runde: Jeder schlägt geheim ein Wort vor → das Los zieht einen Vorschlag, reihum in
+// zufälliger Reihenfolge (jeder ist einmal dran, bevor jemand zum zweiten Mal kommt) → jeder tippt auf
 // „Los“ und hat ab da seine eigene Zeit (drei Sekunden Vorlauf, dann die gewählte Malzeit), so geht es
 // auch, wenn nicht alle gleichzeitig da sind → sind alle fertig (oder ihre Zeit samt Nachfrist um),
 // hängen die Bilder in zufälliger Reihenfolge ohne Namen in der Galerie → Bild für Bild geben alle
@@ -43,6 +44,8 @@ export const meta = {
       choices: [
         { value: 3, label: 'Drei Runden' },
         { value: 1, label: 'Eine Runde' },
+        { value: 2, label: 'Zwei Runden' },
+        { value: 4, label: 'Vier Runden' },
         { value: 5, label: 'Fünf Runden' },
       ],
     },
@@ -264,7 +267,7 @@ const COUNTDOWN = 3000; // ms zwischen „Los“ und dem ersten Strich
 const GRACE = 2500; // ms nach Ablauf der Malzeit: Striche, die noch unterwegs sind, zählen
 const REVEAL = 9000; // so lange bleibt die Auflösung eines Bildes stehen, wenn nicht alle „Weiter“ tippen
 const TIMES = [60, 30, 90, 120];
-const ROUNDS = [3, 1, 5];
+const ROUNDS = [3, 1, 2, 4, 5];
 
 const ids = (s) => s.players.map((p) => p.id);
 const nameOf = (s, id) => s.players.find((p) => p.id === id)?.name ?? '?';
@@ -291,6 +294,8 @@ export function setup(players, options = {}) {
     words: {}, // geheime Vorschläge dieser Runde
     word: null, // das gewählte Wort
     by: [], // wer es vorgeschlagen hat (erst in der Rückschau zu sehen)
+    from: null, // wessen Vorschlag gezogen wurde (geheim bis zur Rückschau)
+    chosen: [], // wessen Vorschläge in diesem Durchgang schon gezogen wurden (reihum, siehe drawSuggester)
     deck: shuffle(SUGGESTIONS.map((_, i) => i)), // Reihenfolge der Ideen
     deckPos: 0,
     draw: null, // beim Malen: { [id]: { at, end, done, d } }, at = Tipp auf Los, end = Ende der Malzeit
@@ -300,7 +305,7 @@ export function setup(players, options = {}) {
     shown: null, // Zeitpunkt der Auflösung des aktuellen Bildes
     ready: [], // wer nach der Auflösung „Weiter“ getippt hat
     totals: Object.fromEntries(list_.map((p) => [p.id, 0])),
-    past: [], // fertige Runden: [{ word, by, pics, blank }]
+    past: [], // fertige Runden: [{ word, by, from, pics, blank }]
   };
   s.words = noWords(s);
   return s;
@@ -389,19 +394,30 @@ const allDrawn = (s, now) =>
   });
 
 // Das Los zieht aus den Vorschlägen (gleiche Wörter zählen einmal).
-function startDrawing(s) {
-  const options = new Map();
-  for (const id of ids(s)) {
-    const k = norm(s.words[id]);
-    if (!options.has(k)) options.set(k, { word: s.words[id], by: [] });
-    options.get(k).by.push(id);
+// Wessen Vorschlag gemalt wird: zufällig, aber reihum. Wer gezogen wurde, kommt erst wieder infrage,
+// wenn alle einmal dran waren, und nie zweimal hintereinander (zu zweit wechselt es also ab).
+function drawSuggester(s) {
+  const everyone = ids(s);
+  let pool = everyone.filter((id) => !(s.chosen ?? []).includes(id));
+  if (!pool.length) {
+    s.chosen = [];
+    pool = everyone;
   }
-  const all = [...options.values()];
-  const pick = all[Math.floor(Math.random() * all.length)];
+  const last = s.past[s.past.length - 1]?.from;
+  if (pool.length > 1) pool = pool.filter((id) => id !== last);
+  const id = pool[Math.floor(Math.random() * pool.length)];
+  s.chosen = [...(s.chosen ?? []), id];
+  return id;
+}
+
+function startDrawing(s) {
+  const from = drawSuggester(s);
+  const word = s.words[from];
   Object.assign(s, {
     phase: 'malen',
-    word: pick.word,
-    by: pick.by,
+    word,
+    from,
+    by: ids(s).filter((id) => norm(s.words[id]) === norm(word)), // gleiche Wörter: alle stehen in der Rückschau
     words: noWords(s),
     draw: Object.fromEntries(ids(s).map((id) => [id, { at: null, end: null, done: false, d: emptyDrawing() }])),
     deckPos: (s.deckPos + s.players.length * SUGGEST_EACH) % s.deck.length,
@@ -428,13 +444,14 @@ function nextPicture(s) {
 }
 
 function endRound(s) {
-  s.past.push({ word: s.word, by: s.by, pics: s.pics, blank: s.blank });
+  s.past.push({ word: s.word, by: s.by, from: s.from ?? null, pics: s.pics, blank: s.blank });
   Object.assign(s, {
     round: s.round + 1,
     phase: 'wort',
     words: noWords(s),
     word: null,
     by: [],
+    from: null,
     draw: null,
     pics: null,
     blank: [],
@@ -504,7 +521,8 @@ export function notices(s, before, player) {
 // Rückschau), die Bilder der anderen beim Malen und beim Bewerten, von wem ein Bild ist und welche Noten
 // es bekommen hat, bis alle bewertet haben. Bilder fertiger Runden kommen erst in der Rückschau und am Ende mit.
 export function view(s, me) {
-  const { deck, deckPos, ...rest } = s;
+  // chosen und from verrieten, wessen Vorschlag gerade gemalt wird
+  const { deck, deckPos, chosen, from, ...rest } = s;
   if (s.result) return rest;
   const last = s.past.length - 1;
   const v = {
@@ -1211,7 +1229,7 @@ function chipsHtml(s, game, othersOnly = false) {
 function rulesHtml(s) {
   const two = s.players.length === 2;
   return `<ol class="kk-rules">
-    <li>Jeder schlägt geheim ein Wort vor. Das Los wählt eins, und alle malen es.</li>
+    <li>Jeder schlägt geheim ein Wort vor. Das Los zieht einen Vorschlag, und alle malen ihn. Reihum kommt jeder einmal dran, bevor jemand zum zweiten Mal gezogen wird.</li>
     <li>Ab deinem Tipp auf Los hast du ${TIME_WORDS[s.zeit]}.</li>
     <li>${two ? 'Danach bewertet jeder das Bild des anderen' : 'Danach bewertet ihr Bild für Bild, ohne zu wissen, von wem es ist'}, mit einer Note von eins bis zehn.</li>
     <li>${s.rounds === 1 ? 'Wer die meisten Punkte bekommt, gewinnt.' : `Nach ${zahl(s.rounds)} Runden gewinnt, wer insgesamt die meisten Punkte hat.`}</li>
@@ -1289,7 +1307,7 @@ function renderWord(stage, s, game, u) {
           <input id="kk-word-in" name="wort" maxlength="${MAX_WORD}" autocomplete="off" spellcheck="false" enterkeyhint="done">
           <button class="btn kk-idea" type="button">Idee</button>
         </div>
-        <p class="field-hint muted">Geheim. Das Los wählt aus allen Vorschlägen.</p>
+        <p class="field-hint muted">Geheim. Das Los zieht reihum, jeder kommt einmal dran.</p>
         <div class="row"><button class="btn primary" type="submit">Vorschlagen</button></div>
       </form>`;
   stage.innerHTML = `<div class="kk-word-phase">
