@@ -77,6 +77,12 @@ Passend zur Plattform (siehe `CLAUDE.md`, „Gestaltung der Plattform“ und „
   animieren.
 - Wiederholungen (Schraffur, Tupfen, Speichen) mit `Array.from` erzeugen, nicht abtippen.
 - Text in SVG nur für Zahlen und Buchstaben auf Spielmaterial, mit `style="font:800 12px var(--font-display)"`.
+- Beschriftung auf gemustertem Grund (Raumnamen auf Dielen und Fliesen): SVG-Text mit `paint-order: stroke`
+  und einer Kontur in Papierfarbe stellt ihn frei, ohne Kasten dahinter (`.kd-label` in `games/krimidoku.js`).
+- Grundrisse wie in `games/krimidoku.js`: Möbel von oben gezeichnet (Draufsicht, im Feld 0 bis 100, Lehne
+  bzw. Kopfende oben), beim Einsetzen zur nächsten Wand gedreht; Spielfiguren dagegen seitlich, wie
+  Figuren, die auf einem Brett stehen. Fußböden als feine Fugen pro Feld, Wände als dicke Linien
+  zwischen Räumen, Türen als Lücke mit Türblatt und Bogen, Fenster als Lücke mit Glaslinie.
 
 ## Vorschau
 

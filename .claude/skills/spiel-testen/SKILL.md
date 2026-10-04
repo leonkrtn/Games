@@ -80,6 +80,9 @@ for (const p of pages) { const b = await p.$('[data-action="ziehen"]'); if (b) a
   jedes Foto mit dem Read-Werkzeug ansehen. Einmal mit `reduced: true` spielen: dann muss sofort der
   Endzustand dastehen. Mehrere Fotos auf einmal vergleichen: `nebeneinander.cjs` in diesem Ordner legt
   denselben Ausschnitt nebeneinander (`node nebeneinander.cjs aus.png 150:1050 a.png b.png c.png`).
+  Eine kleine Stelle genau ansehen (Tür, Kante, Möbel): `node ausschnitt.cjs foto.png aus.png x y breite höhe`.
+- **Rätsel durchspielen:** Die Ansicht enthält die Lösung nicht. Das Skript rechnet sie mit dem Löser des
+  Spiels aus `snapshot.game.view` aus (Skill `raetsel`) und setzt dann auf jeder Seite die Figuren.
 - **Fristen und mehrere Spieler:** Läuft eine Phase gegen die Uhr (Kunstkritik: dreißig Sekunden ab „Los“), die Gesten
   aller Seiten gleichzeitig ausführen (`Promise.all(pages.map(…))`), sonst ist die Zeit um, bevor die
   letzte Seite dran war. Vor jeder Runde auf die neue Phase warten (z.B. `.kk[data-phase="bewerten"]`),
@@ -114,7 +117,9 @@ await close();
 ```
 
 Mit `prev` (Zustand davor) wird erst dieser gezeichnet und dann der Wechsel animiert wie im Spiel;
-`wait` bestimmt, wann das Foto entsteht. `inspect` (eine Funktion) läuft danach in der Seite, ihr Ergebnis
+`wait` bestimmt, wann das Foto entsteht. **Einzelbilder einer Animation** (Auftakt) aus einem einzigen
+Aufruf nehmen, mit `wait: 0` und mehreren `page.screenshot` in `act`: Fotos aus getrennten `shot`-Aufrufen
+sind zeitlich nicht vergleichbar, jede Seite braucht verschieden lange bis zum ersten Bild. `inspect` (eine Funktion) läuft danach in der Seite, ihr Ergebnis
 steht in `seen`, z.B. Maße und Stile von Elementen, wenn auf dem Foto etwas fehlt:
 `inspect: () => [...document.querySelectorAll('.zeile > *')].map((e) => [e.className, JSON.stringify(e.getBoundingClientRect())])`.
 `act` (async, bekommt die Playwright-Seite) läuft vor dem Foto, z.B. `act: (page) => page.click('.fertig')`
