@@ -420,9 +420,16 @@ textarea:focus {
   text-overflow: ellipsis;
 }
 .team-name small {
+  flex: none;
   font-weight: 400;
   color: var(--muted);
   font-size: var(--t-sm);
+}
+/* Der Name wird gekürzt, „du“ und eine Reaktion daneben bleiben sichtbar */
+.team-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .team-score {
   font-family: var(--font-display);
@@ -1260,6 +1267,38 @@ textarea:focus {
   from {
     opacity: 0;
     transform: scale(0.5);
+  }
+}
+/* PC: Gesichter fest in der Seitenleiste statt Knopf unten rechts */
+.react-dock {
+  display: none;
+  margin-top: 22px;
+}
+.react-row {
+  display: flex;
+  gap: 4px;
+}
+.react-dock .react-face {
+  width: 50px;
+  height: 50px;
+  animation: none;
+}
+.react-dock .react-face .face {
+  width: 36px;
+  height: 36px;
+}
+.react-row.cool .react-face {
+  opacity: 0.4;
+}
+@media (min-width: 880px) {
+  .react-dock {
+    display: block;
+  }
+  .react {
+    display: none;
+  }
+  .room {
+    padding-bottom: 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {

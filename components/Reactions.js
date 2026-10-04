@@ -9,6 +9,9 @@ import { playerColor } from '@/lib/colors';
   werden nicht gespeichert und erreichen nur, wer gerade im Raum ist. Ein Gesicht steigt mit dem Namen
   über dem Spiel auf; onShow meldet es dem Raum, der es kurz neben dem Namen in der Anzeigetafel zeigt.
   Höchstens eine Reaktion pro Sekunde; der Empfänger bremst jeden Absender ebenfalls.
+
+  useReactions (im Raum) schickt und empfängt. Auf dem Handy öffnet ein Knopf unten rechts die Leiste
+  (Reactions), am PC stehen die Gesichter fest in der Seitenleiste unter der Anzeigetafel (ReactionDock).
 */
 
 export const REACTIONS = [
@@ -38,7 +41,8 @@ export function Face({ id, className = '' }) {
 
 const CLOSE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6 L18 18 M18 6 L6 18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>';
 
-// Ein Gesicht steigt über dem Spiel auf und verblasst (eigene rechts, beim Knopf, die anderer verteilt)
+// Ein Gesicht steigt von unten über dem Spiel auf und verblasst (eigene rechts, die der anderen verteilt).
+// Auch am PC von unten: Die Seitenleiste steht oben, von dort aus flöge es aus dem Bild.
 function fly(layer, id, name, color, own) {
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const el = document.createElement('div');
@@ -72,19 +76,16 @@ function fly(layer, id, name, color, own) {
 }
 
 /**
- * Knopf unten rechts mit ausklappbarer Leiste, Ebene für aufsteigende Gesichter, Ansage für Bildschirmleser.
- * live = Live-Kanal des Raums (createLive), players = [{ id, name }], onShow(from, id) für die Anzeigetafel.
+ * Schicken und Empfangen. live = Live-Kanal des Raums (createLive), players = Spieler des Raums,
+ * onShow(from, id) für die Anzeigetafel. Rückgabe für Reactions und ReactionDock:
+ * { send(id), cool (eine Sekunde nach dem Schicken), said (Ansage), layer (Ebene für die Gesichter) }
  */
-export default function Reactions({ live, players, me, onShow }) {
-  const [open, setOpen] = useState(false);
+export function useReactions({ live, players, me, onShow }) {
   const [cool, setCool] = useState(false);
-  const [typing, setTyping] = useState(false);
   const [said, setSaid] = useState('');
   const layer = useRef(null);
-  const box = useRef(null);
   const lastSent = useRef(0);
   const lastFrom = useRef(new Map());
-  const closeTimer = useRef(null);
   const playersRef = useRef(players);
   playersRef.current = players;
 
@@ -112,6 +113,63 @@ export default function Reactions({ live, players, me, onShow }) {
       }),
     [live, me, show],
   );
+
+  const send = useCallback(
+    (id) => {
+      const t = Date.now();
+      if (!me || t - lastSent.current < GAP) return;
+      lastSent.current = t;
+      live.send({ react: id, from: me });
+      show(me, id, true);
+      setCool(true);
+      setTimeout(() => setCool(false), GAP);
+    },
+    [live, me, show],
+  );
+
+  return { send, cool, said, layer };
+}
+
+function FaceButtons({ reactions }) {
+  return REACTIONS.map((r, i) => (
+    <button
+      key={r.id}
+      type="button"
+      className="react-face"
+      data-react={r.id}
+      style={{ '--i': i }}
+      aria-label={r.label}
+      title={r.label}
+      onClick={() => reactions.send(r.id)}
+    >
+      <Face id={r.id} />
+    </button>
+  ));
+}
+
+/** PC (breite Ansicht): die fünf Gesichter fest in der Seitenleiste, unter der Anzeigetafel. */
+export function ReactionDock({ reactions }) {
+  return (
+    <div className="react-dock">
+      <p className="board-caption" id="react-dock-label">
+        Reagieren
+      </p>
+      <div className={`react-row ${reactions.cool ? 'cool' : ''}`} role="group" aria-labelledby="react-dock-label">
+        <FaceButtons reactions={reactions} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Ebene für aufsteigende Gesichter, Ansage für Bildschirmleser und (Handy) der Knopf unten rechts mit
+ * ausklappbarer Leiste. Am PC blendet das CSS den Knopf aus, dort gibt es ReactionDock.
+ */
+export default function Reactions({ reactions }) {
+  const [open, setOpen] = useState(false);
+  const [typing, setTyping] = useState(false);
+  const box = useRef(null);
+  const closeTimer = useRef(null);
 
   const keepOpen = useCallback(() => {
     clearTimeout(closeTimer.current);
@@ -146,40 +204,16 @@ export default function Reactions({ live, players, me, onShow }) {
     };
   }, []);
 
-  const send = (id) => {
-    keepOpen();
-    const t = Date.now();
-    if (t - lastSent.current < GAP) return;
-    lastSent.current = t;
-    live.send({ react: id, from: me });
-    show(me, id, true);
-    setCool(true);
-    setTimeout(() => setCool(false), GAP);
-  };
-
   return (
     <>
-      <div className="react-layer" ref={layer} aria-hidden="true" />
+      <div className="react-layer" ref={reactions.layer} aria-hidden="true" />
       <div className="sr-only" role="status" aria-live="polite">
-        {said}
+        {reactions.said}
       </div>
-      <div className={`react ${typing ? 'away' : ''}`} ref={box} id="reactions">
+      <div className={`react ${typing ? 'away' : ''}`} ref={box} id="reactions" onClick={() => open && keepOpen()}>
         {open && (
-          <div className={`react-tray ${cool ? 'cool' : ''}`} role="group" aria-label="Reaktion schicken">
-            {REACTIONS.map((r, i) => (
-              <button
-                key={r.id}
-                type="button"
-                className="react-face"
-                data-react={r.id}
-                style={{ '--i': i }}
-                aria-label={r.label}
-                title={r.label}
-                onClick={() => send(r.id)}
-              >
-                <Face id={r.id} />
-              </button>
-            ))}
+          <div className={`react-tray ${reactions.cool ? 'cool' : ''}`} role="group" aria-label="Reaktion schicken">
+            <FaceButtons reactions={reactions} />
           </div>
         )}
         <button

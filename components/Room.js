@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { account, roomApi } from './api';
 import GameView from './GameView';
-import Reactions, { Face } from './Reactions';
+import Reactions, { Face, ReactionDock, useReactions } from './Reactions';
 import { createLive, relay } from './live';
 import { countWord } from './Home';
 import { getSupabase } from '@/lib/supabase-browser';
@@ -136,6 +136,7 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
     setRecent((r) => ({ ...r, [from]: { face, key } }));
     setTimeout(() => setRecent((r) => (r[from]?.key === key ? { ...r, [from]: null } : r)), 2600);
   }, []);
+  const reactions = useReactions({ live, players: snap?.players ?? [], me: snap?.me, onShow: onReact });
 
   const leave = () => {
     if (confirm(`Gruppe „${snap.group.name}“ verlassen? Deine Punkte in der Gruppe sind dann weg.`)) send({ t: 'group-leave' });
@@ -166,6 +167,7 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
           {snap.group && <h1 className="room-name">{snap.group.name}</h1>}
           <p className="board-caption">Gewonnene Spiele</p>
           <Scoreboard snap={snap} online={online} recent={recent} />
+          <ReactionDock reactions={reactions} />
         </aside>
 
         <div>
@@ -194,7 +196,7 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
           )}
         </div>
       </div>
-      <Reactions live={live} players={players} me={snap.me} onShow={onReact} />
+      <Reactions reactions={reactions} />
       <ConnectionNote show={!connected} />
     </>
   );
@@ -211,7 +213,7 @@ function Scoreboard({ snap, online, recent = {} }) {
             <div>
               <div className="team-name">
                 <span className="marker" style={{ color: playerColor(snap.players, p.id) }} aria-hidden="true" />
-                {p.name}
+                <span className="team-label">{p.name}</span>
                 {p.id === snap.me && <small>du</small>}
                 {recent[p.id] && <Face id={recent[p.id].face} key={recent[p.id].key} className="team-react" />}
               </div>
