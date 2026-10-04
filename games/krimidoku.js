@@ -612,6 +612,8 @@ function generate(F, n) {
 }
 
 // ---------- Spielablauf (Server) ----------
+// Züge (alle mit f = Stockwerk): setzen { p, c } (c = −1: zurück in die Leiste), kreuz { c }, leeren,
+// notiz { p, r, v } (Feld der Notiztabelle auf v), notizen-leeren
 
 const SIZES = [5, 4, 6];
 const ids = (s) => s.players.map((p) => p.id);
@@ -657,6 +659,7 @@ export function setup(players, options = {}) {
       clues: house.clues.filter((c) => c.f === f).map(({ f: _, w, ...c }) => c),
       sol: house.sol[f],
       pos: Array(n).fill(-1),
+      notes: Array(n * layout.names.length).fill(0), // Notiztabelle Personen × Räume: 0 leer, 1 Kreuz, 2 Haken
       marks: [],
       solved: false,
     })),
@@ -705,7 +708,19 @@ export function action(s, { player, type, data }) {
   if (type === 'leeren') {
     fl.pos = Array(s.n).fill(-1);
     fl.marks = [];
+    return;
   }
+  const k = fl.names.length;
+  if (type === 'notiz') {
+    const { p, r, v } = data ?? {};
+    if (!Number.isInteger(p) || p < 0 || p >= s.n || !Number.isInteger(r) || r < 0 || r >= k || ![0, 1, 2].includes(v)) {
+      throw new Error('Diese Notiz gibt es nicht.');
+    }
+    fl.notes ??= Array(s.n * k).fill(0); // Partien von vor der Notiztabelle
+    fl.notes[p * k + r] = v;
+    return;
+  }
+  if (type === 'notizen-leeren') fl.notes = Array(s.n * k).fill(0);
 }
 
 // Ein Stockwerk steht richtig. Sind alle gelöst, gewinnen alle zusammen.
@@ -1305,12 +1320,13 @@ function local(el, game) {
       floor: null, // welches Stockwerk gerade zu sehen ist
       drawn: null, // welches gezeichnet ist (Schlüssel)
       sel: null, // ausgewählte Person auf diesem Stockwerk
-      over: {}, // eigene Züge, die der Server noch nicht bestätigt hat: { [f]: { pos, marks, done } }
+      over: {}, // eigene Züge, die der Server noch nicht bestätigt hat: { [f]: { pos, marks, notes, done } }
       pending: {}, // wie viele Anfragen pro Stockwerk noch unterwegs sind
       queue: Promise.resolve(),
       xray: null,
       shownPos: {}, // was gerade auf dem Brett steht (für Bewegungen)
       shownMarks: {},
+      shownNotes: {},
       shownSolved: {},
       clueShown: {},
       fly: null, // Person, die gerade aus der Leiste kommt: { p, rect }
@@ -1326,6 +1342,7 @@ function local(el, game) {
 
 const posOfShown = (u, s) => (f) => u.over[f]?.pos ?? s.floors[f].pos;
 const marksOfShown = (u, s, f) => u.over[f]?.marks ?? s.floors[f].marks;
+const notesOfShown = (u, s, f) => u.over[f]?.notes ?? s.floors[f].notes ?? Array(s.n * s.floors[f].names.length).fill(0);
 const canEdit = (s, f, game) => !game.result && !s.floors[f].solved && (s.helfen === 'mit' || s.floors[f].owner === game.me);
 
 // ---------- Anzeige ----------
@@ -1358,6 +1375,7 @@ export function render(el, s, game) {
             <div class="kd-tray"></div>
             <div class="kd-tools"></div>
             <div class="kd-clues"></div>
+            <div class="kd-notes-box"></div>
           </div>
         </div>
       </section>
@@ -1380,7 +1398,7 @@ function rulesHtml(s) {
     <li>Täter ist, wer als Einziger mit dem Opfer im selben Raum war.</li>
     <li>${s.helfen === 'mit' ? 'Ihr dürft überall mitlösen.' : 'Bei den anderen könnt ihr zuschauen und auf Felder zeigen.'} Sind alle Stockwerke gelöst, habt ihr zusammen gewonnen.</li>
   </ol>
-  <p class="kd-rules-tip">Ein Tipp auf ein leeres Feld setzt ein Kreuz: Hier war niemand.</p>`;
+  <p class="kd-rules-tip">Ein Tipp auf ein leeres Feld setzt ein Kreuz: Hier war niemand. In der Notiztabelle setzt ein Tipp ein Kreuz (nicht in diesem Raum), der zweite einen Haken (in diesem Raum), der dritte leert das Feld.</p>`;
 }
 
 // Alles neu zeichnen, was sich geändert haben kann (auch nach eigenen Zügen, bevor der Server antwortet)
@@ -1438,6 +1456,7 @@ function draw(u) {
   renderHint(u, fl, pos, edit);
   renderTools(u, fl, edit);
   renderClues(u, posOf);
+  renderNotes(u, fl, edit);
   renderSolved(u, fl);
   renderEnd(u);
 }
@@ -1729,6 +1748,60 @@ function renderClues(u, posOf) {
   }
 }
 
+// Notiztabelle wie im Rätselbuch: Personen × Räume, ein Tipp Kreuz, zwei Haken, drei leer.
+// Die Tabelle wird einmal pro Stockwerk gebaut, danach ändern sich nur die Felder (Knöpfe bleiben unter
+// dem Finger). Räume stehen in Lesereihenfolge des Grundrisses (oben links zuerst).
+const NOTE_X = '<svg class="kd-nx" viewBox="0 0 20 20" aria-hidden="true"><path pathLength="1" d="M5.5 5 Q10 10.5 14.8 15.2"/><path pathLength="1" d="M14.6 4.8 Q9.6 10.4 5.2 15.3"/></svg>';
+const NOTE_OK = '<svg class="kd-nok" viewBox="0 0 20 20" aria-hidden="true"><path pathLength="1" d="M4 10.8 Q6.5 12.6 8.4 15.6 Q11.5 8.6 16.4 4.4"/></svg>';
+const NOTE_WORD = ['offen', 'nicht dort', 'dort'];
+
+function renderNotes(u, fl, edit) {
+  const { s, game, root } = u;
+  const f = u.floor;
+  const k = fl.names.length;
+  const box = root.querySelector('.kd-notes-box');
+  const order = fl.names.map((_, r) => r).sort((a, b) => Math.min(...roomCells(fl, a)) - Math.min(...roomCells(fl, b)));
+  if (box.dataset.floor !== String(f)) {
+    box.dataset.floor = f;
+    u.shownNotes[f] = null;
+    const head = order.map((r) => `<th scope="col"><span>${ROOMS[fl.names[r]]?.name ?? ''}</span></th>`).join('');
+    const rows = fl.people
+      .map((person, p) => {
+        const cells = order
+          .map((r) => `<td><button class="kd-note" type="button" data-p="${p}" data-r="${r}" data-v=""></button></td>`)
+          .join('');
+        return `<tr data-p="${p}"><th scope="row"><span class="kd-notes-pawn">${pawn(person, p)}</span><span class="kd-notes-name">${game.esc(person.name)}</span></th>${cells}</tr>`;
+      })
+      .join('');
+    box.innerHTML = `<h4 class="kd-clues-head">Notizen</h4>
+      <table class="kd-notes" style="--k:${k}"><colgroup><col class="kd-notes-who">${order.map(() => '<col>').join('')}</colgroup>
+        <thead><tr><td></td>${head}</tr></thead><tbody>${rows}</tbody></table>
+      <p class="kd-notes-foot"></p>`;
+  }
+  const notes = notesOfShown(u, s, f);
+  const before = u.shownNotes[f];
+  for (const btn of box.querySelectorAll('.kd-note')) {
+    const p = Number(btn.dataset.p);
+    const r = Number(btn.dataset.r);
+    const i = p * k + r;
+    const v = notes[i] ?? 0;
+    if (btn.dataset.v !== String(v)) {
+      btn.dataset.v = v;
+      btn.innerHTML = v === 1 ? NOTE_X : v === 2 ? NOTE_OK : '';
+      if (before && before[i] !== v && v && !game.reducedMotion) btn.firstElementChild.classList.add('enter');
+      btn.setAttribute('aria-label', `${fl.people[p].name}, ${ROOMS[fl.names[r]]?.name}: ${NOTE_WORD[v]}`);
+    }
+    btn.disabled = !edit;
+  }
+  for (const tr of box.querySelectorAll('tbody tr')) tr.classList.toggle('sel', Number(tr.dataset.p) === u.sel);
+  const any = notes.some(Boolean);
+  put(
+    box.querySelector('.kd-notes-foot'),
+    edit && any ? `<button class="link kd-notes-clear" type="button">${u.confirmNotes > Date.now() ? 'Wirklich alle Notizen löschen?' : 'Notizen löschen'}</button>` : '',
+  );
+  u.shownNotes[f] = [...notes];
+}
+
 // Gelöst: andere Räume treten zurück, der Tatraum wird umrandet, Stempel auf den Täter
 function renderSolved(u, fl) {
   const { s, game, root } = u;
@@ -1822,6 +1895,20 @@ function bind(root, u) {
       const ref = t.closest('.kd-ref');
       if (ref) return showRef(u, Number(ref.dataset.f), Number(ref.dataset.p));
       if (t.closest('.kd-back')) return place(u, u.sel, -1);
+      const note = t.closest('.kd-note');
+      if (note && !note.disabled) {
+        const v = (Number(note.dataset.v) + 1) % 3;
+        return act(u, 'notiz', { p: Number(note.dataset.p), r: Number(note.dataset.r), v });
+      }
+      if (t.closest('.kd-notes-clear')) {
+        if (u.confirmNotes > Date.now()) {
+          u.confirmNotes = 0;
+          return act(u, 'notizen-leeren', {});
+        }
+        u.confirmNotes = Date.now() + 4000;
+        setTimeout(() => !u.signal.aborted && draw(u), 4100);
+        return draw(u);
+      }
       if (t.closest('.kd-reset')) {
         if (u.confirm > Date.now()) {
           u.confirm = 0;
@@ -2004,7 +2091,12 @@ function act(u, type, data) {
   const f = u.floor;
   const pos = [...posOfShown(u, s)(f)];
   let marks = [...marksOfShown(u, s, f)];
-  if (type === 'setzen') {
+  let notes = [...notesOfShown(u, s, f)];
+  if (type === 'notiz') {
+    notes[data.p * s.floors[f].names.length + data.r] = data.v;
+  } else if (type === 'notizen-leeren') {
+    notes = notes.map(() => 0);
+  } else if (type === 'setzen') {
     if (data.c >= 0) {
       const there = pos.indexOf(data.c);
       if (there >= 0 && there !== data.p) pos[there] = -1;
@@ -2017,7 +2109,7 @@ function act(u, type, data) {
     pos.fill(-1);
     marks = [];
   }
-  u.over[f] = { pos, marks, done: false };
+  u.over[f] = { pos, marks, notes, done: false };
   u.pending[f] = (u.pending[f] ?? 0) + 1;
   draw(u);
   u.queue = u.queue
@@ -2290,6 +2382,36 @@ export const style = `
   .kd-ref i { display: inline-block; width: 8px; height: 8px; border-radius: 1px; background: var(--pc); }
   .kd-ref small { font: 800 10px/1 var(--font-display); color: var(--muted); letter-spacing: .04em; }
 
+  /* Notiztabelle: Linien wie im Rätselbuch, Raumnamen senkrecht */
+  .kd-notes { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .kd-notes .kd-notes-who { width: 30%; }
+  .kd-notes thead th { padding: 0 0 6px; vertical-align: bottom; font-weight: 700; text-align: center; font: 700 13px/1 var(--font-display); }
+  .kd-notes thead th span { display: inline-block; max-height: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    writing-mode: vertical-rl; transform: rotate(180deg); }
+  .kd-notes tbody th { padding: 0 6px 0 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font: 700 var(--t-base)/1 var(--font-display); }
+  .kd-notes-pawn { display: inline-block; width: 18px; height: 22px; margin-right: 5px; vertical-align: -6px; }
+  .kd-notes-pawn svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .kd-notes tbody td { padding: 0; border: 1px solid var(--hairline); }
+  .kd-notes thead th { border-left: 1px solid var(--hairline); }
+  .kd-notes tbody tr:first-child td { border-top: 1.5px solid var(--line); }
+  .kd-notes tbody td:first-of-type { border-left: 1.5px solid var(--line); }
+  .kd-notes tr.sel th, .kd-notes tr.sel td { background: var(--wash); }
+  .kd-note { display: grid; place-items: center; width: 100%; height: 38px; margin: 0; padding: 0; border: 0; border-radius: 0;
+    background: none; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .kd-note:hover:not(:disabled) { background: var(--wash); }
+  .kd-note:disabled { cursor: default; }
+  .kd-note:focus-visible { outline: 3px solid var(--ink); outline-offset: -3px; }
+  .kd-note svg { width: 24px; height: 24px; transition: transform 120ms cubic-bezier(.2,.8,.2,1); }
+  .kd-note:active:not(:disabled) svg { transform: scale(.85); }
+  .kd-nx path { fill: none; stroke: ${INK}; stroke-width: 2.4; stroke-linecap: round; }
+  .kd-nok path { fill: none; stroke: var(--ok); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+  .kd-nx.enter path, .kd-nok.enter path { stroke-dasharray: 1; stroke-dashoffset: 1; animation: kd-draw 150ms cubic-bezier(.3,.7,.2,1) forwards; }
+  .kd-nx.enter path + path { animation-delay: 90ms; }
+  .kd-nok.enter path { animation-duration: 220ms; }
+  .kd-notes-foot { margin: 8px 0 0; font-size: var(--t-sm); }
+  .kd-notes-foot:empty { display: none; }
+
   .kd-rules summary { cursor: pointer; font-weight: 700; }
   .kd-rules-list { margin: 10px 0 8px; padding-left: 1.3em; max-width: 60ch; }
   .kd-rules-list li { margin-bottom: 6px; }
@@ -2343,6 +2465,6 @@ export const style = `
 
   @media (prefers-reduced-motion: reduce) {
     .kd *, .kd *::before { animation: none !important; transition: none !important; }
-    .kd .kd-x path, .kd .kd-check path, .kd .kd-cross path, .kd .kd-solved line, .kd .kd-walls line, .kd .kd-outer, .kd .kd-seal path { stroke-dashoffset: 0 !important; }
+    .kd .kd-nx path, .kd .kd-nok path, .kd .kd-x path, .kd .kd-check path, .kd .kd-cross path, .kd .kd-solved line, .kd .kd-walls line, .kd .kd-outer, .kd .kd-seal path { stroke-dashoffset: 0 !important; }
   }
 `;
