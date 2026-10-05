@@ -15,6 +15,9 @@ Mensch mit Bleistift. Was er nicht schafft, ist für Menschen zu schwer oder nur
 2. **Alle wahren Hinweise** über diese Lösung sammeln (`candidates`), jeder mit einem Gewicht, wie gern er
    genommen wird. Interessante hoch („saß auf einem Stuhl“, „genau über Berta“), langweilige niedrig
    („war nicht im Bad“).
+   Nur Hinweise, die man auf dem Bild auch so sieht: „neben einem Stuhl“ zählt in Krimidoku nur im selben
+   Raum (`nextTo`), nicht durch eine Wand; das empfanden Spieler als falsch. Löser (`compile`), Sammeln
+   (`candidates`) und das Abhaken im Browser (`clueState`) müssen dieselbe Regel benutzen.
 3. **Anfangsauswahl:** pro Person ein, zwei Hinweise nach Gewicht, dann zufällig weitere dazu, bis der
    Löser alles eindeutig findet. Klappt das mit allen Hinweisen nicht: neue Lösung.
 4. **Weglassen:** jeden Hinweis einmal probeweise entfernen (zufällige Reihenfolge). Bleibt alles lösbar,

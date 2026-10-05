@@ -183,6 +183,9 @@ function around(n, c) {
   return out;
 }
 
+// „neben einem Stuhl“: waagerecht oder senkrecht daneben und im selben Raum (nicht durch eine Wand)
+const nextTo = (fl, n, c, k) => around(n, c).some((d) => fl.rooms[d] === fl.rooms[c] && fl.items[d] === k);
+
 // ---------- Grundriss bauen ----------
 
 // Räume als Rechtecke: das größte Rechteck wird geteilt, bis es genug sind. Manchmal werden zwei
@@ -328,7 +331,7 @@ function compile(fl, n, clue, unary, binary) {
       unary.push([me, (c) => fl.items[c] === clue.k]);
       break;
     case 'neben':
-      unary.push([me, (c) => around(n, c).some((d) => fl.items[d] === clue.k)]);
+      unary.push([me, (c) => nextTo(fl, n, c, clue.k)]);
       break;
     case 'fenster':
       unary.push([me, (c) => fl.win[c] !== 0]);
@@ -417,7 +420,8 @@ function candidates(fl, n, sol) {
     add({ t: 'raum', r }, 3);
     for (let x = 0; x < fl.names.length; x++) if (x !== r) add({ t: 'nicht', r: x }, 0.4);
     if (fl.items[c]) add({ t: 'auf', k: fl.items[c] }, 3.5);
-    for (const k of new Set(around(n, c).map((d) => fl.items[d]).filter(Boolean))) add({ t: 'neben', k }, 2.5);
+    const beside = around(n, c).filter((d) => fl.rooms[d] === r && fl.items[d]);
+    for (const k of new Set(beside.map((d) => fl.items[d]))) add({ t: 'neben', k }, 2.5);
     if (fl.win[c]) add({ t: 'fenster' }, 2);
     const mates = [...Array(n).keys()].filter((q) => q !== p && roomOf(q) === r);
     if (p !== 0 && !mates.length) add({ t: 'allein' }, 2);
@@ -593,6 +597,8 @@ export function tick(s) {
     s.pen = Array(s.n * s.n).fill(0);
     delete s.notes;
   }
+  // „neben“ galt früher auch durch Wände: Stimmt ein Hinweis so nicht mehr, gibt es einen neuen Fall
+  if (s.clues.some((c) => c.t === 'neben' && !nextTo(s, s.n, s.sol[c.p], c.k))) return setup(s.players, { stufe: s.n });
 }
 
 // Alle können jederzeit etwas tun
@@ -1068,7 +1074,7 @@ function clueState(fl, clue, pos) {
     case 'auf':
       return test(fl.items[at] === clue.k);
     case 'neben':
-      return test(around(n, at).some((d) => fl.items[d] === clue.k));
+      return test(nextTo(fl, n, at, clue.k));
     case 'fenster':
       return test(fl.win[at] !== 0);
     case 'allein':
@@ -1183,7 +1189,7 @@ export function render(el, s, game) {
 const RULES = `<ol class="kd-rules-list">
     <li>In jeder Zeile und jeder Spalte stand genau eine Person.</li>
     <li>Niemand stand auf Tischen, Pflanzen, Regalen, Kisten, Fässern, Herden, Badewannen oder Klavieren. Auf Stühlen und Sesseln saß man, auf Betten lag man, auf Teppichen stand man.</li>
-    <li>„Neben“ heißt waagerecht oder senkrecht daneben.</li>
+    <li>„Neben“ heißt waagerecht oder senkrecht daneben und im selben Raum, nicht durch eine Wand.</li>
     <li>Täter ist, wer als Einziger mit dem Opfer im selben Raum war.</li>
     <li>Ihr löst zusammen: Jeder kann Personen setzen, Kreuze machen und Notizen eintragen, die anderen sehen es sofort. Steht jede Person richtig, ist der Fall gelöst.</li>
   </ol>
@@ -1203,10 +1209,13 @@ function pageHtml(s, game) {
         <p class="kd-crime"></p>
       </header>
       <div class="kd-main">
-        <div class="kd-board">
-          <div class="kd-cols" aria-hidden="true">${Array.from({ length: n }, (_, i) => `<span>${'ABCDEF'[i]}</span>`).join('')}</div>
-          <div class="kd-rows" aria-hidden="true">${Array.from({ length: n }, (_, i) => `<span>${i + 1}</span>`).join('')}</div>
-          <div class="kd-plan"><div class="kd-planbox">${planSvg(s, n)}</div><div class="kd-cells">${cells}</div><div class="kd-tokens"></div><div class="kd-fx"></div></div>
+        <div class="kd-stage">
+          <div class="kd-board">
+            <div class="kd-cols" aria-hidden="true">${Array.from({ length: n }, (_, i) => `<span>${'ABCDEF'[i]}</span>`).join('')}</div>
+            <div class="kd-rows" aria-hidden="true">${Array.from({ length: n }, (_, i) => `<span>${i + 1}</span>`).join('')}</div>
+            <div class="kd-plan"><div class="kd-planbox">${planSvg(s, n)}</div><div class="kd-cells">${cells}</div><div class="kd-tokens"></div><div class="kd-fx"></div></div>
+          </div>
+          ${legendHtml(s)}
         </div>
         <div class="kd-side">
           <p class="kd-hint" aria-live="polite"></p>
@@ -1218,6 +1227,24 @@ function pageHtml(s, game) {
       </div>
     </section>
     <details class="kd-rules"><summary>So geht’s</summary>${RULES}</details>
+  </div>`;
+}
+
+// Legende: was die Zeichen auf dem Grundriss sind, nur die, die es hier gibt
+const LEGEND_ORDER = ['stuhl', 'sessel', 'bett', 'teppich', 'tisch', 'pflanze', 'regal', 'kiste', 'fass', 'herd', 'wanne', 'klavier'];
+function legendHtml(s) {
+  const icon = (k) =>
+    `<svg class="kd-legend-icon" viewBox="0 0 100 100" aria-hidden="true"><g transform="translate(50 ${k === 'regal' ? 74 : 50}) scale(${k === 'teppich' ? 1 : 0.86}) translate(-50 -50)">${ITEM_ART[k]}</g></svg>`;
+  const item = (art, name) => `<li>${art}<span>${name}</span></li>`;
+  const here = LEGEND_ORDER.filter((k) => s.items.includes(k));
+  const group = (label, items) => (items.length ? `<div class="kd-legend-row"><span class="kd-legend-label">${label}</span><ul>${items.join('')}</ul></div>` : '');
+  const windowIcon = `<svg class="kd-legend-icon" viewBox="-4 -26 108 52" aria-hidden="true"><path d="M0 0 H100" stroke="${INK}" stroke-width="${OUTER}"/>${windowSvg(1, 0, 1)}</svg>`;
+  const doorIcon = `<svg class="kd-legend-icon" viewBox="-4 -10 108 62" aria-hidden="true"><path d="M0 0 H27 M73 0 H100" stroke="${INK}" stroke-width="${WALL}"/>
+    <path d="M27 0 V46 M27 46 A46 46 0 0 0 73 0" fill="none" class="kd-door"/></svg>`;
+  return `<div class="kd-legend" aria-label="Legende">
+    ${group('Hier konnte man sein:', here.filter((k) => free(k)).map((k) => item(icon(k), ITEMS[k].name)))}
+    ${group('Versperrt:', here.filter((k) => !free(k)).map((k) => item(icon(k), ITEMS[k].name)))}
+    ${group('In der Wand:', [...(s.win.some(Boolean) ? [item(windowIcon, 'Fenster')] : []), item(doorIcon, 'Tür')])}
   </div>`;
 }
 
@@ -1472,7 +1499,7 @@ function renderClues(u, st) {
   const { s, game, root } = u;
   for (const li of root.querySelectorAll('.kd-clue')) {
     const i = Number(li.dataset.i);
-    const state = clueState(s, s.clues[i], st.pos);
+    const state = s.solved ? 'ok' : clueState(s, s.clues[i], st.pos);
     if (u.clueShown[i] === state) continue;
     const fresh = u.clueShown[i] !== undefined && !game.reducedMotion;
     u.clueShown[i] = state;
@@ -1913,10 +1940,20 @@ export const style = `
   .kd-main { display: grid; gap: 18px; }
   @container (min-width: 600px) {
     .kd-main { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 28px; align-items: start; }
-    .kd-board { position: sticky; top: 16px; }
+    .kd-stage { position: sticky; top: 16px; }
     .kd-tray { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   }
   .kd-side { display: grid; gap: 14px; min-width: 0; }
+  .kd-stage { display: grid; gap: 12px; min-width: 0; }
+
+  /* Legende unter dem Grundriss */
+  .kd-legend { display: grid; gap: 6px; max-width: 480px; font-size: var(--t-sm); }
+  .kd-legend-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; }
+  .kd-legend-label { color: var(--muted); }
+  .kd-legend ul { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin: 0; padding: 0; list-style: none; }
+  .kd-legend li { display: inline-flex; align-items: center; gap: 4px; }
+  .kd-legend-icon { display: block; flex: none; width: 26px; height: 26px; overflow: visible; }
+  .kd-legend .kd-door { stroke-width: 4; opacity: .7; }
 
   /* --- Grundriss --- */
   .kd-board, .kd-pen-board { display: grid; grid-template-columns: 14px minmax(0, 1fr); grid-template-rows: 16px auto; gap: 3px 5px;
@@ -2120,6 +2157,7 @@ export const style = `
   .kd.intro .kd-rooms > g > path { animation: kd-fade 400ms ease-out both; }
   .kd.intro .kd-doors, .kd.intro .kd-windows, .kd.intro .kd-labels { animation: kd-fade 380ms ease-out 650ms both; }
   .kd.intro .kd-cols, .kd.intro .kd-rows { animation: kd-fade 400ms ease-out 500ms both; }
+  .kd.intro .kd-legend { animation: kd-fade 400ms ease-out 700ms both; }
   .kd.intro .kd-tray > * { animation: kd-rise 340ms cubic-bezier(.2,.8,.2,1) both; }
   .kd.intro .kd-tray > :nth-child(2) { animation-delay: 60ms; }
   .kd.intro .kd-tray > :nth-child(3) { animation-delay: 120ms; }
