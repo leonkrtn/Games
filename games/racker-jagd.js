@@ -297,7 +297,7 @@ const ui = new WeakMap(); // pro Spielfeld: Countdown, Senden, eingebettete Beit
 function local(el, game) {
   let u = ui.get(el);
   if (!u || u.signal !== game.signal) {
-    u = { signal: game.signal, s: null, timer: null, sending: false, autoDone: false, lastRefresh: 0, frames: watchFrames(el, game) };
+    u = { signal: game.signal, s: null, timer: null, sending: false, autoDone: false, lastRefresh: 0, frames: watchFrames(game) };
     ui.set(el, u);
     game.signal.addEventListener('abort', () => clearInterval(u.timer));
   }
@@ -342,14 +342,27 @@ const marker = (game, id) => `<span class="marker" style="color:${game.color(id)
 
 // --- Eingebettete Instagram-Beiträge ---
 
-// Instagram zeichnet die Einbettung erst ab etwa 326 px Breite ordentlich. Schmalere Plätze bekommen sie
-// in dieser Breite und verkleinert (transform), so bleibt sie wie ein Bildschirmfoto im Ganzen sichtbar.
-const IG_W = 326;
+// Gezeigt wird nur das Video bzw. Bild, ohne Profil, Likes und Kommentare. Instagram kann diese Teile nicht
+// abschalten, also wird das iframe größer gezeichnet und so verschoben, dass nur das Medienfeld im Rahmen
+// liegt (overflow: clip). Aufbau der Einbettung (Messungen anderer an echten Reels, von hier aus nicht
+// prüfbar): oben eine Kopfzeile von 54 px, darunter ein Medienfeld Breite × 1,25 (4:5), in dem ein Reel
+// im Format 9:16 eingepasst liegt. Sitzt der Ausschnitt daneben, nur diese Werte anpassen.
+const IG_HEAD = 54;
+const IG_MEDIA = 1.25;
+const IG_TRIM = 2; // ringsum etwas mehr wegschneiden, damit keine Kante stehen bleibt
+const IG_MIN = 326; // schmaler zeichnet Instagram die Einbettung nicht ordentlich
+const IG_MAX = 540;
 const igLink = (item) => `https://www.instagram.com/${item.kind === 'reel' ? 'reel' : 'p'}/${item.code}/`;
-// Höhe, bis Instagram die echte meldet: Kopfzeile, Bild im Hochformat 4:5, Fußzeile
-const igGuess = (w) => Math.round(w * 1.25 + 230);
+const igRatio = (item) => (item.kind === 'reel' ? '9 / 16' : '4 / 5');
 
-// thumb: kleine Vorschau im Format 4:5 (nicht antippbar), sonst der ganze Beitrag.
+// Lage des Videos (Reel) bzw. Bildes in einer Einbettung der Breite w
+function igArea(kind, w) {
+  const h = w * IG_MEDIA;
+  const vw = kind === 'reel' ? (h * 9) / 16 : w;
+  return { x: (w - vw) / 2 + IG_TRIM, y: IG_HEAD + IG_TRIM, w: vw - 2 * IG_TRIM, h: h - 2 * IG_TRIM };
+}
+
+// thumb: kleine Vorschau (nicht antippbar), sonst das Video zum Antippen und Abspielen.
 function post(game, item, { thumb = false, label }) {
   const e = game.esc;
   if (screenshot(item)) {
@@ -357,53 +370,34 @@ function post(game, item, { thumb = false, label }) {
     return `<div class="rj-ig rj-shot ${thumb ? 'thumb' : ''}"><img src="${e(game.imageUrl(item.id))}" alt="${e(label)}"></div>`;
   }
   return `
-    <div class="rj-ig ${thumb ? 'thumb' : 'full'}">
-      <iframe src="${e(igLink(item))}embed/" title="${e(label)}" scrolling="no" allowfullscreen loading="lazy"
+    <div class="rj-ig ${thumb ? 'thumb' : 'full'}" data-kind="${item.kind === 'reel' ? 'reel' : 'p'}" style="--ar:${igRatio(item)}">
+      <iframe src="${e(igLink(item))}embed/" title="${e(label)}" scrolling="no" loading="lazy"
+        allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen
         ${thumb ? 'tabindex="-1" aria-hidden="true"' : ''}></iframe>
     </div>`;
 }
 
-// Passt die iframes an ihren Platz an (ResizeObserver) und übernimmt die Höhe, die Instagram per
-// postMessage meldet ({"type":"MEASURE","details":{"height":…}}, wie bei Instagrams embed.js).
-function watchFrames(el, game) {
+// Legt jedes iframe so in seinen Rahmen (ResizeObserver), dass das Medienfeld ihn ganz füllt.
+function watchFrames(game) {
   const fit = (box) => {
     const frame = box.querySelector('iframe');
-    const w = box.clientWidth;
-    if (!frame || !w) return;
-    const base = Math.max(w, IG_W);
-    const h = Number(box.dataset.h) || igGuess(base);
-    frame.style.width = `${base}px`;
-    frame.style.height = `${h}px`;
-    frame.style.transform = base === w ? '' : `scale(${w / base})`;
-    if (box.classList.contains('full')) box.style.height = `${Math.round((h * w) / base)}px`;
+    const bw = box.clientWidth;
+    const bh = box.clientHeight;
+    if (!frame || !bw || !bh) return;
+    const kind = box.dataset.kind;
+    // So breit zeichnen, dass das Video etwa in voller Größe ankommt (scharf), in Instagrams Grenzen
+    const unit = igArea(kind, 1000);
+    const w = Math.round(Math.min(IG_MAX, Math.max(IG_MIN, (bw * 1000) / unit.w, (bh * 1000) / unit.h)));
+    const a = igArea(kind, w);
+    const s = Math.max(bw / a.w, bh / a.h);
+    const tx = bw / 2 - s * (a.x + a.w / 2);
+    const ty = bh / 2 - s * (a.y + a.h / 2);
+    frame.style.width = `${w}px`;
+    frame.style.height = `${Math.ceil(IG_HEAD + w * IG_MEDIA + 260)}px`;
+    frame.style.transform = `translate(${tx.toFixed(2)}px, ${ty.toFixed(2)}px) scale(${s.toFixed(4)})`;
   };
   const ro = new ResizeObserver((entries) => entries.forEach((x) => fit(x.target)));
   game.signal.addEventListener('abort', () => ro.disconnect());
-  window.addEventListener(
-    'message',
-    (ev) => {
-      if (ev.origin !== 'https://www.instagram.com') return;
-      let d = ev.data;
-      if (typeof d === 'string') {
-        try {
-          d = JSON.parse(d);
-        } catch {
-          return;
-        }
-      }
-      const h = Math.round(Number(d?.details?.height));
-      if (d?.type !== 'MEASURE' || !(h >= 120 && h <= 4000)) return;
-      for (const frame of el.querySelectorAll('.rj-ig iframe')) {
-        if (frame.contentWindow !== ev.source) continue;
-        const box = frame.parentElement;
-        if (box.dataset.h !== String(h)) {
-          box.dataset.h = h;
-          fit(box);
-        }
-      }
-    },
-    { signal: game.signal },
-  );
   return {
     // Neue Beiträge in area einmal einrichten
     mount(area) {
@@ -725,7 +719,7 @@ function bigCard(s, game, i, cls) {
   const item = s.order[i];
   const mineCard = item.owner === game.me;
   return `
-    <figure class="rj-card rj-big ${cls}" data-i="${i}" style="--c:${game.color(item.owner)}">
+    <figure class="rj-card rj-big ${cls}" data-i="${i}" style="--c:${game.color(item.owner)};--ar:${igRatio(item)}">
       ${post(game, item, { label: mineCard ? 'Dein Racker' : `Racker von ${game.name(item.owner)}` })}
       <figcaption>${marker(game, item.owner)} ${mineCard ? 'Dein Racker' : `Von ${e(game.name(item.owner))}`}</figcaption>
     </figure>`;
@@ -869,16 +863,15 @@ export const style = `
     padding: 6px 6px 28px;
     transform: rotate(var(--tilt, 0deg));
   }
-  .rj-pic { display: block; position: relative; aspect-ratio: 4 / 5; overflow: hidden; background: var(--wash); }
+  .rj-pic { display: block; position: relative; aspect-ratio: 9 / 16; overflow: hidden; background: var(--wash); }
 
-  /* Eingebetteter Beitrag: iframe von Instagram, unter 326 px Breite verkleinert (siehe watchFrames) */
-  .rj-ig { position: relative; overflow: hidden; background: var(--wash); }
-  .rj-ig iframe { display: block; width: 100%; border: 0; transform-origin: 0 0; }
-  .rj-ig.full { min-height: 240px; }
-  .rj-ig.thumb { width: 100%; aspect-ratio: 4 / 5; }
+  /* Eingebetteter Beitrag: Rahmen im Format des Videos, darin das verschobene iframe (siehe watchFrames).
+     clip statt hidden: Fokus im iframe kann den Rahmen nicht scrollen und Profil oder Likes zeigen. */
+  .rj-ig { position: relative; aspect-ratio: var(--ar, 4 / 5); overflow: hidden; overflow: clip; background: var(--wash); }
+  .rj-ig iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; }
+  .rj-pic > .rj-ig { width: 100%; height: 100%; aspect-ratio: auto; }
   .rj-ig.thumb iframe { pointer-events: none; }
-  .rj-shot img { display: block; width: 100%; height: auto; }
-  .rj-shot.thumb img { height: 100%; object-fit: cover; }
+  .rj-shot img { display: block; width: 100%; height: 100%; object-fit: cover; }
 
   /* ---- Zeit wählen ---- */
   .rj-lead { max-width: 40ch; }
@@ -992,8 +985,20 @@ export const style = `
   .rj-dots li.now { border-color: var(--c); border-width: 2.5px; }
   .rj-progress.intro li { animation: rj-rise 260ms cubic-bezier(.2,.8,.2,1) calc(var(--i) * 60ms) both; }
   .rj-stage { position: relative; }
-  .rj-big { width: min(100%, 400px); --tilt: -.6deg; }
+  /* Am PC so groß, dass das Video noch ganz ins Fenster passt */
+  .rj-big { width: min(100%, 420px, calc((100svh - 170px) * var(--ar, 4 / 5) + 12px)); --tilt: -.6deg; }
   .rj-big figcaption { position: absolute; left: 8px; bottom: 5px; font-size: var(--t-sm); font-weight: 700; display: flex; align-items: center; gap: 6px; }
+  /* Auf dem Handy über die ganze Breite, bis an den Rand */
+  @media (max-width: 559px) {
+    .rj-big {
+      width: auto; padding: 0 0 34px; border: 0; border-radius: 0; --tilt: 0deg;
+      margin-left: calc(-1 * max(16px, env(safe-area-inset-left)));
+      margin-right: calc(-1 * max(16px, env(safe-area-inset-right)));
+    }
+    .rj-big figcaption { left: max(16px, env(safe-area-inset-left)); bottom: 6px; }
+    .rj-big .rj-stamp { right: max(16px, env(safe-area-inset-right)); bottom: 48px; }
+    .rj-big.leave { right: 0; } /* ohne feste Breite schrumpft die wegfliegende Karte sonst */
+  }
   .rj-big.intro { animation: rj-deal 520ms cubic-bezier(.2,.8,.2,1) both; }
   .rj-big.next { animation: rj-next 440ms cubic-bezier(.2,.8,.2,1) 120ms both; }
   .rj-big.leave { position: absolute; left: 0; top: 0; z-index: 1; pointer-events: none; animation: rj-leave 460ms cubic-bezier(.6,0,.2,1) both; }

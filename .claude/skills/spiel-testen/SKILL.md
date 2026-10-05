@@ -180,8 +180,9 @@ Anfragen erscheinen als `ERR_FAILED` unter den Konsolenfehlern (erwartet). Malfl
 ## 6. Eingebettete fremde Seiten (Instagram)
 
 Racker-Jagd zeigt Instagram-Beiträge als iframe. Im Test nie die echte Seite laden: `instagram-ersatz.cjs`
-in diesem Ordner leitet `instagram.com` auf eine kleine eigene Seite um (Kopfzeile, farbiges Bild mit der
-Kennung, Fußzeile), die ihre Höhe per `postMessage` meldet wie Instagram. `loads` zählt, wie oft jede
+in diesem Ordner leitet `instagram.com` auf eine kleine eigene Seite um, aufgebaut wie die echte Einbettung
+(Kopfzeile 54 px, Medienfeld 4:5, Reel 9:16 darin mit schwarzen Rändern, Fußzeile mit Likes). Zeigt das Spiel
+nur das Video, darf auf dem Foto kein Weiß der Kopfzeile und kein Schwarz der Ränder stehen. `loads` zählt, wie oft jede
 Einbettung geladen wurde: Pro Phase und Seite einmal ist richtig, mehr heißt, `render` hat ein iframe
 ersetzt (Beitrag lädt bei jedem Zug der anderen neu).
 
