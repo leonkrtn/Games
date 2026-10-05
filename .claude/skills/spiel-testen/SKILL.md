@@ -54,6 +54,13 @@ ps -eo pid,cmd | grep -E "next start|next-server" | grep -v grep | awk '{print $
 Nach jeder Änderung am Spiel neu bauen und den Server neu starten. Im frischen Container fehlt
 `node_modules` (Build bricht mit „Cannot find package 'pg'“ ab): zuerst `npm ci`.
 
+**Supabase-Variablen in der Umgebung:** Steht `NEXT_PUBLIC_SUPABASE_URL` oder `SUPABASE_SERVICE_ROLE_KEY`
+(bzw. `SUPABASE_SECRET_KEY`) in `env`, nimmt der Server die echte Datenbank statt des Testmodus (Fehler wie
+„Could not find the table 'public.users'“, oder schlimmer: Testkonten landen in Produktion). Dann Bauen und
+Starten ohne sie, auch das Bauen, denn `NEXT_PUBLIC_…` wird in den Browser-Code eingebaut:
+`env -u NEXT_PUBLIC_SUPABASE_URL -u SUPABASE_SERVICE_ROLE_KEY -u SUPABASE_SECRET_KEY npm run build` und
+genauso `env -u … npx next start -p 3100`.
+
 `zwei-spieler.cjs` in diesem Ordner legt Konten an, befreundet sie und startet das Spiel. Mit
 `players: 3` bis `6` gründet Anna eine Gruppe mit allen; `pages` enthält dann alle Seiten (Anna zuerst):
 

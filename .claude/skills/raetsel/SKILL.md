@@ -40,6 +40,9 @@ Mensch mit Bleistift. Was er nicht schafft, ist für Menschen zu schwer oder nur
 ## Mehrere Rätsel, die ineinandergreifen
 
 Jeder Spieler hat sein eigenes Rätsel, aber manche Hinweise verbinden zwei („Anton war genau über Berta“).
+Krimidoku hatte das bis Commit `989be9b` (ein Stockwerk pro Spieler, `generate(F, n)`). Beim Spielen war ein
+gemeinsames Rätsel, an dem alle zugleich arbeiten, einfacher und beliebter; seitdem lösen alle einen Fall.
+Für Rätsel, die doch wieder ineinandergreifen sollen:
 
 - Verbindende Hinweise beim Weglassen zuletzt probieren, damit sie bleiben.
 - **Kein Rätsel allein lösbar:** Löser nur mit den eigenen Hinweisen laufen lassen. Löst er es, neu würfeln.
@@ -51,11 +54,11 @@ Jeder Spieler hat sein eigenes Rätsel, aber manche Hinweise verbinden zwei („
 ## Zustand, Geheimnis, Anzeige
 
 - Im `state` nur Daten: Raster, Hinweise als kleine Objekte (`{ p, t: 'auf', k: 'stuhl' }`), Lösung. Sätze
-  entstehen erst beim Zeichnen (`clueParts`), so bleibt der Zustand klein (Krimidoku höchstens etwa 5 KB).
+  entstehen erst beim Zeichnen (`clueParts`), so bleibt der Zustand klein (Krimidoku etwa 1 KB).
 - Die Lösung offener Rätsel in `view` weglassen. Ob ein Hinweis erfüllt oder verletzt ist, rechnet der
   Browser aus den gesetzten Figuren selbst: Das verrät nichts, was der Spieler nicht auch sieht.
 - `setup` läuft auf dem Server bei jedem Start: Zeit messen (zwanzig Rätsel pro Größe), Ziel unter einer
-  halben Sekunde. Krimidoku: sechs mal sechs mit vier Stockwerken etwa 150 ms.
+  halben Sekunde. Krimidoku: sechs mal sechs etwa 4 ms, höchstens etwa 15 ms.
 
 ## Testen
 
@@ -71,5 +74,6 @@ cp games/krimidoku.js <scratchpad>/k.mjs && echo "export { generate, propagate, 
   lösen. Erst dabei merkt man, ob es Spaß macht oder ein Hinweistyp zu stark ist.
 - **Simulation:** Für viele Rätsel den Löser auf der Ansicht (`view`) laufen lassen und mit der gespeicherten
   Lösung vergleichen. Dazu Regeln, Geheimnisse und Ende wie im Skill `spiel-testen`.
-- **Browser:** Die Lösung aus `snapshot.game.view` mit dem Löser berechnen und die Figuren per Klick setzen.
+- **Browser:** Die Lösung aus `snapshot.game.view` mit dem Löser berechnen (Krimidoku:
+  `propagate(view, view.n, view.clues, view.n - 3)`) und die Figuren per Klick setzen.
   So spielt ein Skript ganze Partien mit allen Konten durch.

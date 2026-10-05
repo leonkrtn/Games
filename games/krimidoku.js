@@ -1,28 +1,23 @@
-// Krimidoku: Sudoku für Kriminalfälle. Zwei bis vier Spieler lösen zusammen, ohne Zeitlimit.
+// Krimidoku: Sudoku für Kriminalfälle. Zwei bis sechs Spieler lösen einen Fall zusammen, ohne Zeitlimit.
 //
-// Ein Haus, eine Nacht: Jeder Spieler bekommt ein Stockwerk (zu zweit Erdgeschoss und Obergeschoss,
-// zu dritt dazu den Dachboden, zu viert auch den Keller), und auf jedem Stockwerk ist etwas passiert.
-// Ein Stockwerk ist ein Grundriss aus n × n Feldern mit Räumen und Möbeln. Auf ihm waren n Personen,
-// das Opfer und die Verdächtigen, und zwar so, dass in jeder Zeile und jeder Spalte genau eine stand.
-// Hinweise sagen, wo jemand war („Berta saß auf einem Stuhl“). Täter ist, wer als Einziger mit dem
-// Opfer im selben Raum war.
+// Ein Grundriss aus n × n Feldern mit Räumen und Möbeln. Darauf waren n Personen, das Opfer und die
+// Verdächtigen, und zwar so, dass in jeder Zeile und jeder Spalte genau eine stand. Hinweise sagen, wo
+// jemand war („Berta saß auf einem Stuhl“). Täter ist, wer als Einziger mit dem Opfer im selben Raum war.
 //
-// Verzahnt: Manche Hinweise führen in das Stockwerk darüber oder darunter („Anton war genau über
-// Berta“). Kein Stockwerk lässt sich allein lösen, alle zusammen schon (siehe generate). Jeder sieht
-// alle Stockwerke; je nach Einstellung setzt man bei den anderen mit oder zeigt nur auf Felder
-// (game.live). Ein Stockwerk ist gelöst, sobald alle Personen richtig stehen; sind alle gelöst, gewinnen alle.
+// Zusammen: Alle arbeiten am selben Grundriss, setzen Personen, machen Kreuze und füllen dieselbe
+// Notiztabelle. In der Leiste steht, wer eine Person gesetzt hat; setzt jemand anderes eine, leuchtet das
+// Feld mit seinem Namen auf; wer gerade eine Person in der Hand hat, sehen die anderen live (game.live).
+// Steht jede Person richtig, ist der Fall gelöst und alle gewinnen.
 //
-// Motion: Das Haus baut sich Stockwerk für Stockwerk auf, Wände zeichnen sich ein, Möbel kommen
-// gestaffelt dazu. Figuren gleiten aus der Leiste auf ihr Feld, Kreuze zeichnen sich ein, erfüllte
-// Hinweise bekommen einen Haken. Beim Wechsel des Stockwerks fährt der Grundriss nach oben oder unten.
+// Motion: Der Grundriss baut sich auf, Wände zeichnen sich ein, Möbel kommen gestaffelt dazu. Figuren
+// gleiten aus der Leiste auf ihr Feld, Kreuze zeichnen sich ein, erfüllte Hinweise bekommen einen Haken.
 // Gelöst: Die anderen Räume treten zurück, der Tatraum wird umrandet, das Opfer kippt um (bei Mord),
-// der Stempel „Täter“ schlägt auf, im Haus oben bekommt das Stockwerk seinen Stempel.
+// der Stempel „Täter“ schlägt auf.
 
 export const meta = {
   name: 'Krimidoku',
-  description:
-    'Sudoku für Kriminalfälle. Jeder löst ein Stockwerk desselben Hauses, aber die Hinweise führen auch in die anderen. Ihr spielt zusammen.',
-  players: [2, 4],
+  description: 'Sudoku für Kriminalfälle. Ihr löst einen Fall zusammen: Wer stand wo, und wer war es?',
+  players: [2, 6],
   options: [
     {
       id: 'stufe',
@@ -33,22 +28,12 @@ export const meta = {
         { value: 6, label: 'Schwer, sechs mal sechs' },
       ],
     },
-    {
-      id: 'helfen',
-      label: 'Bei den anderen',
-      choices: [
-        { value: 'zeigen', label: 'Zuschauen und zeigen' },
-        { value: 'mit', label: 'Mitlösen' },
-      ],
-    },
   ],
 };
 
 // ---------- Das Haus (Server und Browser) ----------
 
-// Stockwerke von unten nach oben
-const STACKS = { 2: ['eg', 'og'], 3: ['eg', 'og', 'dach'], 4: ['keller', 'eg', 'og', 'dach'] };
-
+// Grundrisse: welche Räume es gibt (im Keller ohne Fenster)
 const FLOORS = {
   keller: { name: 'Keller', windows: false, rooms: ['weinkeller', 'vorrat', 'werkstatt', 'waschkueche', 'heizung', 'kohlen'] },
   eg: { name: 'Erdgeschoss', windows: true, rooms: ['salon', 'kueche', 'speise', 'bibliothek', 'halle', 'wintergarten', 'musik'] },
@@ -120,7 +105,7 @@ const PEOPLE = `Anton Butler, Berta Köchin, Clara Gräfin, Dietrich Doktor, Els
 const HOUSES = ['Haus Falkenstein', 'Villa Lindenhof', 'Schloss Rabenhorst', 'Gut Eichengrund', 'Haus Sturmfels',
   'Villa Weidenau', 'Haus Birkenwald', 'Gut Mühlbach', 'Villa Seerose', 'Haus Nebelstein'];
 
-// Was auf einem Stockwerk passiert ist. Bei Mord liegt das Opfer.
+// Was passiert ist. Bei Mord liegt das Opfer.
 const CRIMES = {
   mord: 'wurde ermordet',
   raub: 'wurde bestohlen',
@@ -131,50 +116,34 @@ const CRIMES = {
 
 // ---------- Texte ----------
 
-const FLOOR_IN = { keller: 'im Keller', eg: 'im Erdgeschoss', og: 'im Obergeschoss', dach: 'auf dem Dachboden' };
-const FLOOR_SHORT = { keller: 'K', eg: 'EG', og: 'OG', dach: 'DG' };
 // „in der Villa Seerose“, „im Haus Falkenstein“, „auf Gut Mühlbach“
 const houseIn = (house) => (house.startsWith('Villa') ? 'in der ' : house.startsWith('Gut') ? 'auf ' : 'im ') + house;
 const roomIn = (key) => (ROOMS[key]?.g === 'f' ? 'in der ' : 'im ') + (ROOMS[key]?.name ?? 'Raum');
-const roomDat = (key) => (ROOMS[key]?.g === 'f' ? 'der ' : 'dem ') + (ROOMS[key]?.name ?? 'Raum');
 const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 
 /**
- * Ein Hinweis als Satz in Teilen: Text und Verweise auf Personen ({ f, p }), damit die Anzeige Namen
- * hervorheben und zu anderen Stockwerken springen kann. floors = Stockwerke (Grundrisse), f = Stockwerk
- * des Hinweises.
+ * Ein Hinweis als Satz in Teilen: Text und Verweise auf Personen (Zahlen), damit die Anzeige Namen
+ * hervorheben kann. fl = der Fall (Grundriss mit Räumen und Möbeln).
  */
-function clueParts(floors, f, clue) {
-  const fl = floors[f];
-  const S = { f, p: clue.p };
-  const Q = { f: clue.g ?? f, p: clue.q };
+function clueParts(fl, clue) {
   const room = fl.names[clue.r];
-  const dir = clue.g < f ? 'über' : 'unter';
   switch (clue.t) {
     case 'raum':
-      return [S, ` war ${roomIn(room)}.`];
+      return [clue.p, ` war ${roomIn(room)}.`];
     case 'nicht':
-      return [S, ` war nicht ${roomIn(room)}.`];
+      return [clue.p, ` war nicht ${roomIn(room)}.`];
     case 'auf':
-      return [S, ` ${ITEMS[clue.k]?.on ?? 'war dort'}.`];
+      return [clue.p, ` ${ITEMS[clue.k]?.on ?? 'war dort'}.`];
     case 'neben':
-      return [S, ` war neben ${ITEMS[clue.k]?.dat ?? 'etwas'}.`];
+      return [clue.p, ` war neben ${ITEMS[clue.k]?.dat ?? 'etwas'}.`];
     case 'fenster':
-      return [S, ' war an einem Fenster.'];
+      return [clue.p, ' war an einem Fenster.'];
     case 'allein':
-      return [S, ' war allein in einem Raum.'];
+      return [clue.p, ' war allein in einem Raum.'];
     case 'mit':
-      return [S, ' war mit ', Q, ' im selben Raum.'];
+      return [clue.p, ' war mit ', clue.q, ' im selben Raum.'];
     case 'leer':
       return [`${cap(roomIn(room))} war niemand.`];
-    case 'genau':
-      return [S, ` war genau ${dir} `, Q, '.'];
-    case 'ueber': {
-      const g = floors[clue.g];
-      return [S, ` war ${dir} ${roomDat(g.names[clue.r])} ${FLOOR_IN[g.t]}.`];
-    }
-    case 'zimmer':
-      return [S, ` war ${dir} dem Raum, in dem `, Q, ' war.'];
   }
   return [''];
 }
@@ -321,46 +290,33 @@ function buildLayout(n, type) {
   return { t: type, rooms, names, items, win };
 }
 
-// Lösung eines Stockwerks: eine Person pro Zeile und Spalte, nur auf freien Feldern; im Raum des
-// Opfers genau eine weitere Person (der Täter). near = Lösung des Stockwerks darunter (gleiche Felder
-// werden bevorzugt, damit es Hinweise wie „genau über“ geben kann).
-function placePeople(n, layout, near) {
-  let best = null;
+// Lösung: eine Person pro Zeile und Spalte, nur auf freien Feldern; im Raum des Opfers genau eine
+// weitere Person (der Täter)
+function placePeople(n, layout) {
   for (let attempt = 0; attempt < 400; attempt++) {
-    const cols = shuffle([...Array(n).keys()]);
-    const cells = cols.map((x, y) => y * n + x);
+    const cells = shuffle([...Array(n).keys()]).map((x, y) => y * n + x);
     if (!cells.every((c) => free(layout.items[c]))) continue;
     const perRoom = {};
     for (const c of cells) perRoom[layout.rooms[c]] = (perRoom[layout.rooms[c]] ?? 0) + 1;
     const pairs = cells.filter((c) => perRoom[layout.rooms[c]] === 2);
     if (!pairs.length) continue;
-    const shared = near ? cells.filter((c) => near.includes(c)).length : 1;
-    const score = (shared >= 1 && shared <= 2 ? 2 : 0) + Math.random();
-    if (!best || score > best.score) best = { score, cells, pairs };
-    if (score >= 2) break;
+    const victim = pick(pairs);
+    return [victim, ...shuffle(cells.filter((c) => c !== victim))]; // Person 0 ist das Opfer
   }
-  if (!best) return null;
-  const victim = pick(best.pairs);
-  const rest = shuffle(best.cells.filter((c) => c !== victim));
-  return [victim, ...rest]; // Person 0 ist das Opfer
+  return null;
 }
 
 // ---------- Hinweise und Löser ----------
 
-// Ein Hinweis: { f: Stockwerk, p: Person (−1 = über einen Raum), t: Art, ... }
+// Ein Hinweis: { p: Person (−1 = über einen Raum), t: Art, ... }
 // raum r · nicht r · auf k · neben k · fenster · allein · mit q · leer r (niemand im Raum)
-// Zwischen Stockwerken (g = anderes Stockwerk): genau q (genau über/unter q) · ueber r (über/unter Raum r
-// von g) · zimmer q (über/unter dem Raum, in dem q auf g war)
-const CROSS = ['genau', 'zimmer']; // brauchen die Lösung eines anderen Stockwerks
 
-// Bedingungen eines Hinweises: unary = [[gid, (c) => bool]], binary = [[a, b, (ca, cb) => bool, key]]
-// key(c) = was man über b wissen muss, um auf a zu schließen (Feld oder Raum), siehe propagate
-function compile(H, clue, unary, binary) {
-  const { n } = H;
-  const fl = H.floors[clue.f];
-  const gid = (f, p) => f * n + p;
-  const me = gid(clue.f, clue.p);
-  const other = clue.g !== undefined ? H.floors[clue.g] : null;
+// Bedingungen eines Hinweises: unary = [[p, (c) => bool]], binary = [[p, q, (cp, cq) => bool, key]]
+// key(c) = was man über q wissen muss, um auf p zu schließen (Feld oder Raum), siehe propagate
+function compile(fl, n, clue, unary, binary) {
+  const me = clue.p;
+  const sameRoom = (a, b) => fl.rooms[a] === fl.rooms[b];
+  const roomKey = (c) => fl.rooms[c];
   switch (clue.t) {
     case 'raum':
       unary.push([me, (c) => fl.rooms[c] === clue.r]);
@@ -378,24 +334,13 @@ function compile(H, clue, unary, binary) {
       unary.push([me, (c) => fl.win[c] !== 0]);
       break;
     case 'allein':
-      for (let q = 0; q < n; q++) {
-        if (q !== clue.p) binary.push([me, gid(clue.f, q), (a, b) => fl.rooms[a] !== fl.rooms[b], (c) => fl.rooms[c]]);
-      }
+      for (let q = 0; q < n; q++) if (q !== me) binary.push([me, q, (a, b) => !sameRoom(a, b), roomKey]);
       break;
     case 'mit':
-      binary.push([me, gid(clue.f, clue.q), (a, b) => fl.rooms[a] === fl.rooms[b], (c) => fl.rooms[c]]);
+      binary.push([me, clue.q, sameRoom, roomKey]);
       break;
     case 'leer':
-      for (let q = 0; q < n; q++) unary.push([gid(clue.f, q), (c) => fl.rooms[c] !== clue.r]);
-      break;
-    case 'genau':
-      binary.push([me, gid(clue.g, clue.q), (a, b) => a === b, (c) => c]);
-      break;
-    case 'ueber':
-      unary.push([me, (c) => other.rooms[c] === clue.r]);
-      break;
-    case 'zimmer':
-      binary.push([me, gid(clue.g, clue.q), (a, b) => other.rooms[a] === other.rooms[b], (c) => other.rooms[c]]);
+      for (let q = 0; q < n; q++) unary.push([q, (c) => fl.rooms[c] !== clue.r]);
       break;
   }
 }
@@ -407,63 +352,50 @@ function compile(H, clue, unary, binary) {
  * level 1 und 2: Aus einer Beziehung folgt erst etwas, wenn man von der anderen Person weiß, wo bzw. in
  * welchem Raum sie war. Level 3 (schwer): jede Folgerung aus den Kandidaten beider, dazu Gruppen (passen
  * k Personen nur noch in k Zeilen, sind diese Zeilen für alle anderen weg).
- * floors = Stockwerke, die mitgerechnet werden (die anderen bleiben außen vor).
- * Rückgabe: Kandidaten pro Person (gid = f * n + p) oder null bei Widerspruch.
+ * Rückgabe: mögliche Felder pro Person oder null bei Widerspruch.
  */
-function propagate(H, clues, { level = 2, floors = null } = {}) {
+function propagate(fl, n, clues, level = 2) {
   const subsets = level >= 3;
-  const { n } = H;
-  const F = H.floors.length;
-  const active = floors ?? [...Array(F).keys()];
   const unary = [];
   const binary = [];
-  for (const clue of clues) compile(H, clue, unary, binary);
-  const on = new Set(active);
-  const D = [];
-  for (let f = 0; f < F; f++) {
-    const cells = [...Array(n * n).keys()].filter((c) => free(H.floors[f].items[c]));
-    for (let p = 0; p < n; p++) D[f * n + p] = on.has(f) ? cells : [];
-  }
-  for (const [g, test] of unary) if (on.has(Math.floor(g / n))) D[g] = D[g].filter(test);
-  const links = binary.filter(([a, b]) => on.has(Math.floor(a / n)) && on.has(Math.floor(b / n)));
+  for (const clue of clues) compile(fl, n, clue, unary, binary);
+  const cells = [...Array(n * n).keys()].filter((c) => free(fl.items[c]));
+  const D = Array.from({ length: n }, () => cells);
+  for (const [p, test] of unary) D[p] = D[p].filter(test);
   const row = (c) => Math.floor(c / n);
   const col = (c) => c % n;
   const full = (1 << n) - 1;
 
   for (let round = 0; round < 200; round++) {
     let changed = false;
-    const set = (g, next) => {
-      if (next.length === D[g].length) return true;
-      D[g] = next;
+    const set = (p, next) => {
+      if (next.length === D[p].length) return true;
+      D[p] = next;
       changed = true;
       return next.length > 0;
     };
-    for (const f of active) {
-      const P = [...Array(n).keys()].map((p) => f * n + p);
-      for (const axis of [row, col]) {
-        const bits = P.map((g) => D[g].reduce((m, c) => m | (1 << axis(c)), 0));
-        // Gruppen von k Personen, die zusammen nur k Zeilen (Spalten) haben. Ohne subsets nur k = 1
-        // (steht fest) und k = n − 1 (eine Zeile hat nur noch einen Kandidaten).
-        for (let mask = 1; mask < full; mask++) {
-          const k = popcount(mask);
-          if (!subsets && k !== 1 && k !== n - 1) continue;
-          let union = 0;
-          for (let i = 0; i < n; i++) if (mask & (1 << i)) union |= bits[i];
-          const u = popcount(union);
-          if (u < k) return null;
-          if (u > k) continue;
-          for (let i = 0; i < n; i++) {
-            if (mask & (1 << i)) continue;
-            if (!set(P[i], D[P[i]].filter((c) => !(union & (1 << axis(c)))))) return null;
-            bits[i] = D[P[i]].reduce((m, c) => m | (1 << axis(c)), 0);
-          }
+    for (const axis of [row, col]) {
+      const bits = D.map((d) => d.reduce((m, c) => m | (1 << axis(c)), 0));
+      // Gruppen von k Personen, die zusammen nur k Zeilen (Spalten) haben. Ohne subsets nur k = 1
+      // (steht fest) und k = n − 1 (eine Zeile hat nur noch einen Kandidaten).
+      for (let mask = 1; mask < full; mask++) {
+        const k = popcount(mask);
+        if (!subsets && k !== 1 && k !== n - 1) continue;
+        let union = 0;
+        for (let i = 0; i < n; i++) if (mask & (1 << i)) union |= bits[i];
+        const u = popcount(union);
+        if (u < k) return null;
+        if (u > k) continue;
+        for (let i = 0; i < n; i++) {
+          if (mask & (1 << i)) continue;
+          if (!set(i, D[i].filter((c) => !(union & (1 << axis(c)))))) return null;
+          bits[i] = D[i].reduce((m, c) => m | (1 << axis(c)), 0);
         }
       }
     }
-    for (const [a, b, rel, key] of links) {
-      const same = Math.floor(a / n) === Math.floor(b / n);
-      const ok = (x, y) => rel(x, y) && (!same || (row(x) !== row(y) && col(x) !== col(y)));
-      const known = (g) => level >= 3 || D[g].every((c) => key(c) === key(D[g][0]));
+    for (const [a, b, rel, key] of binary) {
+      const ok = (x, y) => rel(x, y) && row(x) !== row(y) && col(x) !== col(y);
+      const known = (p) => level >= 3 || D[p].every((c) => key(c) === key(D[p][0]));
       if (known(b) && !set(a, D[a].filter((x) => D[b].some((y) => ok(x, y))))) return null;
       if (known(a) && !set(b, D[b].filter((y) => D[a].some((x) => ok(x, y))))) return null;
     }
@@ -472,288 +404,202 @@ function propagate(H, clues, { level = 2, floors = null } = {}) {
   return D;
 }
 
-const solvedBy = (H, D, floors) => D && floors.every((f) => [...Array(H.n).keys()].every((p) => D[f * H.n + p].length === 1));
+const solvedBy = (D) => Boolean(D) && D.every((d) => d.length === 1);
 
 // Alle wahren Hinweise über eine Lösung, mit Gewicht (wie gern sie genommen werden)
-function candidates(H, sol) {
-  const { n } = H;
+function candidates(fl, n, sol) {
   const out = [];
-  const F = H.floors.length;
-  for (let f = 0; f < F; f++) {
-    const fl = H.floors[f];
-    const roomOf = (p) => fl.rooms[sol[f][p]];
-    for (let p = 0; p < n; p++) {
-      const c = sol[f][p];
-      const r = fl.rooms[c];
-      const add = (clue, w) => out.push({ f, p, ...clue, w });
-      add({ t: 'raum', r }, 3);
-      for (let x = 0; x < fl.names.length; x++) if (x !== r) add({ t: 'nicht', r: x }, 0.4);
-      if (fl.items[c]) add({ t: 'auf', k: fl.items[c] }, 3.5);
-      for (const k of new Set(around(n, c).map((d) => fl.items[d]).filter(Boolean))) add({ t: 'neben', k }, 2.5);
-      if (fl.win[c]) add({ t: 'fenster' }, 2);
-      const mates = [...Array(n).keys()].filter((q) => q !== p && roomOf(q) === r);
-      if (p !== 0 && !mates.length) add({ t: 'allein' }, 2);
-      for (const q of mates) if (q > p && p !== 0 && q !== 0) add({ t: 'mit', q }, 2.5);
-      for (const g of [f - 1, f + 1]) {
-        if (g < 0 || g >= F) continue;
-        const og = H.floors[g];
-        add({ t: 'ueber', g, r: og.rooms[c] }, 1.2);
-        for (let q = 0; q < n; q++) {
-          if (sol[g][q] === c) add({ t: 'genau', g, q }, 4);
-          else if (og.rooms[sol[g][q]] === og.rooms[c]) add({ t: 'zimmer', g, q }, 2.5);
-        }
-      }
-    }
-    for (let r = 0; r < fl.names.length; r++) {
-      if (![...Array(n).keys()].some((p) => roomOf(p) === r)) out.push({ f, p: -1, t: 'leer', r, w: 1 });
-    }
+  const roomOf = (p) => fl.rooms[sol[p]];
+  for (let p = 0; p < n; p++) {
+    const c = sol[p];
+    const r = fl.rooms[c];
+    const add = (clue, w) => out.push({ p, ...clue, w });
+    add({ t: 'raum', r }, 3);
+    for (let x = 0; x < fl.names.length; x++) if (x !== r) add({ t: 'nicht', r: x }, 0.4);
+    if (fl.items[c]) add({ t: 'auf', k: fl.items[c] }, 3.5);
+    for (const k of new Set(around(n, c).map((d) => fl.items[d]).filter(Boolean))) add({ t: 'neben', k }, 2.5);
+    if (fl.win[c]) add({ t: 'fenster' }, 2);
+    const mates = [...Array(n).keys()].filter((q) => q !== p && roomOf(q) === r);
+    if (p !== 0 && !mates.length) add({ t: 'allein' }, 2);
+    for (const q of mates) if (q > p && p !== 0 && q !== 0) add({ t: 'mit', q }, 2.5);
+  }
+  for (let r = 0; r < fl.names.length; r++) {
+    if (![...Array(n).keys()].some((p) => roomOf(p) === r)) out.push({ p: -1, t: 'leer', r, w: 1 });
   }
   return out;
 }
 
-// Ein ganzes Haus mit Hinweisen. Gesucht: Alle Stockwerke zusammen sind eindeutig lösbar (mit dem Löser
-// oben, also ohne Raten), keins allein. Allein soll man aber anfangen können: Auf jedem Stockwerk lassen
-// sich ohne die anderen schon einige Personen sicher setzen (start), der Rest braucht die Nachbarn.
-// Jeder übrige Hinweis wird gebraucht.
-function generate(F, n) {
+// Ein Fall mit Hinweisen: eindeutig lösbar mit dem Löser oben (also ohne Raten), jeder Hinweis wird
+// gebraucht. Grundriss eines zufälligen Stockwerks (Räume und Möbel), aber immer nur einer.
+function generate(n) {
   const level = n - 3;
-  const start = Math.ceil(n / 3);
-  const types = STACKS[F];
-  const all = Array.from({ length: F }, (_, f) => f);
-  const isCross = (c) => CROSS.includes(c.t);
-  let fallback = null;
   for (let attempt = 0; attempt < 200; attempt++) {
-    const floors = [];
-    const sol = [];
-    for (let f = 0; f < F; f++) {
-      const layout = buildLayout(n, types[f]);
-      const cells = layout && placePeople(n, layout, sol[f - 1]);
-      if (!cells) break;
-      floors.push(layout);
-      sol.push(cells);
-    }
-    if (floors.length < F) continue;
-    const H = { n, floors };
-    const pool = candidates(H, sol);
-    const joint = (clues) => solvedBy(H, propagate(H, clues, { level }), all);
-    // Wie viele Personen eines Stockwerks stehen allein fest (ohne Hinweise, die ein anderes brauchen)?
-    const fixedAlone = (clues, f) => {
-      const D = propagate(H, clues.filter((c) => c.f === f && !isCross(c)), { level, floors: [f] });
-      return D ? [...Array(n).keys()].filter((p) => D[f * n + p].length === 1).length : 0;
-    };
+    const fl = buildLayout(n, pick(Object.keys(FLOORS)));
+    const sol = fl && placePeople(n, fl);
+    if (!sol) continue;
+    const pool = candidates(fl, n, sol);
+    const enough = (clues) => solvedBy(propagate(fl, n, clues, level));
 
-    // Anfang: pro Person ein, zwei Hinweise, dazu Verbindungen zwischen den Stockwerken
+    // Anfang: pro Person ein, zwei Hinweise nach Gewicht, dann zufällig weitere, bis alles feststeht
     const chosen = new Set();
-    for (let f = 0; f < F; f++) {
-      for (let p = 0; p < n; p++) {
-        const own = pool.filter((c) => c.f === f && c.p === p && !isCross(c));
-        for (let i = 0; i < 1 + rnd(2) && own.length; i++) chosen.add(weighted(own, (c) => c.w));
-      }
-      const cross = pool.filter((c) => c.f === f && isCross(c));
-      for (let i = 0; i < 2 && cross.length; i++) chosen.add(weighted(cross, (c) => c.w));
+    for (let p = 0; p < n; p++) {
+      const own = pool.filter((c) => c.p === p);
+      for (let i = 0; i < 1 + rnd(2) && own.length; i++) chosen.add(weighted(own, (c) => c.w));
     }
-    const add = (from) => {
-      const c = weighted(from, (x) => x.w);
-      chosen.add(c);
-    };
-    for (let f = 0; f < F; f++) {
-      for (let i = 0; i < 12 && fixedAlone([...chosen], f) < start; i++) {
-        const own = pool.filter((c) => c.f === f && !isCross(c) && !chosen.has(c));
-        if (!own.length) break;
-        add(own);
-      }
-    }
-    for (let i = 0; i < 60 && !joint([...chosen]); i++) {
+    for (let i = 0; i < 60 && !enough([...chosen]); i++) {
       const rest = pool.filter((c) => !chosen.has(c));
       if (!rest.length) break;
-      add(rest);
+      chosen.add(weighted(rest, (c) => c.w));
     }
-    if (!joint([...chosen])) continue;
+    if (!enough([...chosen])) continue;
 
-    // Weglassen, was nicht gebraucht wird: zuerst Hinweise innerhalb eines Stockwerks, damit die
-    // Verbindungen bleiben. Ein Stockwerk behält genug, um allein anzufangen.
+    // Weglassen, was nicht gebraucht wird
     let clues = [...chosen];
-    const order = [...shuffle(clues.filter((c) => !isCross(c))), ...shuffle(clues.filter(isCross))];
-    const aloneNow = all.map((f) => fixedAlone(clues, f));
-    for (const c of order) {
+    for (const c of shuffle([...clues])) {
       const without = clues.filter((x) => x !== c);
-      // zuerst die billige Prüfung (ein Stockwerk), dann der ganze Löser
-      const k = isCross(c) ? null : fixedAlone(without, c.f);
-      if (k !== null && k < start && aloneNow[c.f] >= start) continue;
-      if (!joint(without)) continue;
-      clues = without;
-      if (k !== null) aloneNow[c.f] = k;
+      if (enough(without)) clues = without;
     }
-    // Verzahnt: kein Stockwerk allein lösbar, und jedes kann anfangen
-    const counts = all.map((f) => fixedAlone(clues, f));
-    const alone = counts.filter((k) => k === n).length;
-    const slow = counts.filter((k) => k < start).length;
-    const result = { floors, sol, clues };
-    if (alone || slow) {
-      const score = alone * 10 + slow;
-      if (!fallback || score < fallback.score) fallback = { ...result, score };
-      continue;
-    }
-    // Leicht: Personen ohne Hinweis bekommen einen, solange das Stockwerk dadurch nicht allein lösbar wird
+    // Leicht: Personen ohne Hinweis bekommen einen
     if (n === 4) {
-      for (let f = 0; f < F; f++) {
-        for (let p = 0; p < n; p++) {
-          if (clues.some((c) => c.f === f && c.p === p)) continue;
-          const extra = pool.filter((c) => c.f === f && c.p === p && !isCross(c) && c.t !== 'nicht');
-          if (!extra.length) continue;
-          const c = weighted(extra, (x) => x.w);
-          if (fixedAlone([...clues, c], f) < n) clues.push(c);
-        }
+      for (let p = 0; p < n; p++) {
+        if (clues.some((c) => c.p === p)) continue;
+        const extra = pool.filter((c) => c.p === p && c.t !== 'nicht');
+        if (extra.length) clues.push(weighted(extra, (x) => x.w));
       }
     }
-    return result;
+    return { ...fl, sol, clues };
   }
-  return fallback ?? generate(F, n);
+  return generate(n);
 }
 
 // ---------- Spielablauf (Server) ----------
-// Züge (alle mit f = Stockwerk): setzen { p, c } (c = −1: zurück in die Leiste), kreuz { c }, leeren,
-// notiz { p, r, v } (Feld der Notiztabelle auf v), notizen-leeren
+// Züge: setzen { p, c } (c = −1: zurück in die Leiste), kreuz { c, v } (v = Kreuz an oder aus), leeren,
+// notiz { p, r, v } (Feld der Notiztabelle auf v), notizen-leeren. Jeder darf alles, der letzte Zug gilt.
 
 const SIZES = [5, 4, 6];
 const ids = (s) => s.players.map((p) => p.id);
-const nameOf = (s, id) => s.players.find((p) => p.id === id)?.name ?? '?';
 
-const ONES = ['null', 'eins', 'zwei', 'drei', 'vier', 'fünf', 'sechs', 'sieben', 'acht', 'neun', 'zehn'];
-const list = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} und ${names.at(-1)}`);
-
-// Personen für ein Haus: alle Namen verschieden, pro Stockwerk verschiedene Anfangsbuchstaben
-function cast(F, n) {
-  const pool = shuffle([...PEOPLE]);
-  const floors = [];
-  for (let f = 0; f < F; f++) {
-    const floor = [];
-    for (let i = 0; i < pool.length && floor.length < n; i++) {
-      if (floor.some((p) => p.name[0] === pool[i].name[0])) continue;
-      floor.push(pool.splice(i, 1)[0]);
-      i--;
-    }
-    floors.push(floor);
+// Personen mit verschiedenen Anfangsbuchstaben (den tragen die Figuren)
+function cast(n) {
+  const out = [];
+  for (const person of shuffle([...PEOPLE])) {
+    if (out.length < n && !out.some((p) => p.name[0] === person.name[0])) out.push(person);
   }
-  return floors;
+  return out;
 }
 
 export function setup(players, options = {}) {
   const n = SIZES.includes(options.stufe) ? options.stufe : 5;
-  const F = Math.min(4, Math.max(2, players.length));
-  const house = generate(F, n);
-  const people = cast(F, n);
-  const owners = shuffle(players.map((p) => p.id));
-  const crimes = shuffle(Object.keys(CRIMES).filter((k) => k !== 'mord')).slice(0, F - 1);
-  crimes.splice(rnd(F), 0, 'mord'); // in jedem Haus genau ein Mord
+  const { sol, clues, ...layout } = generate(n);
   return {
     players: players.map(({ id, name }) => ({ id, name })),
     n,
-    helfen: options.helfen === 'mit' ? 'mit' : 'zeigen',
     house: pick(HOUSES),
-    floors: house.floors.map((layout, f) => ({
-      ...layout,
-      owner: owners[f % owners.length],
-      crime: crimes[f],
-      people: people[f],
-      clues: house.clues.filter((c) => c.f === f).map(({ f: _, w, ...c }) => c),
-      sol: house.sol[f],
-      pos: Array(n).fill(-1),
-      notes: Array(n * layout.names.length).fill(0), // Notiztabelle Personen × Räume: 0 leer, 1 Kreuz, 2 Haken
-      marks: [],
-      solved: false,
-    })),
+    crime: Math.random() < 0.5 ? 'mord' : pick(Object.keys(CRIMES).filter((k) => k !== 'mord')),
+    ...layout, // t, rooms, names, items, win
+    people: cast(n),
+    clues: clues.map(({ w, ...c }) => c),
+    sol,
+    pos: Array(n).fill(-1),
+    by: Array(n).fill(null), // wer die Person gesetzt hat
+    marks: [],
+    notes: Array(n * layout.names.length).fill(0), // Notiztabelle Personen × Räume: 0 leer, 1 Kreuz, 2 Haken
+    last: null, // letzter Zug: { k: laufende Nummer, by, t, p, c }
+    solved: false,
   };
 }
 
-function floorOf(s, data) {
-  const f = data?.f;
-  if (!Number.isInteger(f) || !s.floors[f]) throw new Error('Dieses Stockwerk gibt es nicht.');
-  return s.floors[f];
+/**
+ * Ein Zug auf dem Stand { pos, by, marks, notes }, ohne Prüfung. Läuft auf dem Server und im Browser,
+ * der eigene Züge sofort zeigt und sie auf jeden neuen Stand des Servers noch einmal anwendet, bis sie
+ * dort angekommen sind. Deshalb ändert ein Zug nichts, wenn er zweimal kommt (Kreuz an statt umschalten).
+ * k = Zahl der Räume (Spalten der Notiztabelle).
+ */
+function move(st, k, player, type, data) {
+  const n = st.pos.length;
+  if (type === 'setzen') {
+    const { p, c } = data;
+    if (c >= 0) {
+      const there = st.pos.indexOf(c);
+      if (there >= 0 && there !== p) {
+        st.pos[there] = -1; // wer dort stand, geht zurück in die Leiste
+        st.by[there] = null;
+      }
+      st.marks = st.marks.filter((x) => x !== c);
+    }
+    if (st.pos[p] !== c) st.by[p] = c >= 0 ? player : null;
+    st.pos[p] = c;
+  } else if (type === 'kreuz') {
+    if (st.pos.includes(data.c)) return;
+    const has = st.marks.includes(data.c);
+    const on = typeof data.v === 'boolean' ? data.v : !has;
+    if (on && !has) st.marks = [...st.marks, data.c];
+    if (!on && has) st.marks = st.marks.filter((x) => x !== data.c);
+  } else if (type === 'leeren') {
+    st.pos = Array(n).fill(-1);
+    st.by = Array(n).fill(null);
+    st.marks = [];
+  } else if (type === 'notiz') {
+    st.notes[data.p * k + data.r] = data.v;
+  } else if (type === 'notizen-leeren') {
+    st.notes = st.notes.map(() => 0);
+  }
 }
 
 export function action(s, { player, type, data }) {
-  if (s.result || !ids(s).includes(player)) return;
-  const fl = floorOf(s, data);
-  if (fl.solved) return; // gelöst: nichts mehr zu ändern
-  if (s.helfen !== 'mit' && fl.owner !== player) {
-    throw new Error(`Das ist das Stockwerk von ${nameOf(s, fl.owner)}. Du kannst zuschauen und zeigen.`);
-  }
-  const N2 = s.n * s.n;
-  const cell = data?.c;
-  const validCell = Number.isInteger(cell) && cell >= 0 && cell < N2;
-
+  if (s.result || s.solved || !ids(s).includes(player)) return;
+  const n = s.n;
+  const k = s.names.length;
+  const c = data?.c;
+  const validCell = Number.isInteger(c) && c >= 0 && c < n * n;
   if (type === 'setzen') {
     const p = data?.p;
-    if (!Number.isInteger(p) || p < 0 || p >= s.n) throw new Error('Diese Person gibt es nicht.');
-    if (cell === -1) {
-      fl.pos[p] = -1;
-    } else {
-      if (!validCell) throw new Error('Dieses Feld gibt es nicht.');
-      if (!free(fl.items[cell])) throw new Error(`Auf ${ITEMS[fl.items[cell]]?.dat ?? 'diesem Feld'} kann niemand stehen.`);
-      const there = fl.pos.indexOf(cell);
-      if (there >= 0 && there !== p) fl.pos[there] = -1; // wer dort stand, geht zurück in die Leiste
-      fl.pos[p] = cell;
-      fl.marks = fl.marks.filter((c) => c !== cell);
-    }
-    if (fl.pos.every((c, i) => c === fl.sol[i])) solve(s);
-    return;
-  }
-  if (type === 'kreuz') {
+    if (!Number.isInteger(p) || p < 0 || p >= n) throw new Error('Diese Person gibt es nicht.');
+    if (c !== -1 && !validCell) throw new Error('Dieses Feld gibt es nicht.');
+    if (c !== -1 && !free(s.items[c])) throw new Error(`Auf ${ITEMS[s.items[c]]?.dat ?? 'diesem Feld'} kann niemand stehen.`);
+  } else if (type === 'kreuz') {
     if (!validCell) throw new Error('Dieses Feld gibt es nicht.');
-    if (fl.pos.includes(cell) || !free(fl.items[cell])) return;
-    fl.marks = fl.marks.includes(cell) ? fl.marks.filter((c) => c !== cell) : [...fl.marks, cell];
-    return;
-  }
-  if (type === 'leeren') {
-    fl.pos = Array(s.n).fill(-1);
-    fl.marks = [];
-    return;
-  }
-  const k = fl.names.length;
-  if (type === 'notiz') {
+    if (!free(s.items[c])) return;
+  } else if (type === 'notiz') {
     const { p, r, v } = data ?? {};
-    if (!Number.isInteger(p) || p < 0 || p >= s.n || !Number.isInteger(r) || r < 0 || r >= k || ![0, 1, 2].includes(v)) {
+    if (!Number.isInteger(p) || p < 0 || p >= n || !Number.isInteger(r) || r < 0 || r >= k || ![0, 1, 2].includes(v)) {
       throw new Error('Diese Notiz gibt es nicht.');
     }
-    fl.notes ??= Array(s.n * k).fill(0); // Partien von vor der Notiztabelle
-    fl.notes[p * k + r] = v;
+  } else if (type !== 'leeren' && type !== 'notizen-leeren') {
     return;
   }
-  if (type === 'notizen-leeren') fl.notes = Array(s.n * k).fill(0);
+  s.by ??= Array(n).fill(null);
+  s.notes ??= Array(n * k).fill(0);
+  const before = JSON.stringify([s.pos, s.by, s.marks, s.notes]);
+  move(s, k, player, type, data);
+  if (JSON.stringify([s.pos, s.by, s.marks, s.notes]) === before) return; // nichts geändert: nicht speichern
+  // Was zuletzt passiert ist, damit die anderen sehen, von wem es kam
+  s.last = { k: (s.last?.k ?? 0) + 1, by: player, t: type };
+  if (type === 'setzen') Object.assign(s.last, { p: data.p, c });
+  if (s.pos.every((x, i) => x === s.sol[i])) {
+    s.solved = true;
+    s.result = { winners: ids(s), text: `Der Fall ${houseIn(s.house)} ist gelöst.` };
+  }
 }
 
-// Ein Stockwerk steht richtig. Sind alle gelöst, gewinnen alle zusammen.
-function solve(s) {
-  for (const fl of s.floors) if (fl.pos.every((c, i) => c === fl.sol[i])) fl.solved = true;
-  if (!s.floors.every((x) => x.solved)) return;
-  const F = s.floors.length;
-  s.result = {
-    winners: ids(s),
-    text: `${F === 2 ? 'Beide' : `Alle ${ONES[F]}`} Fälle ${houseIn(s.house)} sind gelöst.`,
-  };
+// Partien von vor dem gemeinsamen Fall (jeder ein Stockwerk): mit einem neuen Fall weiterspielen
+export function tick(s) {
+  if (Array.isArray(s.floors)) return setup(s.players, { stufe: s.n });
 }
 
-// Wer noch ein offenes Stockwerk hat
+// Alle können jederzeit etwas tun
 export function waitingFor(s) {
-  if (s.result) return [];
-  return [...new Set(s.floors.filter((x) => !x.solved).map((x) => x.owner))];
+  return s.result ? [] : ids(s);
 }
 
-// Nachrichten nur, wenn ein Stockwerk gelöst ist, nicht bei jedem Setzen
-export function notices(s, before, player) {
-  if (s.result) return [];
-  const fresh = s.floors.filter((x, f) => x.solved && !before.floors[f].solved);
-  if (!fresh.length) return [];
-  const fl = fresh[0];
-  const open = s.floors.filter((x) => !x.solved);
-  const text = `${cap(FLOOR_IN[fl.t])} ist der Fall gelöst. Noch offen: ${list(open.map((x) => FLOORS[x.t].name))}.`;
-  return ids(s).map((to) => ({ to, text }));
+// Keine Nachricht bei jedem Setzen; Start und Ende meldet die Plattform
+export function notices() {
+  return [];
 }
 
-// Geheim ist nur die Lösung offener Stockwerke
+// Geheim ist nur die Lösung, bis der Fall gelöst ist
 export function view(s) {
-  return { ...s, floors: s.floors.map((fl) => (fl.solved ? fl : { ...fl, sol: null })) };
+  return s.solved ? s : { ...s, sol: null };
 }
 
 // ---------- Anzeige (nur im Browser) ----------
@@ -1156,37 +1002,6 @@ function planSvg(fl, n) {
   </svg>`;
 }
 
-// Durchsicht: Wände, Räume und gesetzte Personen eines anderen Stockwerks, darübergelegt
-function xraySvg(fl, n, pos, people) {
-  const W = n * 100;
-  const size = 3.4 * n + 2;
-  const walls = wallLines(fl, n)
-    .map((l) => `<line x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}"/>`)
-    .join('');
-  const labels = fl.names
-    .map((key, r) => {
-      const cells = roomCells(fl, r);
-      const c = Math.max(...cells);
-      const x = (c % n) * 100 + 92;
-      const y = Math.floor(c / n) * 100 + 90;
-      return `<text x="${x}" y="${y}" text-anchor="end" style="font-size:${(size * 0.9).toFixed(1)}px">${ROOMS[key]?.name ?? ''}</text>`;
-    })
-    .join('');
-  const ghosts = pos
-    .map((c, p) => {
-      if (c < 0) return '';
-      const x = (c % n) * 100 + 50;
-      const y = Math.floor(c / n) * 100 + 50;
-      const [body] = p === 0 ? VICTIM : SUSPECT[(p - 1) % SUSPECT.length];
-      return `<g class="kd-ghost" data-p="${p}"><circle cx="${x}" cy="${y}" r="27" fill="${PAPER}" fill-opacity=".85" stroke="${p === 0 ? INK : body}" stroke-width="6" stroke-dasharray="9 6"/>
-        <text x="${x}" y="${y + 11}" text-anchor="middle" style="font:800 32px var(--font-display)" fill="${p === 0 ? INK : body}">${people[p].name[0]}</text></g>`;
-    })
-    .join('');
-  return `<svg class="kd-xray" viewBox="-8 -8 ${W + 16} ${W + 16}" aria-hidden="true">
-    <g class="kd-xray-walls" fill="none">${walls}<rect x="0" y="0" width="${W}" height="${W}"/></g>
-    <g class="kd-xray-labels">${labels}</g>${ghosts}</svg>`;
-}
-
 // ---------- Kleine Zeichnungen ----------
 
 const CHECK = '<svg class="kd-check" viewBox="0 0 20 20" aria-hidden="true"><path pathLength="1" d="M4 10.5 L8.5 15 L16 5"/></svg>';
@@ -1197,38 +1012,14 @@ const STAMP = `<svg class="kd-stamp" viewBox="0 0 120 44" aria-hidden="true">
   <rect x="9" y="9" width="102" height="26" rx="2" fill="none" stroke="${C.stempel}" stroke-width="1.6"/>
   <text x="60" y="31.5" text-anchor="middle" style="font:900 25px var(--font-display);letter-spacing:4px" fill="${C.stempel}">TÄTER</text>
 </svg>`;
-const SOLVED_MARK = `<svg class="kd-seal" viewBox="0 0 40 40" aria-hidden="true">
-  <circle cx="20" cy="20" r="16" fill="${PAPER}" stroke="${C.stempel}" stroke-width="2.6"/>
-  <circle cx="20" cy="20" r="12.5" fill="none" stroke="${C.stempel}" stroke-width="1.1"/>
-  <path pathLength="1" d="M13 20.5 L18 25.5 L27.5 14.5" fill="none" stroke="${C.stempel}" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>`;
 
-// Haus im Schnitt: Dach mit Schornstein, darunter ein Streifen pro Stockwerk
+// Dach mit Schornstein, neben dem Namen des Hauses
 const ROOF = `<svg class="kd-roof-svg" viewBox="0 0 80 34" aria-hidden="true"><g ${sw(2.2)}>
   <path d="M55 6 H63 V20 H55 Z" fill="${C.rost}"/><path d="M53.5 4 H64.5 V7.5 H53.5 Z" fill="${INK}"/>
   <path d="M3 33 L40 6 L77 33 Z" fill="${C.rostDunkel}"/>
   <path d="M14 25 L40 7.5 M23 28 L45 12 M33 31 L52 17" stroke="#fff" stroke-width="1.2" opacity=".35"/>
   <circle cx="40" cy="22" r="4.2" fill="${PAPER}"/><path d="M40 18 V26 M36 22 H44" stroke-width="1.2"/>
 </g></svg>`;
-function sliceSvg(type, bottom) {
-  const panes = type === 'eg' ? [14, 50, 66] : [14, 32, 50, 66];
-  const wins =
-    type === 'keller'
-      ? ''
-      : panes.map((x) => `<rect x="${x}" y="8" width="9" height="11" fill="${C.wasser}" stroke="${INK}" stroke-width="1.6"/><path d="M${x + 4.5} 8 V19" stroke="${INK}" stroke-width="1"/>`).join('');
-  const door = type === 'eg' ? `<path d="M34 30 V16 Q38.5 12 43 16 V30 Z" fill="${C.holzDunkel}" stroke="${INK}" stroke-width="1.6"/>` : '';
-  // Keller: Erdreich oben am Rand, kleine Kellerfenster
-  const ground =
-    type === 'keller'
-      ? `<path d="M2 1 H78" stroke="${C.gruen}" stroke-width="3"/><g stroke="${INK}" stroke-width=".9" opacity=".35">${Array.from({ length: 9 }, (_, i) => `<path d="M${4 + i * 9} 5 l5 5"/>`).join('')}</g>
-    <rect x="16" y="13" width="10" height="6" fill="${PAPER}" stroke="${INK}" stroke-width="1.4"/><rect x="54" y="13" width="10" height="6" fill="${PAPER}" stroke="${INK}" stroke-width="1.4"/>`
-      : '';
-  return `<svg class="kd-slice-svg" viewBox="0 0 80 30" preserveAspectRatio="none" aria-hidden="true">
-    <rect x="7" y="0" width="66" height="30" fill="${type === 'keller' ? '#ddd5c6' : '#f1e5cf'}"/>${wins}${door}${ground}
-    <path d="M7 0 V30 M73 0 V30" stroke="${INK}" stroke-width="3"/>
-    ${bottom ? `<path d="M2 29 H78" stroke="${INK}" stroke-width="3"/>` : `<path d="M7 29.5 H73" stroke="${INK}" stroke-width="1.4"/>`}
-  </svg>`;
-}
 
 // ---------- Hilfen für die Anzeige ----------
 
@@ -1244,17 +1035,15 @@ const marker = (game, id) => `<span class="marker" style="color:${game.color(id)
 const personColor = (p) => (p === 0 ? INK : SUSPECT[(p - 1) % SUSPECT.length][0]);
 const CRIME_DONE = { mord: 'ermordet', raub: 'bestohlen', gift: 'vergiftet', schlag: 'niedergeschlagen', erpressung: 'erpresst' };
 
-// Täter: wer im Raum des Opfers stand (nur für gelöste Stockwerke, dann ist pos die Lösung)
+// Täter: wer im Raum des Opfers stand (nur für gelöste Fälle, dann ist pos die Lösung)
 function culpritOf(fl) {
   const room = fl.rooms[fl.pos[0]];
   return fl.pos.findIndex((c, p) => p > 0 && c >= 0 && fl.rooms[c] === room);
 }
 
 // Ist ein Hinweis mit den gesetzten Personen erfüllt? 'ok', 'bad' oder '' (noch offen)
-function clueState(floors, f, clue, posOf) {
-  const fl = floors[f];
-  const n = fl.pos.length;
-  const pos = posOf(f);
+function clueState(fl, clue, pos) {
+  const n = pos.length;
   const at = pos[clue.p];
   const roomAt = (c) => fl.rooms[c];
   const test = (ok) => (ok ? 'ok' : 'bad');
@@ -1280,17 +1069,6 @@ function clueState(floors, f, clue, posOf) {
       const b = pos[clue.q];
       return b < 0 ? '' : test(roomAt(b) === roomAt(at));
     }
-    case 'genau': {
-      const b = posOf(clue.g)[clue.q];
-      return b < 0 ? '' : test(b === at);
-    }
-    case 'ueber':
-      return test(floors[clue.g].rooms[at] === clue.r);
-    case 'zimmer': {
-      const b = posOf(clue.g)[clue.q];
-      const other = floors[clue.g].rooms;
-      return b < 0 ? '' : test(other[at] === other[b]);
-    }
   }
   return '';
 }
@@ -1311,255 +1089,255 @@ function clashes(pos, n) {
 // ---------- Zustand im Browser (überlebt neues Zeichnen) ----------
 
 const ui = new WeakMap();
+const HOLD_MS = 20000; // so lange gilt „hat X in der Hand“ ohne neue Nachricht
 
 function local(el, game) {
   let u = ui.get(el);
   if (!u || u.signal !== game.signal) {
     u = {
       signal: game.signal,
-      floor: null, // welches Stockwerk gerade zu sehen ist
-      drawn: null, // welches gezeichnet ist (Schlüssel)
-      sel: null, // ausgewählte Person auf diesem Stockwerk
-      over: {}, // eigene Züge, die der Server noch nicht bestätigt hat: { [f]: { pos, marks, notes, done } }
-      pending: {}, // wie viele Anfragen pro Stockwerk noch unterwegs sind
+      sel: null, // ausgewählte Person
+      ops: [], // eigene Züge, die der Server noch nicht bestätigt hat: { type, data, done }
       queue: Promise.resolve(),
-      xray: null,
-      shownPos: {}, // was gerade auf dem Brett steht (für Bewegungen)
-      shownMarks: {},
-      shownNotes: {},
-      shownSolved: {},
-      clueShown: {},
+      shownPos: null, // was gerade auf dem Brett steht (für Bewegungen)
+      shownMarks: null,
+      shownNotes: null,
+      shownSolved: null,
+      clueShown: [],
       fly: null, // Person, die gerade aus der Leiste kommt: { p, rect }
+      flyBack: null, // Person, die gerade zurück in die Leiste geht
       confirm: 0,
-      pingAt: 0,
-      looking: {}, // wer gerade welches Stockwerk ansieht: { [id]: { f, at } }
+      confirmNotes: 0,
+      lastK: null, // Nummer des letzten Zugs, der schon gezeigt wurde
+      flash: null, // Satz über einen Zug der anderen: { text, until }
+      hand: null, // wen ich gerade in der Hand habe (den anderen gesagt)
+      holding: {}, // wen die anderen in der Hand haben: { [id]: { p, at } }
     };
     ui.set(el, u);
-    game.live.on((data, from) => onLive(el, u, data, from));
+    game.live.on((data, from) => onLive(u, data, from));
+    game.signal.addEventListener('abort', () => clearInterval(u.handTimer), { once: true });
   }
   return u;
 }
 
-const posOfShown = (u, s) => (f) => u.over[f]?.pos ?? s.floors[f].pos;
-const marksOfShown = (u, s, f) => u.over[f]?.marks ?? s.floors[f].marks;
-const notesOfShown = (u, s, f) => u.over[f]?.notes ?? s.floors[f].notes ?? Array(s.n * s.floors[f].names.length).fill(0);
-const canEdit = (s, f, game) => !game.result && !s.floors[f].solved && (s.helfen === 'mit' || s.floors[f].owner === game.me);
+// Was auf dem Brett steht: Stand des Servers und darauf die eigenen Züge, die noch unterwegs sind
+function shown(u) {
+  const { s, game } = u;
+  const st = {
+    pos: [...s.pos],
+    by: [...(s.by ?? s.pos.map(() => null))],
+    marks: [...s.marks],
+    notes: [...(s.notes ?? Array(s.n * s.names.length).fill(0))],
+  };
+  for (const op of u.ops) move(st, s.names.length, game.me, op.type, op.data);
+  return st;
+}
+const canEdit = (u) => !u.game.result && !u.s.solved;
 
 // ---------- Anzeige ----------
 
 export function render(el, s, game) {
+  // Fertige Partien von vor dem gemeinsamen Fall: das erste Stockwerk zeigen
+  if (Array.isArray(s.floors)) s = { ...s, ...s.floors[0], clues: s.floors[0].clues.filter((c) => c.g === undefined) };
   const u = local(el, game);
   u.s = s;
   u.game = game;
-  // Bestätigt: Der Server-Stand enthält die eigenen Züge
-  for (const f of Object.keys(u.over)) if (u.over[f].done) delete u.over[f];
-  if (u.floor === null) {
-    const mine = s.floors.findIndex((fl) => fl.owner === game.me);
-    u.floor = mine >= 0 ? mine : 0;
-  }
+  // Bestätigt: Der Stand des Servers enthält diese eigenen Züge schon
+  u.ops = u.ops.filter((op) => !op.done);
 
   let root = el.querySelector(':scope > .kd');
   if (!root) {
-    el.innerHTML = `<div class="kd ${game.first && !game.reducedMotion ? 'intro' : ''}" style="--n:${s.n}">
-      <ol class="kd-house" aria-label="Stockwerke"></ol>
-      <section class="kd-sheet">
-        <div class="kd-case"></div>
-        <div class="kd-main">
-          <div class="kd-board">
-            <div class="kd-cols" aria-hidden="true">${Array.from({ length: s.n }, (_, i) => `<span>${'ABCDEF'[i]}</span>`).join('')}</div>
-            <div class="kd-rows" aria-hidden="true">${Array.from({ length: s.n }, (_, i) => `<span>${i + 1}</span>`).join('')}</div>
-            <div class="kd-plan"><div class="kd-planbox"></div><div class="kd-xraybox"></div><div class="kd-cells"></div><div class="kd-tokens"></div><div class="kd-fx"></div></div>
-          </div>
-          <div class="kd-side">
-            <p class="kd-hint" aria-live="polite"></p>
-            <div class="kd-tray"></div>
-            <div class="kd-tools"></div>
-            <div class="kd-clues"></div>
-            <div class="kd-notes-box"></div>
-          </div>
-        </div>
-      </section>
-      <div class="kd-end"></div>
-      <details class="kd-rules"><summary>So geht’s</summary>${rulesHtml(s)}</details>
-    </div>`;
+    el.innerHTML = pageHtml(s, game);
     root = el.firstElementChild;
     if (root.classList.contains('intro')) setTimeout(() => root.classList.remove('intro'), 1500);
     bind(root, u);
   }
   u.root = root;
+
+  // Ein Zug der anderen: wer es war
+  const last = s.last;
+  const fresh = last && u.lastK !== null && last.k !== u.lastK && last.by !== game.me ? last : null;
+  u.lastK = last?.k ?? 0;
+  if (fresh) {
+    delete u.holding[fresh.by];
+    const who = game.esc(game.name(fresh.by));
+    const text = { leeren: `${who} hat alle Personen und Kreuze weggenommen.`, 'notizen-leeren': `${who} hat alle Notizen gelöscht.` }[fresh.t];
+    if (text) {
+      u.flash = { text, until: Date.now() + 6000 };
+      setTimeout(() => !u.signal.aborted && draw(u), 6100);
+    }
+  }
   draw(u);
+  if (fresh?.t === 'setzen' && fresh.c >= 0) ping(u, fresh.c, fresh.by);
 }
 
-function rulesHtml(s) {
-  return `<ol class="kd-rules-list">
-    <li>Jeder hat ein Stockwerk. Auf jedem stand in jeder Zeile und jeder Spalte genau eine Person.</li>
+const RULES = `<ol class="kd-rules-list">
+    <li>In jeder Zeile und jeder Spalte stand genau eine Person.</li>
     <li>Niemand stand auf Tischen, Pflanzen, Regalen, Kisten, Fässern, Herden, Badewannen oder Klavieren. Auf Stühlen und Sesseln saß man, auf Betten lag man, auf Teppichen stand man.</li>
-    <li>„Neben“ heißt waagerecht oder senkrecht daneben. „Über“ und „unter“ heißt: auf demselben Feld ein Stockwerk höher oder tiefer. Die Durchsicht legt das Stockwerk darunter oder darüber auf den Grundriss.</li>
+    <li>„Neben“ heißt waagerecht oder senkrecht daneben.</li>
     <li>Täter ist, wer als Einziger mit dem Opfer im selben Raum war.</li>
-    <li>${s.helfen === 'mit' ? 'Ihr dürft überall mitlösen.' : 'Bei den anderen könnt ihr zuschauen und auf Felder zeigen.'} Sind alle Stockwerke gelöst, habt ihr zusammen gewonnen.</li>
+    <li>Ihr löst zusammen: Jeder kann Personen setzen, Kreuze machen und Notizen eintragen, die anderen sehen es sofort. Steht jede Person richtig, ist der Fall gelöst.</li>
   </ol>
   <p class="kd-rules-tip">Ein Tipp auf ein leeres Feld setzt ein Kreuz: Hier war niemand. In der Notiztabelle setzt ein Tipp ein Kreuz (nicht in diesem Raum), der zweite einen Haken (in diesem Raum), der dritte leert das Feld.</p>`;
+
+// Die ganze Ansicht, einmal pro Partie gebaut; danach ändern sich nur Klassen, Texte und Figuren
+function pageHtml(s, game) {
+  const n = s.n;
+  const cells = Array.from({ length: n * n }, (_, c) => {
+    const blocked = !free(s.items[c]);
+    return `<button class="kd-cell ${blocked ? 'blocked' : ''}" type="button" data-c="${c}" style="--x:${c % n};--y:${Math.floor(c / n)}"></button>`;
+  }).join('');
+  return `<div class="kd ${game.first && !game.reducedMotion ? 'intro' : ''}" style="--n:${n}">
+    <section class="kd-sheet">
+      <header class="kd-case">
+        <h3 class="kd-title"><span class="kd-roof">${ROOF}</span><span class="kd-house-name">${game.esc(s.house)}</span></h3>
+        <p class="kd-crime"></p>
+      </header>
+      <div class="kd-main">
+        <div class="kd-board">
+          <div class="kd-cols" aria-hidden="true">${Array.from({ length: n }, (_, i) => `<span>${'ABCDEF'[i]}</span>`).join('')}</div>
+          <div class="kd-rows" aria-hidden="true">${Array.from({ length: n }, (_, i) => `<span>${i + 1}</span>`).join('')}</div>
+          <div class="kd-plan"><div class="kd-planbox">${planSvg(s, n)}</div><div class="kd-cells">${cells}</div><div class="kd-tokens"></div><div class="kd-fx"></div></div>
+        </div>
+        <div class="kd-side">
+          <p class="kd-hint" aria-live="polite"></p>
+          <div class="kd-tray">${trayHtml(s, game)}</div>
+          <div class="kd-tools"></div>
+          <div class="kd-clues">${cluesHtml(s, game)}</div>
+          <div class="kd-notes-box">${notesHtml(s, game)}</div>
+        </div>
+      </div>
+    </section>
+    <details class="kd-rules"><summary>So geht’s</summary>${RULES}</details>
+  </div>`;
+}
+
+function trayHtml(s, game) {
+  return s.people
+    .map(
+      (person, p) => `<button class="kd-person" type="button" data-p="${p}">
+        <span class="kd-person-pawn">${pawn(person, p)}</span>
+        <span class="kd-person-text"><b>${game.esc(person.name)}</b><small><span class="kd-role">${p === 0 ? 'Opfer' : game.esc(person.role)}</span><span class="kd-held"></span></small></span>
+        <span class="kd-at num"></span>
+      </button>`,
+    )
+    .join('');
+}
+
+function refHtml(s, game, p) {
+  const person = s.people[p];
+  if (!person) return '';
+  return `<button class="kd-ref" type="button" data-p="${p}" style="--pc:${personColor(p)}"><i></i>${game.esc(person.name)}</button>`;
+}
+
+// Hinweise nach Personen geordnet, Räume ohne Person am Ende
+function cluesHtml(s, game) {
+  const items = s.clues
+    .map((c, i) => [c, i])
+    .sort((a, b) => (a[0].p < 0 ? 99 : a[0].p) - (b[0].p < 0 ? 99 : b[0].p) || a[1] - b[1])
+    .map(([clue, i], j) => {
+      const text = clueParts(s, clue)
+        .map((x) => (typeof x === 'string' ? x : refHtml(s, game, x)))
+        .join('');
+      return `<li class="kd-clue" data-i="${i}" style="--i:${Math.min(j, 12)}"><span class="kd-clue-mark"><i></i></span><span class="kd-clue-text">${text}</span></li>`;
+    })
+    .join('');
+  return `<h4 class="kd-clues-head">Hinweise</h4><ol class="kd-clue-list">${items}</ol>`;
+}
+
+// Notiztabelle wie im Rätselbuch: Personen × Räume, ein Tipp Kreuz, zwei Haken, drei leer. Räume in
+// Lesereihenfolge des Grundrisses (oben links zuerst).
+const NOTE_X = '<svg class="kd-nx" viewBox="0 0 20 20" aria-hidden="true"><path pathLength="1" d="M5.5 5 Q10 10.5 14.8 15.2"/><path pathLength="1" d="M14.6 4.8 Q9.6 10.4 5.2 15.3"/></svg>';
+const NOTE_OK = '<svg class="kd-nok" viewBox="0 0 20 20" aria-hidden="true"><path pathLength="1" d="M4 10.8 Q6.5 12.6 8.4 15.6 Q11.5 8.6 16.4 4.4"/></svg>';
+const NOTE_WORD = ['offen', 'nicht dort', 'dort'];
+
+function notesHtml(s, game) {
+  const order = s.names.map((_, r) => r).sort((a, b) => Math.min(...roomCells(s, a)) - Math.min(...roomCells(s, b)));
+  const head = order.map((r) => `<th scope="col"><span>${ROOMS[s.names[r]]?.name ?? ''}</span></th>`).join('');
+  const rows = s.people
+    .map((person, p) => {
+      const cells = order
+        .map((r) => `<td><button class="kd-note" type="button" data-p="${p}" data-r="${r}" data-v=""></button></td>`)
+        .join('');
+      return `<tr data-p="${p}"><th scope="row"><span class="kd-notes-pawn">${pawn(person, p)}</span><span class="kd-notes-name">${game.esc(person.name)}</span></th>${cells}</tr>`;
+    })
+    .join('');
+  return `<h4 class="kd-clues-head">Notizen</h4>
+    <table class="kd-notes" style="--k:${s.names.length}"><colgroup><col class="kd-notes-who">${order.map(() => '<col>').join('')}</colgroup>
+      <thead><tr><td></td>${head}</tr></thead><tbody>${rows}</tbody></table>
+    <p class="kd-notes-foot"></p>`;
 }
 
 // Alles neu zeichnen, was sich geändert haben kann (auch nach eigenen Zügen, bevor der Server antwortet)
 function draw(u) {
+  const st = shown(u);
+  const edit = canEdit(u);
+  if (!edit) u.sel = null;
+  renderCase(u);
+  renderCells(u, st, edit);
+  renderTokens(u, st, edit);
+  renderTray(u, st, edit);
+  renderHint(u, st, edit);
+  renderTools(u, st, edit);
+  renderClues(u, st);
+  renderNotes(u, st, edit);
+  renderSolved(u);
+  renderHolding(u);
+  syncHand(u, edit ? (u.drag?.moved ? u.drag.p : u.sel) : null);
+}
+
+function renderCase(u) {
   const { s, game, root } = u;
-  const f = u.floor;
-  const fl = s.floors[f];
-  const n = s.n;
-  const posOf = posOfShown(u, s);
-  const pos = posOf(f);
-  const marks = marksOfShown(u, s, f);
-  const edit = canEdit(s, f, game);
-  if (u.sel !== null && (!edit || u.sel >= n)) u.sel = null;
-
-  renderHouse(u);
-
-  // Stockwerk wechseln: Grundriss neu, fährt aus der Richtung herein
-  const key = `${f}`;
-  const plan = root.querySelector('.kd-plan');
-  if (u.drawn !== key) {
-    const from = u.drawn === null ? null : Number(u.drawn);
-    u.drawn = key;
-    u.sel = null;
-    u.xray = null;
-    put(plan.querySelector('.kd-planbox'), planSvg(fl, n));
-    plan.querySelector('.kd-cells').innerHTML = Array.from({ length: n * n }, (_, c) => {
-      const blocked = !free(fl.items[c]);
-      return `<button class="kd-cell ${blocked ? 'blocked' : ''}" data-c="${c}" style="--x:${c % n};--y:${Math.floor(c / n)}"></button>`;
-    }).join('');
-    plan.querySelector('.kd-tokens').innerHTML = '';
-    plan.querySelector('.kd-fx').innerHTML = '';
-    delete u.shownPos[f];
-    delete u.shownMarks[f];
-    u.shownSolved[f] = fl.solved;
-    u.clueShown = {};
-    if (from !== null && !game.reducedMotion) {
-      const up = f > from;
-      plan.animate(
-        [
-          { transform: `translateY(${up ? -22 : 22}px)`, opacity: 0 },
-          { transform: 'none', opacity: 1 },
-        ],
-        { duration: 340, easing: 'cubic-bezier(.2,.8,.2,1)' },
-      );
-    }
-    sendLooking(u);
-  }
-  root.querySelector('.kd-sheet').dataset.floor = fl.t;
-
-  renderCase(u, fl);
-  renderCells(u, fl, pos, marks, edit);
-  renderTokens(u, fl, pos, edit);
-  renderXray(u);
-  renderTray(u, fl, pos, edit);
-  renderHint(u, fl, pos, edit);
-  renderTools(u, fl, edit);
-  renderClues(u, posOf);
-  renderNotes(u, fl, edit);
-  renderSolved(u, fl);
-  renderEnd(u);
-}
-
-function renderHouse(u) {
-  const { s, game, root } = u;
-  const F = s.floors.length;
-  const rows = [];
-  // Gerade gelöst: Das Siegel im Haus kommt nach der Auflösung
-  const fresh = game.reducedMotion || !u.sealShown ? [] : s.floors.map((fl, f) => (fl.solved && !u.sealShown[f] ? f : -1)).filter((f) => f >= 0);
-  u.sealShown = s.floors.map((fl) => fl.solved);
-  for (let f = F - 1; f >= 0; f--) {
-    const fl = s.floors[f];
-    const pos = posOfShown(u, s)(f);
-    const placed = pos.filter((c) => c >= 0).length;
-    const pips = pos.map((c) => `<i class="${c >= 0 ? 'on' : ''}"></i>`).join('');
-    rows.push(`<li style="--i:${f}"><button class="kd-level ${f === u.floor ? 'is-current' : ''} ${fl.solved ? 'is-solved' : ''}" data-floor="${f}"
-        aria-pressed="${f === u.floor}" aria-label="${FLOORS[fl.t].name}, ${game.esc(game.name(fl.owner))}${fl.solved ? ', gelöst' : ''}">
-      <span class="kd-slice">${sliceSvg(fl.t, f === 0)}${fl.solved ? SOLVED_MARK.replace('kd-seal', `kd-seal ${fresh.includes(f) ? 'fresh' : ''}`) : ''}</span>
-      <span class="kd-level-text"><span class="kd-level-name">${FLOORS[fl.t].name}</span>
-        <span class="kd-level-who">${marker(game, fl.owner)}${fl.owner === game.me ? 'Du' : game.esc(game.name(fl.owner))}<span class="kd-looks" data-f="${f}"></span></span></span>
-      <span class="kd-level-state">${fl.solved ? '<span class="kd-solved-word">Gelöst</span>' : `<span class="kd-pips" aria-label="${placed} von ${s.n} gesetzt">${pips}</span>`}</span>
-    </button></li>`);
-  }
-  put(
-    root.querySelector('.kd-house'),
-    `<li class="kd-roof" style="--i:${F}"><span class="kd-slice">${ROOF}</span><span class="kd-house-name">${game.esc(s.house)}</span></li>${rows.join('')}`,
-  );
-  renderLooks(u);
-}
-
-// Wer gerade welches Stockwerk ansieht: ein Punkt in seiner Farbe hinter dem Namen
-function renderLooks(u) {
-  const { game, root } = u;
-  for (const box of root.querySelectorAll('.kd-looks')) {
-    const f = Number(box.dataset.f);
-    const html = Object.entries(u.looking)
-      .filter(([id, l]) => l.f === f && id !== game.me && Date.now() - l.at < 30000)
-      .map(([id]) => `<span class="kd-look" title="${game.esc(game.name(id))} schaut hier">${marker(game, id)}</span>`)
-      .join('');
-    put(box, html);
-  }
-}
-
-function renderCase(u, fl) {
-  const { game, root } = u;
-  const victim = fl.people[0];
-  const solved = fl.solved;
+  const victim = s.people[0];
   let text;
-  if (solved) {
-    const t = fl.people[culpritOf(fl)];
-    text = `Nur ${game.esc(t.name)} war mit ${game.esc(victim.name)} ${roomIn(fl.names[fl.rooms[fl.pos[0]]])}. ${game.esc(t.role)} ${game.esc(t.name)} hat ${game.esc(victim.role)} ${game.esc(victim.name)} ${CRIME_DONE[fl.crime] ?? 'überfallen'}.`;
+  if (s.solved) {
+    const t = s.people[culpritOf(s)];
+    text = `Nur ${game.esc(t.name)} war mit ${game.esc(victim.name)} ${roomIn(s.names[s.rooms[s.pos[0]]])}. ${game.esc(t.role)} ${game.esc(t.name)} hat ${game.esc(victim.role)} ${game.esc(victim.name)} ${CRIME_DONE[s.crime] ?? 'überfallen'}.`;
   } else {
-    text = `${game.esc(victim.role)} ${game.esc(victim.name)} ${CRIMES[fl.crime] ?? 'wurde überfallen'}. Wer war es?`;
+    text = `${game.esc(victim.role)} ${game.esc(victim.name)} ${CRIMES[s.crime] ?? 'wurde überfallen'}. Wer war es?`;
   }
-  const owner = fl.owner === game.me ? 'Dein Stockwerk' : `Stockwerk von ${game.esc(game.name(fl.owner))}`;
-  put(
-    root.querySelector('.kd-case'),
-    `<h3 class="kd-title">${FLOORS[fl.t].name}<span class="kd-owner">${marker(game, fl.owner)}${owner}</span></h3>
-     <p class="kd-crime ${solved ? 'is-solved' : ''}">${text}</p>`,
-  );
+  const crime = root.querySelector('.kd-crime');
+  put(crime, text);
+  crime.classList.toggle('is-solved', Boolean(s.solved));
 }
 
-function renderCells(u, fl, pos, marks, edit) {
+function renderCells(u, st, edit) {
   const { s, game, root } = u;
   const n = s.n;
-  const f = u.floor;
-  const before = u.shownMarks[f];
-  const zeigen = !edit && !fl.solved && !game.result && s.helfen !== 'mit';
-  root.querySelector('.kd-plan').classList.toggle('is-locked', !edit && !zeigen);
-  root.querySelector('.kd-plan').classList.toggle('is-pointing', zeigen);
-  root.querySelector('.kd-plan').classList.toggle('is-picking', edit && u.sel !== null);
+  const plan = root.querySelector('.kd-plan');
+  plan.classList.toggle('is-locked', !edit);
+  plan.classList.toggle('is-picking', edit && u.sel !== null);
   for (const cell of root.querySelectorAll('.kd-cell')) {
     const c = Number(cell.dataset.c);
-    const marked = marks.includes(c);
+    const marked = st.marks.includes(c);
     const has = cell.querySelector('.kd-x');
     if (marked && !has) {
       cell.insertAdjacentHTML('beforeend', XMARK);
-      if (before && !before.includes(c)) cell.querySelector('.kd-x').classList.add('enter');
+      if (u.shownMarks && !u.shownMarks.includes(c) && !game.reducedMotion) cell.querySelector('.kd-x').classList.add('enter');
     } else if (!marked && has) has.remove();
-    const p = pos.indexOf(c);
-    const room = ROOMS[fl.names[fl.rooms[c]]]?.name ?? '';
-    const item = fl.items[c] ? `, ${ITEMS[fl.items[c]]?.name}` : '';
-    const who = p >= 0 ? `, ${fl.people[p].name}` : marked ? ', Kreuz' : '';
+    const p = st.pos.indexOf(c);
+    const room = ROOMS[s.names[s.rooms[c]]]?.name ?? '';
+    const item = s.items[c] ? `, ${ITEMS[s.items[c]]?.name}` : '';
+    const who = p >= 0 ? `, ${s.people[p].name}` : marked ? ', Kreuz' : '';
     const label = `${coord(n, c)}, ${room}${item}${who}`;
     if (cell.getAttribute('aria-label') !== label) cell.setAttribute('aria-label', label);
-    cell.disabled = !edit && !zeigen;
+    cell.disabled = !edit;
   }
-  u.shownMarks[f] = [...marks];
+  u.shownMarks = [...st.marks];
 }
 
-function renderTokens(u, fl, pos, edit) {
+function renderTokens(u, st, edit) {
   const { s, game, root } = u;
   const n = s.n;
-  const f = u.floor;
+  const pos = st.pos;
   const box = root.querySelector('.kd-tokens');
-  const before = u.shownPos[f];
+  const before = u.shownPos;
   const bad = clashes(pos, n);
   for (let p = 0; p < n; p++) {
     let tok = box.querySelector(`.kd-token[data-p="${p}"]`);
     const c = pos[p];
     if (c < 0) {
-      if (tok && u.flyBack?.p === p && u.flyBack.f === f && !game.reducedMotion) {
+      if (tok && u.flyBack === p && !game.reducedMotion) {
         // zurück in die Leiste: Figur gleitet zu ihrem Platz dort
         const target = root.querySelector(`.kd-person[data-p="${p}"] .kd-person-pawn`);
         if (target) {
@@ -1589,13 +1367,10 @@ function renderTokens(u, fl, pos, edit) {
     const x = c % n;
     const y = Math.floor(c / n);
     if (!tok) {
-      box.insertAdjacentHTML(
-        'beforeend',
-        `<button class="kd-token" data-p="${p}" style="--x:${x};--y:${y}">${pawn(fl.people[p], p)}</button>`,
-      );
+      box.insertAdjacentHTML('beforeend', `<button class="kd-token" type="button" data-p="${p}" style="--x:${x};--y:${y}">${pawn(s.people[p], p)}</button>`);
       tok = box.lastElementChild;
       if (before && !game.reducedMotion) {
-        const fly = u.fly?.p === p && u.fly.f === f ? u.fly : null;
+        const fly = u.fly?.p === p ? u.fly : null;
         if (fly) {
           // aus der Leiste auf das Feld gleiten
           const to = tok.getBoundingClientRect();
@@ -1611,7 +1386,7 @@ function renderTokens(u, fl, pos, edit) {
         } else tok.classList.add('drop');
       }
     } else if (tok.style.getPropertyValue('--x') !== String(x) || tok.style.getPropertyValue('--y') !== String(y)) {
-      const fly = u.fly?.p === p && u.fly.f === f && !game.reducedMotion ? u.fly : null;
+      const fly = u.fly?.p === p && !game.reducedMotion ? u.fly : null;
       if (fly) tok.style.transition = 'none';
       tok.style.setProperty('--x', x);
       tok.style.setProperty('--y', y);
@@ -1630,248 +1405,135 @@ function renderTokens(u, fl, pos, edit) {
     tok.classList.toggle('sel', u.sel === p);
     tok.classList.toggle('clash', bad.has(p));
     tok.disabled = !edit;
-    tok.setAttribute('aria-label', `${fl.people[p].name}, ${coord(n, c)}${u.sel === p ? ', ausgewählt' : ''}`);
+    tok.setAttribute('aria-label', `${s.people[p].name}, ${coord(n, c)}${u.sel === p ? ', ausgewählt' : ''}`);
   }
   u.fly = null;
   u.flyBack = null;
-  u.shownPos[f] = [...pos];
+  u.shownPos = [...pos];
 }
 
-function renderXray(u) {
-  const { s, root } = u;
-  const box = root.querySelector('.kd-xraybox');
-  if (u.xray === null) {
-    put(box, '');
-    return;
+// Leiste: wird nie neu gebaut, damit kein Knopf unter dem Finger verschwindet, wenn die anderen ziehen
+function renderTray(u, st, edit) {
+  const { s, game, root } = u;
+  for (const btn of root.querySelectorAll('.kd-person')) {
+    const p = Number(btn.dataset.p);
+    const c = st.pos[p];
+    const by = c >= 0 ? st.by[p] : null;
+    btn.classList.toggle('is-placed', c >= 0);
+    btn.classList.toggle('sel', u.sel === p);
+    btn.disabled = !edit;
+    btn.setAttribute('aria-pressed', String(u.sel === p));
+    // wo die Person steht, davor ein Quadrat in der Farbe dessen, der sie gesetzt hat
+    put(btn.querySelector('.kd-at'), c >= 0 ? `${by ? marker(game, by) : ''}${coord(s.n, c)}` : '');
+    const person = s.people[p];
+    const where = c >= 0 ? `, steht auf ${coord(s.n, c)}${by ? `, gesetzt von ${by === game.me ? 'dir' : game.name(by)}` : ''}` : '';
+    const label = `${person.role} ${person.name}${p === 0 ? ', Opfer' : ''}${where}`;
+    if (btn.getAttribute('aria-label') !== label) btn.setAttribute('aria-label', label);
   }
-  const g = s.floors[u.xray];
-  put(box, xraySvg(g, s.n, posOfShown(u, s)(u.xray), g.people));
 }
 
-function renderTray(u, fl, pos, edit) {
+function renderHint(u, st, edit) {
   const { s, game, root } = u;
-  const n = s.n;
-  const html = fl.people
-    .map((person, p) => {
-      const c = pos[p];
-      const where = c >= 0 ? `<span class="kd-at num">${coord(n, c)}</span>` : '';
-      return `<button class="kd-person ${c >= 0 ? 'is-placed' : ''} ${u.sel === p ? 'sel' : ''}" data-p="${p}" ${edit ? '' : 'disabled'}
-          aria-pressed="${u.sel === p}" aria-label="${game.esc(person.role)} ${game.esc(person.name)}${p === 0 ? ', Opfer' : ''}${c >= 0 ? `, steht auf ${coord(n, c)}` : ''}">
-        <span class="kd-person-pawn">${pawn(person, p)}</span>
-        <span class="kd-person-text"><b>${game.esc(person.name)}</b><small>${p === 0 ? 'Opfer' : game.esc(person.role)}</small></span>${where}
-      </button>`;
-    })
-    .join('');
-  put(root.querySelector('.kd-tray'), html);
-}
-
-function renderHint(u, fl, pos, edit) {
-  const { s, game, root } = u;
-  const hint = root.querySelector('.kd-hint');
+  const all = st.pos.every((c) => c >= 0);
   let html;
-  if (game.result) html = '';
-  else if (fl.solved) {
-    const open = s.floors.map((g, i) => [g, i]).filter(([g]) => !g.solved);
-    html = `Hier ist alles gelöst. Offen: ${open.map(([g, i]) => `<button class="link kd-go" type="button" data-floor="${i}">${FLOORS[g.t].name}</button>`).join(', ')}.`;
-  }
-  else if (!edit) {
-    html = s.helfen === 'mit' ? '' : `Tippe auf ein Feld, um es allen zu zeigen. Setzen kann ${game.esc(game.name(fl.owner))}.`;
-  } else if (u.sel !== null) {
-    const person = fl.people[u.sel];
-    html = `Wohin mit ${game.esc(person.name)}? Tippe auf ein Feld.${pos[u.sel] >= 0 ? ' <button class="link kd-back" type="button">Zurück in die Leiste</button>' : ''}`;
-  } else if (pos.every((c) => c >= 0)) {
-    html = 'Alle stehen, aber es stimmt noch nicht. Prüfe die Hinweise und die Stockwerke daneben.';
-  } else {
-    html = 'Wähle eine Person und tippe auf ihr Feld. Ein Tipp auf ein leeres Feld setzt ein Kreuz.';
-  }
-  put(hint, html);
+  if (!edit) html = '';
+  else if (u.flash && u.flash.until > Date.now()) html = u.flash.text;
+  else if (u.sel !== null) {
+    const back = st.pos[u.sel] >= 0 ? ' <button class="link kd-back" type="button">Zurück in die Leiste</button>' : '';
+    html = `Wohin mit ${game.esc(s.people[u.sel].name)}? Tippe auf ein Feld.${back}`;
+  } else if (all && u.ops.length) return; // der letzte Zug ist noch unterwegs, vielleicht ist es gelöst
+  else if (all) html = 'Alle stehen, aber es stimmt noch nicht. Prüfe die Hinweise.';
+  else html = 'Wähle eine Person und tippe auf ihr Feld. Ein Tipp auf ein leeres Feld setzt ein Kreuz.';
+  put(root.querySelector('.kd-hint'), html);
 }
 
-function renderTools(u, fl, edit) {
-  const { s, root } = u;
-  const f = u.floor;
-  const near = [f + 1, f - 1].filter((g) => g >= 0 && g < s.floors.length);
-  const xray = near
-    .map((g) => {
-      const on = u.xray === g;
-      return `<button class="kd-xbtn ${on ? 'on' : ''}" type="button" data-xray="${g}" aria-pressed="${on}">
-        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="${g > f ? 'M10 15 V5 M5.5 9.5 L10 5 L14.5 9.5' : 'M10 5 V15 M5.5 10.5 L10 15 L14.5 10.5'}"/></svg>${FLOORS[s.floors[g].t].name}</button>`;
-    })
-    .join('');
-  const reset =
-    edit && (fl.marks.length || fl.pos.some((c) => c >= 0) || u.over[f])
-      ? `<button class="link kd-reset" type="button">${u.confirm > Date.now() ? 'Wirklich alles wegnehmen?' : 'Alles wegnehmen'}</button>`
-      : '';
-  put(root.querySelector('.kd-tools'), `<div class="kd-xrays"><span>Durchsicht</span>${xray}</div>${reset}`);
+function renderTools(u, st, edit) {
+  const any = st.marks.length || st.pos.some((c) => c >= 0);
+  const text = u.confirm > Date.now() ? 'Wirklich alles wegnehmen, auch bei den anderen?' : 'Alles wegnehmen';
+  put(u.root.querySelector('.kd-tools'), edit && any ? `<button class="link kd-reset" type="button">${text}</button>` : '');
 }
 
-function refHtml(u, ref, here) {
-  const { s, game } = u;
-  const g = s.floors[ref.f];
-  const person = g.people[ref.p];
-  if (!person) return '';
-  const other = ref.f !== here ? `<small>${FLOOR_SHORT[g.t]}</small>` : '';
-  return `<button class="kd-ref" type="button" data-f="${ref.f}" data-p="${ref.p}" style="--pc:${personColor(ref.p)}"><i></i>${game.esc(person.name)}${other}</button>`;
-}
-
-function clueHtml(u, f, clue, i, posOf, from) {
-  const { s } = u;
-  const parts = clueParts(s.floors, from, clue)
-    .map((x) => (typeof x === 'string' ? x : refHtml(u, x, f)))
-    .join('');
-  const state = clueState(s.floors, from, clue, posOf);
-  const key = `${from}:${i}`;
-  const fresh = u.clueShown[key] !== undefined && u.clueShown[key] !== state;
-  u.clueShown[key] = state;
-  return `<li class="kd-clue ${state ? `is-${state}` : ''} ${fresh ? 'fresh' : ''}" style="--i:${Math.min(i, 12)}">
-    <span class="kd-clue-mark">${state === 'ok' ? CHECK : state === 'bad' ? CROSS_ICON : '<i></i>'}</span><span class="kd-clue-text">${parts}</span></li>`;
-}
-
-function renderClues(u, posOf) {
-  const { s, root } = u;
-  const f = u.floor;
-  const fl = s.floors[f];
-  // Hinweise dieses Stockwerks nach Personen geordnet, dazu Hinweise anderer Stockwerke über Personen von hier
-  const own = fl.clues.map((c, i) => [c, i]).sort((a, b) => (a[0].p < 0 ? 99 : a[0].p) - (b[0].p < 0 ? 99 : b[0].p) || a[1] - b[1]);
-  const mine = own.map(([c, i]) => clueHtml(u, f, c, i, posOf, f)).join('');
-  const foreign = s.floors
-    .flatMap((g, gi) => g.clues.map((c, i) => [c, i, gi]))
-    .filter(([c, , gi]) => gi !== f && c.g === f && CROSS.includes(c.t))
-    .map(([c, i, gi]) => clueHtml(u, f, c, i, posOf, gi))
-    .join('');
-  const html = `<h4 class="kd-clues-head">Hinweise</h4><ol class="kd-clue-list">${mine}</ol>
-    ${foreign ? `<h4 class="kd-clues-head">Aus den anderen Stockwerken</h4><ol class="kd-clue-list">${foreign}</ol>` : ''}`;
-  const box = root.querySelector('.kd-clues');
-  // Frisch abgehakte Hinweise: nur dieses Mal animieren
-  if (put(box, html)) {
-    for (const li of box.querySelectorAll('.kd-clue.fresh')) li.addEventListener('animationend', () => li.classList.remove('fresh'), { once: true });
-  }
-}
-
-// Notiztabelle wie im Rätselbuch: Personen × Räume, ein Tipp Kreuz, zwei Haken, drei leer.
-// Die Tabelle wird einmal pro Stockwerk gebaut, danach ändern sich nur die Felder (Knöpfe bleiben unter
-// dem Finger). Räume stehen in Lesereihenfolge des Grundrisses (oben links zuerst).
-const NOTE_X = '<svg class="kd-nx" viewBox="0 0 20 20" aria-hidden="true"><path pathLength="1" d="M5.5 5 Q10 10.5 14.8 15.2"/><path pathLength="1" d="M14.6 4.8 Q9.6 10.4 5.2 15.3"/></svg>';
-const NOTE_OK = '<svg class="kd-nok" viewBox="0 0 20 20" aria-hidden="true"><path pathLength="1" d="M4 10.8 Q6.5 12.6 8.4 15.6 Q11.5 8.6 16.4 4.4"/></svg>';
-const NOTE_WORD = ['offen', 'nicht dort', 'dort'];
-
-function renderNotes(u, fl, edit) {
+// Hinweise haken sich aus dem Stand selbst ab; nur was sich gerade geändert hat, wird animiert
+function renderClues(u, st) {
   const { s, game, root } = u;
-  const f = u.floor;
-  const k = fl.names.length;
-  const box = root.querySelector('.kd-notes-box');
-  const order = fl.names.map((_, r) => r).sort((a, b) => Math.min(...roomCells(fl, a)) - Math.min(...roomCells(fl, b)));
-  if (box.dataset.floor !== String(f)) {
-    box.dataset.floor = f;
-    u.shownNotes[f] = null;
-    const head = order.map((r) => `<th scope="col"><span>${ROOMS[fl.names[r]]?.name ?? ''}</span></th>`).join('');
-    const rows = fl.people
-      .map((person, p) => {
-        const cells = order
-          .map((r) => `<td><button class="kd-note" type="button" data-p="${p}" data-r="${r}" data-v=""></button></td>`)
-          .join('');
-        return `<tr data-p="${p}"><th scope="row"><span class="kd-notes-pawn">${pawn(person, p)}</span><span class="kd-notes-name">${game.esc(person.name)}</span></th>${cells}</tr>`;
-      })
-      .join('');
-    box.innerHTML = `<h4 class="kd-clues-head">Notizen</h4>
-      <table class="kd-notes" style="--k:${k}"><colgroup><col class="kd-notes-who">${order.map(() => '<col>').join('')}</colgroup>
-        <thead><tr><td></td>${head}</tr></thead><tbody>${rows}</tbody></table>
-      <p class="kd-notes-foot"></p>`;
+  for (const li of root.querySelectorAll('.kd-clue')) {
+    const i = Number(li.dataset.i);
+    const state = clueState(s, s.clues[i], st.pos);
+    if (u.clueShown[i] === state) continue;
+    const fresh = u.clueShown[i] !== undefined && !game.reducedMotion;
+    u.clueShown[i] = state;
+    li.classList.toggle('is-ok', state === 'ok');
+    li.classList.toggle('is-bad', state === 'bad');
+    li.querySelector('.kd-clue-mark').innerHTML = state === 'ok' ? CHECK : state === 'bad' ? CROSS_ICON : '<i></i>';
+    if (fresh) {
+      li.classList.remove('fresh');
+      void li.offsetWidth; // Animation von vorn
+      li.classList.add('fresh');
+      setTimeout(() => li.classList.remove('fresh'), 600);
+    }
   }
-  const notes = notesOfShown(u, s, f);
-  const before = u.shownNotes[f];
+}
+
+function renderNotes(u, st, edit) {
+  const { s, game, root } = u;
+  const k = s.names.length;
+  const box = root.querySelector('.kd-notes-box');
+  const before = u.shownNotes;
   for (const btn of box.querySelectorAll('.kd-note')) {
     const p = Number(btn.dataset.p);
     const r = Number(btn.dataset.r);
     const i = p * k + r;
-    const v = notes[i] ?? 0;
+    const v = st.notes[i] ?? 0;
     if (btn.dataset.v !== String(v)) {
       btn.dataset.v = v;
       btn.innerHTML = v === 1 ? NOTE_X : v === 2 ? NOTE_OK : '';
       if (before && before[i] !== v && v && !game.reducedMotion) btn.firstElementChild.classList.add('enter');
-      btn.setAttribute('aria-label', `${fl.people[p].name}, ${ROOMS[fl.names[r]]?.name}: ${NOTE_WORD[v]}`);
+      btn.setAttribute('aria-label', `${s.people[p].name}, ${ROOMS[s.names[r]]?.name}: ${NOTE_WORD[v]}`);
     }
     btn.disabled = !edit;
   }
   for (const tr of box.querySelectorAll('tbody tr')) tr.classList.toggle('sel', Number(tr.dataset.p) === u.sel);
-  const any = notes.some(Boolean);
-  put(
-    box.querySelector('.kd-notes-foot'),
-    edit && any ? `<button class="link kd-notes-clear" type="button">${u.confirmNotes > Date.now() ? 'Wirklich alle Notizen löschen?' : 'Notizen löschen'}</button>` : '',
-  );
-  u.shownNotes[f] = [...notes];
+  const any = st.notes.some(Boolean);
+  const text = u.confirmNotes > Date.now() ? 'Wirklich alle Notizen löschen, auch bei den anderen?' : 'Notizen löschen';
+  put(box.querySelector('.kd-notes-foot'), edit && any ? `<button class="link kd-notes-clear" type="button">${text}</button>` : '');
+  u.shownNotes = [...st.notes];
 }
 
 // Gelöst: andere Räume treten zurück, der Tatraum wird umrandet, Stempel auf den Täter
-function renderSolved(u, fl) {
+function renderSolved(u) {
   const { s, game, root } = u;
-  const f = u.floor;
   const n = s.n;
   const sheet = root.querySelector('.kd-sheet');
-  const was = u.shownSolved[f];
-  u.shownSolved[f] = fl.solved;
-  sheet.classList.toggle('is-solved', fl.solved);
-  const layer = root.querySelector('.kd-solved');
+  const was = u.shownSolved;
+  u.shownSolved = Boolean(s.solved);
+  sheet.classList.toggle('is-solved', Boolean(s.solved));
   const fx = root.querySelector('.kd-fx');
-  if (!fl.solved) {
-    if (layer) layer.innerHTML = '';
-    fx.querySelector('.kd-stampbox')?.remove();
-    return;
-  }
-  if (fx.querySelector('.kd-stampbox')) return;
+  if (!s.solved || fx.querySelector('.kd-stampbox')) return;
   const animate = was === false && !game.reducedMotion;
   sheet.classList.toggle('solving', animate);
   if (animate) setTimeout(() => sheet.classList.remove('solving'), 2000);
-  const room = fl.rooms[fl.pos[0]];
+  const room = s.rooms[s.pos[0]];
   for (const g of root.querySelectorAll('.kd-room')) g.classList.toggle('dim', Number(g.dataset.r) !== room);
   // Umriss des Tatraums
   const segs = [];
-  for (const c of roomCells(fl, room)) {
+  for (const c of roomCells(s, room)) {
     const x = (c % n) * 100;
     const y = Math.floor(c / n) * 100;
-    const same = (d, ok) => ok && fl.rooms[d] === room;
+    const same = (d, ok) => ok && s.rooms[d] === room;
     if (!same(c - n, y > 0)) segs.push([x, y, x + 100, y]);
     if (!same(c + n, y < (n - 1) * 100)) segs.push([x, y + 100, x + 100, y + 100]);
     if (!same(c - 1, x > 0)) segs.push([x, y, x, y + 100]);
     if (!same(c + 1, x < (n - 1) * 100)) segs.push([x + 100, y, x + 100, y + 100]);
   }
-  if (layer) {
-    layer.innerHTML = segs
-      .map(([x1, y1, x2, y2]) => `<line pathLength="1" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`)
-      .join('');
-  }
-  const k = culpritOf(fl);
-  const c = fl.pos[k];
-  fx.insertAdjacentHTML(
-    'beforeend',
-    `<div class="kd-stampbox" style="--x:${c % n};--y:${Math.floor(c / n)}">${STAMP}</div>`,
-  );
-  const victimTok = root.querySelector('.kd-token[data-p="0"]');
-  if (victimTok && fl.crime === 'mord') victimTok.classList.add('fallen');
-  root.querySelector(`.kd-token[data-p="${k}"]`)?.classList.add('culprit');
-}
-
-function renderEnd(u) {
-  const { s, game, root } = u;
-  const box = root.querySelector('.kd-end');
-  if (!game.result) {
-    put(box, '');
-    return;
-  }
-  const rows = [...s.floors]
-    .map((fl, f) => [fl, f])
-    .reverse()
-    .map(([fl], i) => {
-      const k = culpritOf(fl);
-      const t = fl.people[k];
-      const v = fl.people[0];
-      return `<li style="--i:${i}"><span class="kd-end-floor">${FLOORS[fl.t].name}</span>
-        <span>${game.esc(t.role)} ${game.esc(t.name)} hat ${game.esc(v.role)} ${game.esc(v.name)} ${CRIME_DONE[fl.crime] ?? 'überfallen'}.</span></li>`;
-    })
+  root.querySelector('.kd-solved').innerHTML = segs
+    .map(([x1, y1, x2, y2]) => `<line pathLength="1" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`)
     .join('');
-  if (put(box, `<h3 class="kd-end-title">Die Nacht ${game.esc(houseIn(s.house))}</h3><ol>${rows}</ol>`) && !game.first) {
-    box.classList.add('enter');
-  }
+  const k = culpritOf(s);
+  const c = s.pos[k];
+  fx.insertAdjacentHTML('beforeend', `<div class="kd-stampbox" style="--x:${c % n};--y:${Math.floor(c / n)}">${STAMP}</div>`);
+  const victimTok = root.querySelector('.kd-token[data-p="0"]');
+  if (victimTok && s.crime === 'mord') victimTok.classList.add('fallen');
+  root.querySelector(`.kd-token[data-p="${k}"]`)?.classList.add('culprit');
 }
 
 // ---------- Eingaben ----------
@@ -1884,16 +1546,8 @@ function bind(root, u) {
     (e) => {
       if (performance.now() - (u.dragEnd ?? -1e9) < 350) return; // Klick direkt nach dem Ziehen
       const t = e.target;
-      const level = t.closest('.kd-level, .kd-go');
-      if (level) return goFloor(u, Number(level.dataset.floor));
-      const xb = t.closest('.kd-xbtn');
-      if (xb) {
-        const g = Number(xb.dataset.xray);
-        u.xray = u.xray === g ? null : g;
-        return draw(u);
-      }
       const ref = t.closest('.kd-ref');
-      if (ref) return showRef(u, Number(ref.dataset.f), Number(ref.dataset.p));
+      if (ref) return showRef(u, Number(ref.dataset.p));
       if (t.closest('.kd-back')) return place(u, u.sel, -1);
       const note = t.closest('.kd-note');
       if (note && !note.disabled) {
@@ -1944,7 +1598,7 @@ function bind(root, u) {
 function startDrag(e, u) {
   if (e.button > 0 || u.drag) return;
   const src = e.target.closest('.kd-token, .kd-person');
-  if (!src || src.disabled || src.dataset.p === undefined || !canEdit(u.s, u.floor, u.game)) return;
+  if (!src || src.disabled || src.dataset.p === undefined || !canEdit(u)) return;
   const p = Number(src.dataset.p);
   const fromBoard = src.classList.contains('kd-token');
   const { root, game } = u;
@@ -1957,8 +1611,8 @@ function startDrag(e, u) {
   };
   game.signal.addEventListener('abort', stop, { once: true });
   const opts = { signal: d.ctrl.signal };
-  const n = u.s.n;
-  const fl = u.s.floors[u.floor];
+  const s = u.s;
+  const n = s.n;
 
   const cellAt = (x, y) => {
     const r = plan.getBoundingClientRect();
@@ -1971,7 +1625,7 @@ function startDrag(e, u) {
     if (c === null) return;
     const el = plan.querySelector(`.kd-cell[data-c="${c}"]`);
     el?.classList.add('drop');
-    if (!free(fl.items[c])) el?.classList.add('bad');
+    if (!free(s.items[c])) el?.classList.add('bad');
   };
   const follow = (ev) => {
     const size = plan.getBoundingClientRect().width / n;
@@ -1986,11 +1640,12 @@ function startDrag(e, u) {
     u.sel = null;
     d.node = document.createElement('div');
     d.node.className = 'kd-float';
-    d.node.innerHTML = pawn(fl.people[p], p);
+    d.node.innerHTML = pawn(s.people[p], p);
     // an body: .kd hat container-type und wäre sonst der Bezug für position: fixed
     document.body.append(d.node);
     src.classList.add('lifted');
     root.querySelector(`.kd-token[data-p="${p}"]`)?.classList.add('lifted');
+    syncHand(u, p);
   };
   const end = (ev, cancel) => {
     if (ev.pointerId !== d.pointer) return;
@@ -2002,15 +1657,15 @@ function startDrag(e, u) {
     u.dragEnd = performance.now();
     mark(null);
     for (const el of root.querySelectorAll('.lifted')) el.classList.remove('lifted');
-    const pos = posOfShown(u, u.s)(u.floor);
-    if (cancel) return draw(u);
+    const pos = shown(u).pos;
+    if (cancel || !canEdit(u)) return draw(u);
     if (d.cell === null) {
       if (fromBoard && pos[p] >= 0) return place(u, p, -1);
       return draw(u);
     }
-    if (!free(fl.items[d.cell])) return nope(u, d.cell, `Auf ${ITEMS[fl.items[d.cell]].dat} kann niemand stehen.`);
+    if (!free(s.items[d.cell])) return nope(u, d.cell, `Auf ${ITEMS[s.items[d.cell]].dat} kann niemand stehen.`);
     if (pos[p] === d.cell) return draw(u);
-    u.fly = { f: u.floor, p, rect };
+    u.fly = { p, rect };
     u.sel = null;
     act(u, 'setzen', { p, c: d.cell });
   };
@@ -2031,39 +1686,27 @@ function startDrag(e, u) {
   window.addEventListener('pointercancel', (ev) => end(ev, true), opts);
 }
 
-function goFloor(u, f) {
-  if (f === u.floor || !u.s.floors[f]) return;
-  u.floor = f;
-  draw(u);
-  u.root.querySelector('.kd-case').scrollIntoView?.({ block: 'nearest', behavior: u.game.reducedMotion ? 'auto' : 'smooth' });
-}
-
 function choose(u, p) {
   u.sel = u.sel === p ? null : p;
   draw(u);
 }
 
 function tapCell(u, c) {
-  const { s, game } = u;
-  const f = u.floor;
-  const fl = s.floors[f];
-  if (!canEdit(s, f, game)) {
-    if (!fl.solved && !game.result && s.helfen !== 'mit') point(u, f, c);
-    return;
-  }
-  const pos = posOfShown(u, s)(f);
+  const { s } = u;
+  if (!canEdit(u)) return;
+  const st = shown(u);
   if (u.sel !== null) {
-    if (!free(fl.items[c])) return nope(u, c, `Auf ${ITEMS[fl.items[c]].dat} kann niemand stehen.`);
-    if (pos[u.sel] === c) {
+    if (!free(s.items[c])) return nope(u, c, `Auf ${ITEMS[s.items[c]].dat} kann niemand stehen.`);
+    if (st.pos[u.sel] === c) {
       u.sel = null;
       return draw(u);
     }
     return place(u, u.sel, c);
   }
-  const there = pos.indexOf(c);
+  const there = st.pos.indexOf(c);
   if (there >= 0) return choose(u, there);
-  if (!free(fl.items[c])) return;
-  act(u, 'kreuz', { c });
+  if (!free(s.items[c])) return;
+  act(u, 'kreuz', { c, v: !st.marks.includes(c) });
 }
 
 function nope(u, c, text) {
@@ -2073,167 +1716,119 @@ function nope(u, c, text) {
 }
 
 function place(u, p, c) {
-  const f = u.floor;
   if (p === null || p === undefined) return;
-  const pos = posOfShown(u, u.s)(f);
+  const pos = shown(u).pos;
   if (pos[p] < 0 && c >= 0) {
     const from = u.root.querySelector(`.kd-person[data-p="${p}"] .kd-person-pawn`);
-    if (from) u.fly = { f, p, rect: from.getBoundingClientRect() };
+    if (from) u.fly = { p, rect: from.getBoundingClientRect() };
   }
-  if (pos[p] >= 0 && c < 0) u.flyBack = { f, p };
+  if (pos[p] >= 0 && c < 0) u.flyBack = p;
   u.sel = null;
   act(u, 'setzen', { p, c });
 }
 
-// Eigener Zug: sofort zeigen, dann in Reihe an den Server
+// Eigener Zug: sofort zeigen, dann in Reihe an den Server. Bis er dort angekommen ist, wird er auf jeden
+// neuen Stand noch einmal angewendet (shown), so sieht man die Züge der anderen trotzdem gleich.
 function act(u, type, data) {
-  const { s, game } = u;
-  const f = u.floor;
-  const pos = [...posOfShown(u, s)(f)];
-  let marks = [...marksOfShown(u, s, f)];
-  let notes = [...notesOfShown(u, s, f)];
-  if (type === 'notiz') {
-    notes[data.p * s.floors[f].names.length + data.r] = data.v;
-  } else if (type === 'notizen-leeren') {
-    notes = notes.map(() => 0);
-  } else if (type === 'setzen') {
-    if (data.c >= 0) {
-      const there = pos.indexOf(data.c);
-      if (there >= 0 && there !== data.p) pos[there] = -1;
-      marks = marks.filter((x) => x !== data.c);
-    }
-    pos[data.p] = data.c;
-  } else if (type === 'kreuz') {
-    marks = marks.includes(data.c) ? marks.filter((x) => x !== data.c) : [...marks, data.c];
-  } else if (type === 'leeren') {
-    pos.fill(-1);
-    marks = [];
-  }
-  u.over[f] = { pos, marks, notes, done: false };
-  u.pending[f] = (u.pending[f] ?? 0) + 1;
+  const op = { type, data, done: false };
+  u.ops.push(op);
   draw(u);
+  const drop = () => {
+    u.ops = u.ops.filter((x) => x !== op);
+    draw(u);
+  };
   u.queue = u.queue
-    .then(() => game.send(type, { f, ...data }))
+    .then(() => u.game.send(type, data))
     .then((ok) => {
-      u.pending[f]--;
       if (u.signal.aborted) return;
-      if (ok === false) {
-        // abgelehnt: zurück zum Stand des Servers
-        delete u.over[f];
-        draw(u);
-        return;
-      }
-      const o = u.over[f];
-      if (u.pending[f] > 0 || !o) return;
+      if (ok === false) return drop(); // abgelehnt: zurück zum Stand des Servers
       // Der neue Stand kommt mit dem nächsten Zeichnen (render räumt dann auf); kommt keiner, weil sich
       // nichts geändert hat, hier aufräumen
-      o.done = true;
-      setTimeout(() => {
-        if (u.over[f] === o && !u.signal.aborted) {
-          delete u.over[f];
-          draw(u);
-        }
-      }, 1500);
+      op.done = true;
+      setTimeout(() => !u.signal.aborted && u.ops.includes(op) && drop(), 1500);
     });
 }
 
-// Hinweis auf eine Person: auf diesem Stockwerk die Figur kurz hervorheben, auf einem anderen die Durchsicht
-function showRef(u, f, p) {
-  const { s, root, game } = u;
-  if (f !== u.floor) {
-    if (Math.abs(f - u.floor) !== 1) return goFloor(u, f);
-    u.xray = f;
-    draw(u);
-    const ghost = root.querySelector(`.kd-ghost[data-p="${p}"]`);
-    if (ghost && !game.reducedMotion) ghost.animate([{ opacity: 0.2 }, { opacity: 1 }, { opacity: 0.2 }, { opacity: 1 }], { duration: 900 });
-    if (!ghost) put(root.querySelector('.kd-hint'), `${game.esc(s.floors[f].people[p].name)} steht ${FLOOR_IN[s.floors[f].t]} noch nicht.`);
-    return;
-  }
+// Hinweis auf eine Person: ihre Figur hebt sich kurz
+function showRef(u, p) {
+  const { root, game } = u;
   const tok = root.querySelector(`.kd-token[data-p="${p}"]`) ?? root.querySelector(`.kd-person[data-p="${p}"]`);
-  if (tok && !game.reducedMotion) tok.animate([{ transform: getComputedStyle(tok).transform }, { transform: `${getComputedStyle(tok).transform === 'none' ? '' : getComputedStyle(tok).transform} translateY(-10%)` }, { transform: getComputedStyle(tok).transform }], { duration: 420, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  if (!tok || game.reducedMotion) return;
+  const t = getComputedStyle(tok).transform;
+  const from = t === 'none' ? 'none' : t;
+  tok.animate([{ transform: from }, { transform: `${t === 'none' ? '' : t} translateY(-10%)` }, { transform: from }], { duration: 420, easing: 'cubic-bezier(.2,.8,.2,1)' });
 }
 
-// ---------- Zeigen und wer wo schaut (game.live) ----------
+// ---------- Zusammen: wer was tut (game.live und der letzte Zug) ----------
 
-function point(u, f, c) {
-  if (Date.now() - u.pingAt < 350) return;
-  u.pingAt = Date.now();
-  u.game.live.send({ t: 'zeig', f, c });
-  ping(u, f, c, u.game.me);
-}
-
-function ping(u, f, c, from) {
+// Zug der anderen: das Feld leuchtet in ihrer Farbe auf, mit Namen
+function ping(u, c, from) {
   const { root, game, s } = u;
-  if (!Number.isInteger(f) || !Number.isInteger(c) || !s.floors[f] || c < 0 || c >= s.n * s.n) return;
-  if (f === u.floor) {
-    const fx = root.querySelector('.kd-fx');
-    fx.insertAdjacentHTML(
-      'beforeend',
-      `<div class="kd-ping" style="--x:${c % s.n};--y:${Math.floor(c / s.n)};--pc:${game.color(from)}"><i></i><span>${game.esc(from === game.me ? 'Du' : game.name(from))}</span></div>`,
-    );
-    const el = fx.lastElementChild;
-    setTimeout(() => el.remove(), 2600);
-  } else {
-    const level = root.querySelector(`.kd-level[data-floor="${f}"]`);
-    if (level && !game.reducedMotion) level.animate([{ backgroundColor: 'var(--wash)' }, { backgroundColor: 'transparent' }], { duration: 900, iterations: 2 });
+  if (!Number.isInteger(c) || c < 0 || c >= s.n * s.n) return;
+  const x = c % s.n;
+  const edge = x === 0 ? 'left' : x === s.n - 1 ? 'right' : ''; // Name am Rand nach innen
+  const fx = root.querySelector('.kd-fx');
+  fx.insertAdjacentHTML(
+    'beforeend',
+    `<div class="kd-ping ${edge}" style="--x:${x};--y:${Math.floor(c / s.n)};--pc:${game.color(from)}"><i></i><span>${game.esc(game.name(from))}</span></div>`,
+  );
+  const el = fx.lastElementChild;
+  setTimeout(() => el.remove(), 2600);
+}
+
+// Den anderen sagen, wen ich gerade in der Hand habe (ausgewählt oder beim Ziehen); solange ich jemanden
+// halte, alle acht Sekunden wieder (falls eine Nachricht verloren geht oder jemand neu dazukommt)
+function syncHand(u, hand) {
+  if (hand === u.hand) return;
+  u.hand = hand;
+  const say = () => u.game.live.send({ t: 'hand', p: u.hand });
+  say();
+  clearInterval(u.handTimer);
+  if (hand !== null) u.handTimer = setInterval(say, 8000);
+}
+
+function onLive(u, data, from) {
+  if (!u.s || !u.root || u.signal.aborted || !data || data.t !== 'hand') return;
+  if (!u.s.players.some((pl) => pl.id === from)) return;
+  const p = data.p;
+  if (p === null) delete u.holding[from];
+  else if (Number.isInteger(p) && p >= 0 && p < u.s.n) u.holding[from] = { p, at: Date.now() };
+  else return;
+  renderHolding(u);
+  setTimeout(() => !u.signal.aborted && renderHolding(u), HOLD_MS + 100);
+}
+
+// Wer gerade welche Person in der Hand hat: Ring in seiner Farbe, in der Leiste sein Name statt der Rolle
+function renderHolding(u) {
+  const { s, game, root } = u;
+  const held = {};
+  if (canEdit(u)) {
+    for (const [id, h] of Object.entries(u.holding)) {
+      if (Date.now() - h.at > HOLD_MS || id === game.me) continue;
+      (held[h.p] ??= []).push(id);
+    }
   }
-}
-
-// Den anderen sagen, welches Stockwerk man ansieht (das Haus oben zeigt es als Punkt in ihrer Farbe)
-function sendLooking(u) {
-  u.game.live.send({ t: 'hier', f: u.floor });
-  if (u.lookTimer) return;
-  u.lookTimer = setInterval(() => u.game.live.send({ t: 'hier', f: u.floor }), 12000);
-  u.signal.addEventListener('abort', () => clearInterval(u.lookTimer), { once: true });
-}
-
-function onLive(el, u, data, from) {
-  if (!u.s || u.signal.aborted || !data || typeof data !== 'object') return;
-  if (data.t === 'zeig') ping(u, data.f, data.c, from);
-  if (data.t === 'hier' && Number.isInteger(data.f)) {
-    const was = u.looking[from]?.f;
-    u.looking[from] = { f: data.f, at: Date.now() };
-    if (was !== data.f) renderLooks(u);
+  for (const el of root.querySelectorAll('.kd-person, .kd-token[data-p]')) {
+    const who = held[el.dataset.p] ?? [];
+    el.classList.toggle('held', who.length > 0);
+    if (who.length) el.style.setProperty('--hc', game.color(who[0]));
+    const tag = el.querySelector('.kd-held');
+    if (tag) put(tag, who.map((id) => `${marker(game, id)}${game.esc(game.name(id))}`).join(' '));
   }
 }
 
 export const style = `
   .kd { display: grid; gap: 24px; container-type: inline-size; }
 
-  /* --- Haus im Schnitt: ein Streifen pro Stockwerk --- */
-  .kd-house { list-style: none; margin: 0; padding: 0; display: grid; }
-  .kd-roof { display: flex; align-items: flex-end; gap: 12px; padding-left: 6px; }
-  .kd-slice { position: relative; display: block; flex: none; width: 72px; }
-  .kd-roof-svg { display: block; width: 72px; height: 31px; }
-  .kd-house-name { font: 800 var(--t-md)/1 var(--font-display); padding-bottom: 3px; min-width: 0;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .kd-level { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 40px; margin: 0;
-    padding: 0 10px 0 6px; border: 0; border-radius: var(--radius); background: none; color: inherit;
-    font: inherit; text-align: left; cursor: pointer; }
-  .kd-level:hover { background: var(--wash); }
-  .kd-level.is-current { background: var(--wash); }
-  .kd-level:active { transform: translateY(1px); }
-  .kd-slice-svg { display: block; width: 72px; height: 40px; }
-  .kd-level-text { display: grid; flex: 1 1 auto; min-width: 0; }
-  .kd-level-name { font: 700 var(--t-base)/1.1 var(--font-display); }
-  .kd-level.is-current .kd-level-name { font-weight: 900; }
-  .kd-level-who { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: var(--t-sm); color: var(--muted);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .kd-looks { display: inline-flex; gap: 2px; }
-  .kd-look { display: inline-flex; margin-left: 2px; animation: kd-fade 300ms ease-out; }
-  .kd-look .marker { width: 7px; height: 7px; border-radius: 50%; }
-  .kd-level-state { flex: none; }
-  .kd-pips { display: flex; gap: 3px; }
-  .kd-pips i { width: 7px; height: 7px; border: 1.5px solid var(--ink); border-radius: 50%; }
-  .kd-pips i.on { background: var(--ink); }
-  .kd-solved-word { font: 800 var(--t-sm)/1 var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: ${C.stempel}; }
-  .kd-seal { position: absolute; right: -9px; top: 6px; width: 28px; height: 28px; }
+  .kd-sheet { display: grid; gap: 16px; }
 
-  /* --- Fall: Überschrift und Tat --- */
-  .kd-case { display: grid; gap: 4px; }
-  .kd-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 0;
+  /* --- Fall: Haus und Tat --- */
+  .kd-case { display: grid; gap: 6px; }
+  .kd-title { display: flex; align-items: flex-end; gap: 10px; min-width: 0; margin: 0;
     font: 800 var(--t-xl)/1 var(--font-display); }
-  .kd-owner { display: inline-flex; align-items: center; gap: 6px; font: 400 var(--t-sm)/1.2 var(--font-body); color: var(--muted); }
+  .kd-roof { flex: none; width: 52px; }
+  .kd-roof-svg { display: block; width: 52px; height: 22px; }
+  .kd-house-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .kd-crime { margin: 0; max-width: 46ch; }
   .kd-crime.is-solved { font-weight: 700; }
 
@@ -2252,8 +1847,8 @@ export const style = `
   .kd-rows { grid-row: 2; display: grid; grid-template-rows: repeat(var(--n), minmax(0, 1fr)); }
   .kd-cols span, .kd-rows span { display: grid; place-items: center; font: 700 12px/1 var(--font-display); color: var(--muted); }
   .kd-plan { grid-column: 2; grid-row: 2; position: relative; aspect-ratio: 1; }
-  .kd-planbox, .kd-xraybox { position: absolute; inset: calc(-8% / var(--n)); pointer-events: none; }
-  .kd-plan-svg, .kd-xray { display: block; width: 100%; height: 100%; overflow: visible; }
+  .kd-planbox { position: absolute; inset: calc(-8% / var(--n)); pointer-events: none; }
+  .kd-plan-svg { display: block; width: 100%; height: 100%; overflow: visible; }
   .kd-cells, .kd-tokens, .kd-fx { position: absolute; inset: 0; }
   .kd-tokens, .kd-fx { pointer-events: none; }
   .kd-label { font-family: var(--font-display); font-weight: 700; letter-spacing: .03em; fill: ${INK};
@@ -2271,7 +1866,6 @@ export const style = `
   .kd-cell.blocked { cursor: default; }
   .kd-plan:not(.is-locked) .kd-cell:not(.blocked):hover { background: rgba(20, 20, 20, .07); }
   .kd-plan.is-picking .kd-cell:not(.blocked):hover { background: rgba(20, 20, 20, .12); }
-  .kd-plan.is-pointing .kd-cell { cursor: crosshair; }
   .kd-cell:focus-visible { outline: 3px solid var(--ink); outline-offset: -3px; }
   .kd-x { position: absolute; inset: 0; width: 100%; height: 100%; }
   .kd-x path { fill: none; stroke: ${INK}; stroke-width: 8; stroke-linecap: round; opacity: .8; }
@@ -2292,12 +1886,13 @@ export const style = `
   .kd-token.sel .kd-pawn { transform: translateY(-10%); }
   .kd-token.sel::before { border-color: ${INK}; border-style: dashed; }
   .kd-token.clash::before { border-color: var(--bad); }
+  .kd-token.held:not(.sel)::before { border-color: var(--hc); border-style: dashed; animation: kd-fade 200ms ease-out; }
   .kd-token:focus-visible { outline: 3px solid var(--ink); outline-offset: -3px; }
   .kd-token:active:not(:disabled) .kd-pawn { transform: scale(.94); }
   .kd-token.drop .kd-pawn { animation: kd-drop 300ms cubic-bezier(.2,.8,.2,1); }
   .kd-token.leave .kd-pawn { animation: kd-leave 240ms ease-in forwards; }
   .kd-token.fallen .kd-pawn { transform: translate(6%, -6%) rotate(-90deg); }
-  .kd-plan.is-locked .kd-token, .kd-plan.is-pointing .kd-token { pointer-events: none; }
+  .kd-plan.is-locked .kd-token { pointer-events: none; }
 
   .kd-token.lifted .kd-pawn, .kd-person.lifted .kd-person-pawn { opacity: .25; }
   .kd-cell.drop { background: rgba(20, 20, 20, .14); outline: 3px dashed ${INK}; outline-offset: -5px; }
@@ -2305,13 +1900,7 @@ export const style = `
   .kd-float { position: fixed; left: 0; top: 0; z-index: 50; pointer-events: none; }
   .kd-float .kd-pawn { position: absolute; left: 15%; top: 3%; width: 70%; height: 86%; overflow: visible; transform: scale(1.12); transform-origin: 50% 90%; }
 
-  /* Durchsicht */
-  .kd-xray { animation: kd-fade 220ms ease-out; }
-  .kd-xray-walls { stroke: ${C.blau}; stroke-width: 5; stroke-dasharray: 14 9; }
-  .kd-xray-labels text { font-family: var(--font-display); font-weight: 700; fill: ${C.blau};
-    paint-order: stroke; stroke: ${PAPER}; stroke-width: 5px; }
-
-  /* Zeigen */
+  /* Zug der anderen: Ring und Name in ihrer Farbe */
   .kd-ping { position: absolute; left: calc(var(--x) * 100% / var(--n)); top: calc(var(--y) * 100% / var(--n));
     width: calc(100% / var(--n)); height: calc(100% / var(--n)); }
   .kd-ping i { position: absolute; inset: 8%; border: 3px solid var(--pc); border-radius: 50%;
@@ -2319,6 +1908,9 @@ export const style = `
   .kd-ping span { position: absolute; left: 50%; top: -2px; transform: translate(-50%, -100%); padding: 1px 5px;
     background: var(--paper); border: 1.5px solid var(--pc); border-radius: var(--radius); font: 700 12px/1.2 var(--font-display);
     white-space: nowrap; animation: kd-fade 200ms ease-out; }
+  .kd-ping span { max-width: 9em; overflow: hidden; text-overflow: ellipsis; }
+  .kd-ping.left span { left: 0; transform: translateY(-100%); }
+  .kd-ping.right span { left: auto; right: 0; transform: translateY(-100%); }
 
   /* Gelöst: Stempel */
   .kd-stampbox { position: absolute; width: calc(150% / var(--n));
@@ -2342,23 +1934,22 @@ export const style = `
   .kd-person:active:not(:disabled) { transform: scale(.97); }
   .kd-person:disabled { cursor: default; }
   .kd-person.sel { outline: 2px solid var(--ink); outline-offset: -2px; }
+  .kd-person.held:not(.sel) { outline: 2px dashed var(--hc); outline-offset: -2px; }
   .kd-person-pawn { flex: none; width: 38px; height: 46px; transition: opacity 200ms; }
   .kd-person-pawn svg { display: block; width: 100%; height: 100%; overflow: visible; }
   .kd-person.is-placed .kd-person-pawn { opacity: .3; }
   .kd-person-text { display: grid; flex: 1 1 auto; min-width: 0; line-height: 1.15; }
   .kd-person-text b { font: 700 var(--t-base)/1.1 var(--font-display); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .kd-person-text small { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .kd-at { flex: none; font: 800 var(--t-sm)/1 var(--font-display); }
+  .kd-held { display: none; color: var(--ink); font-weight: 700; }
+  .kd-held .marker { margin-right: 4px; }
+  .kd-person.held .kd-role { display: none; }
+  .kd-person.held .kd-held { display: inline; animation: kd-fade 200ms ease-out; }
+  .kd-at { display: inline-flex; align-items: center; gap: 4px; flex: none; font: 800 var(--t-sm)/1 var(--font-display); }
+  .kd-at .marker { width: 8px; height: 8px; }
 
-  .kd-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
-  .kd-xrays { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-  .kd-xrays > span { font-size: var(--t-sm); color: var(--muted); margin-right: 2px; }
-  .kd-xbtn { display: inline-flex; align-items: center; gap: 4px; margin: 0; padding: 5px 10px 5px 6px; border: 1px solid var(--line);
-    border-radius: var(--radius); background: var(--paper); color: var(--ink); font: inherit; font-size: var(--t-sm); cursor: pointer; }
-  .kd-xbtn:hover { background: var(--wash); }
-  .kd-xbtn:active { transform: translateY(1px); }
-  .kd-xbtn.on { background: var(--ink); color: var(--paper); }
-  .kd-xbtn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .kd-tools { display: flex; justify-content: flex-end; }
+  .kd-tools:empty { display: none; }
   .kd-reset { font-size: var(--t-sm); }
 
   /* Hinweise */
@@ -2380,7 +1971,6 @@ export const style = `
     color: inherit; font: inherit; font-weight: 700; cursor: pointer; text-decoration: underline dotted 1.5px; text-underline-offset: 3px; }
   .kd-ref:hover { background: var(--wash); }
   .kd-ref i { display: inline-block; width: 8px; height: 8px; border-radius: 1px; background: var(--pc); }
-  .kd-ref small { font: 800 10px/1 var(--font-display); color: var(--muted); letter-spacing: .04em; }
 
   /* Notiztabelle: Linien wie im Rätselbuch, Raumnamen senkrecht */
   .kd-notes { width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -2417,13 +2007,6 @@ export const style = `
   .kd-rules-list li { margin-bottom: 6px; }
   .kd-rules-tip { margin: 0; color: var(--muted); font-size: var(--t-sm); }
 
-  /* Ende: alle Fälle untereinander */
-  .kd-end:empty { display: none; }
-  .kd-end-title { margin: 0 0 8px; font: 800 var(--t-lg)/1.1 var(--font-display); }
-  .kd-end ol { list-style: none; margin: 0; padding: 0; border-top: 2px solid var(--line); }
-  .kd-end li { display: grid; gap: 2px; padding: 10px 0; border-bottom: 1px solid var(--hairline); }
-  .kd-end-floor { font: 800 12px/1 var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: ${C.stempel}; }
-
   /* --- Bewegung --- */
   @keyframes kd-draw { to { stroke-dashoffset: 0; } }
   @keyframes kd-fade { from { opacity: 0; } }
@@ -2435,10 +2018,9 @@ export const style = `
   @keyframes kd-shake { 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
   @keyframes kd-fall { from { transform: none; } }
   @keyframes kd-stamp { from { opacity: 0; transform: scale(2) rotate(-18deg); } to { opacity: 1; transform: rotate(-9deg); } }
-  @keyframes kd-seal { from { opacity: 0; transform: scale(1.8) rotate(-30deg); } }
 
   /* Auftakt: Stockwerke von unten nach oben, Wände zeichnen sich ein, Möbel kommen dazu */
-  .kd.intro .kd-house > li { animation: kd-rise 380ms cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--i) * 90ms); }
+  .kd.intro .kd-case { animation: kd-rise 380ms cubic-bezier(.2,.8,.2,1) both; }
   .kd.intro .kd-walls line, .kd.intro .kd-outer { stroke-dasharray: 1; stroke-dashoffset: 1;
     animation: kd-draw 420ms cubic-bezier(.3,.7,.2,1) var(--d, 0ms) forwards; }
   .kd.intro .kd-item { animation: kd-pop 300ms cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--d) + 320ms); }
@@ -2458,13 +2040,9 @@ export const style = `
   .kd-sheet.solving .kd-token.fallen .kd-pawn { animation: kd-fall 440ms cubic-bezier(.6,0,.2,1) 650ms both; }
   .kd-sheet.solving .kd-stamp { animation: kd-stamp 280ms cubic-bezier(.2,.8,.2,1) 950ms both; }
   .kd-sheet.solving .kd-crime { animation: kd-rise 360ms cubic-bezier(.2,.8,.2,1) 1100ms both; }
-  .kd-seal.fresh { animation: kd-seal 320ms cubic-bezier(.2,.8,.2,1) 1150ms both; }
-  .kd-seal.fresh path { stroke-dasharray: 1; stroke-dashoffset: 1; animation: kd-draw 260ms ease-out 1400ms forwards; }
-  .kd-end.enter li { animation: kd-rise 380ms cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(1400ms + var(--i) * 180ms); }
-  .kd-end.enter .kd-end-title { animation: kd-fade 400ms ease-out 1200ms both; }
 
   @media (prefers-reduced-motion: reduce) {
     .kd *, .kd *::before { animation: none !important; transition: none !important; }
-    .kd .kd-nx path, .kd .kd-nok path, .kd .kd-x path, .kd .kd-check path, .kd .kd-cross path, .kd .kd-solved line, .kd .kd-walls line, .kd .kd-outer, .kd .kd-seal path { stroke-dashoffset: 0 !important; }
+    .kd .kd-nx path, .kd .kd-nok path, .kd .kd-x path, .kd .kd-check path, .kd .kd-cross path, .kd .kd-solved line, .kd .kd-walls line, .kd .kd-outer { stroke-dashoffset: 0 !important; }
   }
 `;
