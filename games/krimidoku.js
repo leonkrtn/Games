@@ -474,7 +474,8 @@ function generate(n) {
 
 // ---------- Spielablauf (Server) ----------
 // Züge: setzen { p, c } (c = −1: zurück in die Leiste), kreuz { c, v } (v = Kreuz an oder aus), leeren,
-// notiz { p, r, v } (Feld der Notiztabelle auf v), notizen-leeren. Jeder darf alles, der letzte Zug gilt.
+// stift { p, c, v } (Notiz: p könnte auf Feld c gewesen sein, an oder aus), stift-alle { p, v } (auf allen
+// freien Feldern), notizen-leeren. Jeder darf alles, der letzte Zug gilt.
 
 const SIZES = [5, 4, 6];
 const ids = (s) => s.players.map((p) => p.id);
@@ -503,19 +504,19 @@ export function setup(players, options = {}) {
     pos: Array(n).fill(-1),
     by: Array(n).fill(null), // wer die Person gesetzt hat
     marks: [],
-    notes: Array(n * layout.names.length).fill(0), // Notiztabelle Personen × Räume: 0 leer, 1 Kreuz, 2 Haken
+    pen: Array(n * n).fill(0), // Notizen wie beim Sudoku: pro Feld, wer dort gewesen sein könnte (Bit p = Person p)
     last: null, // letzter Zug: { k: laufende Nummer, by, t, p, c }
     solved: false,
   };
 }
 
 /**
- * Ein Zug auf dem Stand { pos, by, marks, notes }, ohne Prüfung. Läuft auf dem Server und im Browser,
+ * Ein Zug auf dem Stand { pos, by, marks, pen }, ohne Prüfung. Läuft auf dem Server und im Browser,
  * der eigene Züge sofort zeigt und sie auf jeden neuen Stand des Servers noch einmal anwendet, bis sie
  * dort angekommen sind. Deshalb ändert ein Zug nichts, wenn er zweimal kommt (Kreuz an statt umschalten).
- * k = Zahl der Räume (Spalten der Notiztabelle).
+ * fl = der Fall (für die Möbel).
  */
-function move(st, k, player, type, data) {
+function move(st, fl, player, type, data) {
   const n = st.pos.length;
   if (type === 'setzen') {
     const { p, c } = data;
@@ -539,40 +540,42 @@ function move(st, k, player, type, data) {
     st.pos = Array(n).fill(-1);
     st.by = Array(n).fill(null);
     st.marks = [];
-  } else if (type === 'notiz') {
-    st.notes[data.p * k + data.r] = data.v;
+  } else if (type === 'stift') {
+    const bit = 1 << data.p;
+    st.pen[data.c] = data.v ? st.pen[data.c] | bit : st.pen[data.c] & ~bit;
+  } else if (type === 'stift-alle') {
+    const bit = 1 << data.p;
+    st.pen = st.pen.map((m, c) => (!data.v ? m & ~bit : free(fl.items[c]) ? m | bit : m));
   } else if (type === 'notizen-leeren') {
-    st.notes = st.notes.map(() => 0);
+    st.pen = st.pen.map(() => 0);
   }
 }
 
 export function action(s, { player, type, data }) {
   if (s.result || s.solved || !ids(s).includes(player)) return;
   const n = s.n;
-  const k = s.names.length;
   const c = data?.c;
+  const p = data?.p;
+  const validPerson = Number.isInteger(p) && p >= 0 && p < n;
   const validCell = Number.isInteger(c) && c >= 0 && c < n * n;
   if (type === 'setzen') {
-    const p = data?.p;
-    if (!Number.isInteger(p) || p < 0 || p >= n) throw new Error('Diese Person gibt es nicht.');
+    if (!validPerson) throw new Error('Diese Person gibt es nicht.');
     if (c !== -1 && !validCell) throw new Error('Dieses Feld gibt es nicht.');
     if (c !== -1 && !free(s.items[c])) throw new Error(`Auf ${ITEMS[s.items[c]]?.dat ?? 'diesem Feld'} kann niemand stehen.`);
   } else if (type === 'kreuz') {
     if (!validCell) throw new Error('Dieses Feld gibt es nicht.');
     if (!free(s.items[c])) return;
-  } else if (type === 'notiz') {
-    const { p, r, v } = data ?? {};
-    if (!Number.isInteger(p) || p < 0 || p >= n || !Number.isInteger(r) || r < 0 || r >= k || ![0, 1, 2].includes(v)) {
-      throw new Error('Diese Notiz gibt es nicht.');
-    }
+  } else if (type === 'stift' || type === 'stift-alle') {
+    if (!validPerson || typeof data.v !== 'boolean' || (type === 'stift' && !validCell)) throw new Error('Diese Notiz gibt es nicht.');
+    if (type === 'stift' && !free(s.items[c])) return;
   } else if (type !== 'leeren' && type !== 'notizen-leeren') {
     return;
   }
   s.by ??= Array(n).fill(null);
-  s.notes ??= Array(n * k).fill(0);
-  const before = JSON.stringify([s.pos, s.by, s.marks, s.notes]);
-  move(s, k, player, type, data);
-  if (JSON.stringify([s.pos, s.by, s.marks, s.notes]) === before) return; // nichts geändert: nicht speichern
+  s.pen ??= Array(n * n).fill(0);
+  const before = JSON.stringify([s.pos, s.by, s.marks, s.pen]);
+  move(s, s, player, type, data);
+  if (JSON.stringify([s.pos, s.by, s.marks, s.pen]) === before) return; // nichts geändert: nicht speichern
   // Was zuletzt passiert ist, damit die anderen sehen, von wem es kam
   s.last = { k: (s.last?.k ?? 0) + 1, by: player, t: type };
   if (type === 'setzen') Object.assign(s.last, { p: data.p, c });
@@ -582,9 +585,14 @@ export function action(s, { player, type, data }) {
   }
 }
 
-// Partien von vor dem gemeinsamen Fall (jeder ein Stockwerk): mit einem neuen Fall weiterspielen
+// Ältere Partien: von vor dem gemeinsamen Fall (jeder ein Stockwerk) mit einem neuen Fall weiterspielen,
+// statt der Notiztabelle Personen × Räume die Notizen auf dem Grundriss
 export function tick(s) {
   if (Array.isArray(s.floors)) return setup(s.players, { stufe: s.n });
+  if (!s.pen) {
+    s.pen = Array(s.n * s.n).fill(0);
+    delete s.notes;
+  }
 }
 
 // Alle können jederzeit etwas tun
@@ -1101,7 +1109,8 @@ function local(el, game) {
       queue: Promise.resolve(),
       shownPos: null, // was gerade auf dem Brett steht (für Bewegungen)
       shownMarks: null,
-      shownNotes: null,
+      shownPen: null,
+      penSel: null, // Person, für die man gerade Notizen einträgt
       shownSolved: null,
       clueShown: [],
       fly: null, // Person, die gerade aus der Leiste kommt: { p, rect }
@@ -1127,9 +1136,9 @@ function shown(u) {
     pos: [...s.pos],
     by: [...(s.by ?? s.pos.map(() => null))],
     marks: [...s.marks],
-    notes: [...(s.notes ?? Array(s.n * s.names.length).fill(0))],
+    pen: [...(s.pen ?? Array(s.n * s.n).fill(0))],
   };
-  for (const op of u.ops) move(st, s.names.length, game.me, op.type, op.data);
+  for (const op of u.ops) move(st, s, game.me, op.type, op.data);
   return st;
 }
 const canEdit = (u) => !u.game.result && !u.s.solved;
@@ -1178,7 +1187,7 @@ const RULES = `<ol class="kd-rules-list">
     <li>Täter ist, wer als Einziger mit dem Opfer im selben Raum war.</li>
     <li>Ihr löst zusammen: Jeder kann Personen setzen, Kreuze machen und Notizen eintragen, die anderen sehen es sofort. Steht jede Person richtig, ist der Fall gelöst.</li>
   </ol>
-  <p class="kd-rules-tip">Ein Tipp auf ein leeres Feld setzt ein Kreuz: Hier war niemand. In der Notiztabelle setzt ein Tipp ein Kreuz (nicht in diesem Raum), der zweite einen Haken (in diesem Raum), der dritte leert das Feld.</p>`;
+  <p class="kd-rules-tip">Ein Tipp auf ein leeres Feld setzt ein Kreuz: Hier war niemand. In den Notizen wählst du eine Person und tippst auf die Felder, auf denen sie gewesen sein könnte. Die Zahl neben dem Namen sagt, wie viele Felder es noch sind. Bleibt nur eins, kannst du sie gleich dorthin setzen.</p>`;
 
 // Die ganze Ansicht, einmal pro Partie gebaut; danach ändern sich nur Klassen, Texte und Figuren
 function pageHtml(s, game) {
@@ -1204,7 +1213,7 @@ function pageHtml(s, game) {
           <div class="kd-tray">${trayHtml(s, game)}</div>
           <div class="kd-tools"></div>
           <div class="kd-clues">${cluesHtml(s, game)}</div>
-          <div class="kd-notes-box">${notesHtml(s, game)}</div>
+          <div class="kd-pen-box">${penHtml(s, game)}</div>
         </div>
       </div>
     </section>
@@ -1245,26 +1254,31 @@ function cluesHtml(s, game) {
   return `<h4 class="kd-clues-head">Hinweise</h4><ol class="kd-clue-list">${items}</ol>`;
 }
 
-// Notiztabelle wie im Rätselbuch: Personen × Räume, ein Tipp Kreuz, zwei Haken, drei leer. Räume in
-// Lesereihenfolge des Grundrisses (oben links zuerst).
-const NOTE_X = '<svg class="kd-nx" viewBox="0 0 20 20" aria-hidden="true"><path pathLength="1" d="M5.5 5 Q10 10.5 14.8 15.2"/><path pathLength="1" d="M14.6 4.8 Q9.6 10.4 5.2 15.3"/></svg>';
-const NOTE_OK = '<svg class="kd-nok" viewBox="0 0 20 20" aria-hidden="true"><path pathLength="1" d="M4 10.8 Q6.5 12.6 8.4 15.6 Q11.5 8.6 16.4 4.4"/></svg>';
-const NOTE_WORD = ['offen', 'nicht dort', 'dort'];
-
-function notesHtml(s, game) {
-  const order = s.names.map((_, r) => r).sort((a, b) => Math.min(...roomCells(s, a)) - Math.min(...roomCells(s, b)));
-  const head = order.map((r) => `<th scope="col"><span>${ROOMS[s.names[r]]?.name ?? ''}</span></th>`).join('');
-  const rows = s.people
-    .map((person, p) => {
-      const cells = order
-        .map((r) => `<td><button class="kd-note" type="button" data-p="${p}" data-r="${r}" data-v=""></button></td>`)
-        .join('');
-      return `<tr data-p="${p}"><th scope="row"><span class="kd-notes-pawn">${pawn(person, p)}</span><span class="kd-notes-name">${game.esc(person.name)}</span></th>${cells}</tr>`;
-    })
+// Notizen wie beim Sudoku: der Grundriss noch einmal, und auf jedem Feld die Anfangsbuchstaben derer, die
+// dort gewesen sein könnten (jede Person hat ihren festen Platz im Feld). Man wählt eine Person und tippt
+// auf ihre möglichen Felder; bleibt nur eins, ist klar, wo sie war.
+function penHtml(s, game) {
+  const n = s.n;
+  const who = s.people
+    .map(
+      (person, p) => `<button class="kd-pen-who" type="button" data-p="${p}" style="--pc:${personColor(p)}">
+        <span class="kd-notes-pawn">${pawn(person, p)}</span><span class="kd-pen-name">${game.esc(person.name)}</span><span class="kd-pen-count num"></span>
+      </button>`,
+    )
     .join('');
+  const letters = s.people.map((person, p) => `<i data-p="${p}" style="--pc:${personColor(p)}">${game.esc(person.name[0])}</i>`).join('');
+  const cells = Array.from({ length: n * n }, (_, c) => {
+    const blocked = !free(s.items[c]);
+    return `<button class="kd-pen-cell ${blocked ? 'blocked' : ''}" type="button" data-c="${c}" style="--x:${c % n};--y:${Math.floor(c / n)}">${blocked ? '' : letters}</button>`;
+  }).join('');
   return `<h4 class="kd-clues-head">Notizen</h4>
-    <table class="kd-notes" style="--k:${s.names.length}"><colgroup><col class="kd-notes-who">${order.map(() => '<col>').join('')}</colgroup>
-      <thead><tr><td></td>${head}</tr></thead><tbody>${rows}</tbody></table>
+    <div class="kd-pen-people">${who}</div>
+    <p class="kd-pen-hint" aria-live="polite"></p>
+    <div class="kd-pen-board">
+      <div class="kd-cols" aria-hidden="true">${Array.from({ length: n }, (_, i) => `<span>${'ABCDEF'[i]}</span>`).join('')}</div>
+      <div class="kd-rows" aria-hidden="true">${Array.from({ length: n }, (_, i) => `<span>${i + 1}</span>`).join('')}</div>
+      <div class="kd-pen-plan"><div class="kd-planbox">${planSvg(s, n)}</div><div class="kd-pen-cells">${cells}</div></div>
+    </div>
     <p class="kd-notes-foot"></p>`;
 }
 
@@ -1280,7 +1294,7 @@ function draw(u) {
   renderHint(u, st, edit);
   renderTools(u, st, edit);
   renderClues(u, st);
-  renderNotes(u, st, edit);
+  renderPen(u, st, edit);
   renderSolved(u);
   renderHolding(u);
   syncHand(u, edit ? (u.drag?.moved ? u.drag.p : u.sel) : null);
@@ -1474,29 +1488,72 @@ function renderClues(u, st) {
   }
 }
 
-function renderNotes(u, st, edit) {
+const bitCount = (pen, p) => pen.filter((m) => m & (1 << p)).length;
+
+function renderPen(u, st, edit) {
   const { s, game, root } = u;
-  const k = s.names.length;
-  const box = root.querySelector('.kd-notes-box');
-  const before = u.shownNotes;
-  for (const btn of box.querySelectorAll('.kd-note')) {
-    const p = Number(btn.dataset.p);
-    const r = Number(btn.dataset.r);
-    const i = p * k + r;
-    const v = st.notes[i] ?? 0;
-    if (btn.dataset.v !== String(v)) {
-      btn.dataset.v = v;
-      btn.innerHTML = v === 1 ? NOTE_X : v === 2 ? NOTE_OK : '';
-      if (before && before[i] !== v && v && !game.reducedMotion) btn.firstElementChild.classList.add('enter');
-      btn.setAttribute('aria-label', `${s.people[p].name}, ${ROOMS[s.names[r]]?.name}: ${NOTE_WORD[v]}`);
-    }
-    btn.disabled = !edit;
+  const n = s.n;
+  const box = root.querySelector('.kd-pen-box');
+  const plan = box.querySelector('.kd-pen-plan');
+  const sel = edit ? u.penSel : null;
+  plan.classList.toggle('is-locked', !edit);
+  plan.classList.toggle('has-sel', sel !== null);
+  if (sel !== null) plan.style.setProperty('--sc', personColor(sel));
+  // Viele Felder auf einmal (überall eintragen, alles löschen): als Welle über das Gitter
+  const before = u.shownPen;
+  const changed = before ? st.pen.filter((m, c) => m !== before[c]).length : 0;
+  if (changed > 3 && !game.reducedMotion) {
+    plan.classList.add('sweep');
+    clearTimeout(u.sweepTimer);
+    u.sweepTimer = setTimeout(() => plan.classList.remove('sweep'), 800);
   }
-  for (const tr of box.querySelectorAll('tbody tr')) tr.classList.toggle('sel', Number(tr.dataset.p) === u.sel);
-  const any = st.notes.some(Boolean);
+  for (const cell of box.querySelectorAll('.kd-pen-cell')) {
+    const c = Number(cell.dataset.c);
+    const m = st.pen[c] ?? 0;
+    for (const i of cell.children) {
+      const p = Number(i.dataset.p);
+      i.classList.toggle('on', Boolean(m & (1 << p)));
+      i.classList.toggle('mine', p === sel);
+    }
+    cell.classList.toggle('mine', sel !== null && Boolean(m & (1 << sel)));
+    cell.disabled = !edit || cell.classList.contains('blocked');
+    const names = s.people.filter((_, p) => m & (1 << p)).map((x) => x.name);
+    const label = `${coord(n, c)}, ${ROOMS[s.names[s.rooms[c]]]?.name ?? ''}: ${names.length ? names.join(', ') : 'keine Notiz'}`;
+    if (cell.getAttribute('aria-label') !== label) cell.setAttribute('aria-label', label);
+  }
+  u.shownPen = [...st.pen];
+
+  for (const chip of box.querySelectorAll('.kd-pen-who')) {
+    const p = Number(chip.dataset.p);
+    const count = bitCount(st.pen, p);
+    chip.classList.toggle('sel', p === sel);
+    chip.setAttribute('aria-pressed', String(p === sel));
+    chip.disabled = !edit;
+    put(chip.querySelector('.kd-pen-count'), count ? String(count) : '');
+  }
+
+  let hint = '';
+  if (edit && sel === null) hint = 'Wähle eine Person und tippe auf die Felder, auf denen sie gewesen sein könnte.';
+  else if (edit) {
+    const name = game.esc(s.people[sel].name);
+    const count = bitCount(st.pen, sel);
+    const only = count === 1 ? st.pen.findIndex((m) => m & (1 << sel)) : -1;
+    const missing = st.pen.some((m, c) => free(s.items[c]) && !(m & (1 << sel))); // freie Felder ohne Notiz
+    if (only >= 0 && st.pos[sel] !== only) {
+      hint = `${name} kann nur auf ${coord(n, only)} gewesen sein. <button class="link kd-pen-place" type="button" data-c="${only}">Dorthin setzen</button>`;
+    } else {
+      const links = [
+        missing ? '<button class="link kd-pen-all" type="button" data-v="1">Überall eintragen</button>' : '',
+        count ? '<button class="link kd-pen-all" type="button" data-v="0">Überall löschen</button>' : '',
+      ].join('');
+      hint = `Tippe auf die Felder, auf denen ${name} gewesen sein könnte.${links ? ` <span class="kd-pen-links">${links}</span>` : ''}`;
+    }
+  }
+  put(box.querySelector('.kd-pen-hint'), hint);
+
+  const any = st.pen.some(Boolean);
   const text = u.confirmNotes > Date.now() ? 'Wirklich alle Notizen löschen, auch bei den anderen?' : 'Notizen löschen';
   put(box.querySelector('.kd-notes-foot'), edit && any ? `<button class="link kd-notes-clear" type="button">${text}</button>` : '');
-  u.shownNotes = [...st.notes];
 }
 
 // Gelöst: andere Räume treten zurück, der Tatraum wird umrandet, Stempel auf den Täter
@@ -1549,11 +1606,18 @@ function bind(root, u) {
       const ref = t.closest('.kd-ref');
       if (ref) return showRef(u, Number(ref.dataset.p));
       if (t.closest('.kd-back')) return place(u, u.sel, -1);
-      const note = t.closest('.kd-note');
-      if (note && !note.disabled) {
-        const v = (Number(note.dataset.v) + 1) % 3;
-        return act(u, 'notiz', { p: Number(note.dataset.p), r: Number(note.dataset.r), v });
+      const who = t.closest('.kd-pen-who');
+      if (who && !who.disabled) {
+        const p = Number(who.dataset.p);
+        u.penSel = u.penSel === p ? null : p;
+        return draw(u);
       }
+      const pen = t.closest('.kd-pen-cell');
+      if (pen && !pen.disabled) return tapPen(u, Number(pen.dataset.c));
+      const all = t.closest('.kd-pen-all');
+      if (all && u.penSel !== null) return act(u, 'stift-alle', { p: u.penSel, v: all.dataset.v === '1' });
+      const there = t.closest('.kd-pen-place');
+      if (there && u.penSel !== null) return place(u, u.penSel, Number(there.dataset.c));
       if (t.closest('.kd-notes-clear')) {
         if (u.confirmNotes > Date.now()) {
           u.confirmNotes = 0;
@@ -1709,6 +1773,20 @@ function tapCell(u, c) {
   act(u, 'kreuz', { c, v: !st.marks.includes(c) });
 }
 
+// Notiz: die gewählte Person könnte hier gewesen sein, oder doch nicht
+function tapPen(u, c) {
+  const { s, root, game } = u;
+  if (!canEdit(u) || !free(s.items[c])) return;
+  if (u.penSel === null) {
+    put(root.querySelector('.kd-pen-hint'), 'Wähle zuerst oben eine Person.');
+    const row = root.querySelector('.kd-pen-people');
+    if (!game.reducedMotion) row.animate([{ transform: 'none' }, { transform: 'translateX(-4px)' }, { transform: 'translateX(4px)' }, { transform: 'none' }], { duration: 220 });
+    return;
+  }
+  const on = Boolean(shown(u).pen[c] & (1 << u.penSel));
+  act(u, 'stift', { p: u.penSel, c, v: !on });
+}
+
 function nope(u, c, text) {
   const cell = u.root.querySelector(`.kd-cell[data-c="${c}"]`);
   if (cell && !u.game.reducedMotion) cell.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-4px)' }, { transform: 'translateX(4px)' }, { transform: 'translateX(0)' }], { duration: 220 });
@@ -1841,12 +1919,12 @@ export const style = `
   .kd-side { display: grid; gap: 14px; min-width: 0; }
 
   /* --- Grundriss --- */
-  .kd-board { display: grid; grid-template-columns: 14px minmax(0, 1fr); grid-template-rows: 16px auto; gap: 3px 5px;
+  .kd-board, .kd-pen-board { display: grid; grid-template-columns: 14px minmax(0, 1fr); grid-template-rows: 16px auto; gap: 3px 5px;
     width: 100%; max-width: 480px; }
   .kd-cols { grid-column: 2; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); }
   .kd-rows { grid-row: 2; display: grid; grid-template-rows: repeat(var(--n), minmax(0, 1fr)); }
   .kd-cols span, .kd-rows span { display: grid; place-items: center; font: 700 12px/1 var(--font-display); color: var(--muted); }
-  .kd-plan { grid-column: 2; grid-row: 2; position: relative; aspect-ratio: 1; }
+  .kd-plan, .kd-pen-plan { grid-column: 2; grid-row: 2; position: relative; aspect-ratio: 1; }
   .kd-planbox { position: absolute; inset: calc(-8% / var(--n)); pointer-events: none; }
   .kd-plan-svg { display: block; width: 100%; height: 100%; overflow: visible; }
   .kd-cells, .kd-tokens, .kd-fx { position: absolute; inset: 0; }
@@ -1972,33 +2050,48 @@ export const style = `
   .kd-ref:hover { background: var(--wash); }
   .kd-ref i { display: inline-block; width: 8px; height: 8px; border-radius: 1px; background: var(--pc); }
 
-  /* Notiztabelle: Linien wie im Rätselbuch, Raumnamen senkrecht */
-  .kd-notes { width: 100%; border-collapse: collapse; table-layout: fixed; }
-  .kd-notes .kd-notes-who { width: 30%; }
-  .kd-notes thead th { padding: 0 0 6px; vertical-align: bottom; font-weight: 700; text-align: center; font: 700 13px/1 var(--font-display); }
-  .kd-notes thead th span { display: inline-block; max-height: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    writing-mode: vertical-rl; transform: rotate(180deg); }
-  .kd-notes tbody th { padding: 0 6px 0 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    font: 700 var(--t-base)/1 var(--font-display); }
-  .kd-notes-pawn { display: inline-block; width: 18px; height: 22px; margin-right: 5px; vertical-align: -6px; }
+  /* Notizen auf dem Grundriss: Person wählen, ihre möglichen Felder antippen */
+  .kd-pen-people { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .kd-pen-who { display: flex; align-items: center; gap: 4px; min-width: 0; min-height: 40px; margin: 0; padding: 2px 8px 2px 4px;
+    border: 1px solid var(--hairline); border-radius: var(--radius-m); background: var(--paper); color: inherit;
+    font: 700 var(--t-base)/1 var(--font-display); text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .kd-pen-who:hover:not(:disabled) { background: var(--wash); }
+  .kd-pen-who:active:not(:disabled) { transform: scale(.96); }
+  .kd-pen-who:disabled { cursor: default; }
+  .kd-pen-who.sel { outline: 2px solid var(--pc); outline-offset: -2px; background: color-mix(in srgb, var(--pc) 12%, white); }
+  .kd-notes-pawn { display: block; flex: none; width: 20px; height: 26px; }
   .kd-notes-pawn svg { display: block; width: 100%; height: 100%; overflow: visible; }
-  .kd-notes tbody td { padding: 0; border: 1px solid var(--hairline); }
-  .kd-notes thead th { border-left: 1px solid var(--hairline); }
-  .kd-notes tbody tr:first-child td { border-top: 1.5px solid var(--line); }
-  .kd-notes tbody td:first-of-type { border-left: 1.5px solid var(--line); }
-  .kd-notes tr.sel th, .kd-notes tr.sel td { background: var(--wash); }
-  .kd-note { display: grid; place-items: center; width: 100%; height: 38px; margin: 0; padding: 0; border: 0; border-radius: 0;
-    background: none; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-  .kd-note:hover:not(:disabled) { background: var(--wash); }
-  .kd-note:disabled { cursor: default; }
-  .kd-note:focus-visible { outline: 3px solid var(--ink); outline-offset: -3px; }
-  .kd-note svg { width: 24px; height: 24px; transition: transform 120ms cubic-bezier(.2,.8,.2,1); }
-  .kd-note:active:not(:disabled) svg { transform: scale(.85); }
-  .kd-nx path { fill: none; stroke: ${INK}; stroke-width: 2.4; stroke-linecap: round; }
-  .kd-nok path { fill: none; stroke: var(--ok); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
-  .kd-nx.enter path, .kd-nok.enter path { stroke-dasharray: 1; stroke-dashoffset: 1; animation: kd-draw 150ms cubic-bezier(.3,.7,.2,1) forwards; }
-  .kd-nx.enter path + path { animation-delay: 90ms; }
-  .kd-nok.enter path { animation-duration: 220ms; }
+  .kd-pen-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kd-pen-count { flex: none; font: 800 var(--t-sm)/1 var(--font-display); color: var(--muted); }
+  .kd-pen-who.sel .kd-pen-count { color: var(--ink); }
+  .kd-pen-hint { margin: 10px 0 8px; min-height: 2.7em; font-size: var(--t-sm); color: var(--muted); }
+  .kd-pen-hint:empty { display: none; }
+  .kd-pen-hint .link { font-size: inherit; }
+  .kd-pen-links { display: inline-flex; flex-wrap: wrap; gap: 4px 14px; }
+  .kd-pen-board { max-width: 420px; }
+  .kd-pen-plan { container-type: inline-size; }
+  .kd-pen-plan .kd-item { opacity: .4; }
+  .kd-pen-cells { position: absolute; inset: 0; }
+  .kd-pen-cell { position: absolute; left: calc(var(--x) * 100% / var(--n)); top: calc(var(--y) * 100% / var(--n));
+    width: calc(100% / var(--n)); height: calc(100% / var(--n)); margin: 0; border: 0; border-radius: 0;
+    /* oben frei für den Raumnamen, darunter zwei Reihen mit je drei Plätzen */
+    padding: calc(100cqw / var(--n) * .3) calc(100cqw / var(--n) * .06) calc(100cqw / var(--n) * .06);
+    display: grid; gap: calc(100cqw / var(--n) * .03);
+    grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr));
+    background: none; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background-color 160ms ease-out; }
+  .kd-pen-cell.blocked { cursor: default; }
+  .kd-pen-cell:disabled { cursor: default; }
+  .kd-pen-plan:not(.is-locked) .kd-pen-cell:not(.blocked):hover { background: rgba(20, 20, 20, .07); }
+  .kd-pen-cell.mine { background: color-mix(in srgb, var(--sc) 16%, transparent); }
+  .kd-pen-plan:not(.is-locked) .kd-pen-cell.mine:hover { background: color-mix(in srgb, var(--sc) 26%, transparent); }
+  .kd-pen-cell:focus-visible { outline: 3px solid var(--ink); outline-offset: -3px; }
+  .kd-pen-cell i { display: grid; place-items: center; min-width: 0; border-radius: 2px; font-style: normal;
+    font: 800 calc(100cqw / var(--n) / 4.2)/1 var(--font-display); color: var(--pc); background: rgba(255, 253, 248, .9);
+    opacity: 0; transform: scale(.5); transition: opacity 140ms ease-out, transform 180ms cubic-bezier(.2,.8,.2,1); }
+  .kd-pen-cell i.on { opacity: 1; transform: none; }
+  .kd-pen-cell i.on.mine { background: var(--pc); color: #fff; }
+  .kd-pen-cell:active:not(:disabled) i.on { transform: scale(.9); }
+  .kd-pen-plan.sweep .kd-pen-cell i { transition-delay: calc((var(--x) + var(--y)) * 18ms); }
   .kd-notes-foot { margin: 8px 0 0; font-size: var(--t-sm); }
   .kd-notes-foot:empty { display: none; }
 
@@ -2043,6 +2136,6 @@ export const style = `
 
   @media (prefers-reduced-motion: reduce) {
     .kd *, .kd *::before { animation: none !important; transition: none !important; }
-    .kd .kd-nx path, .kd .kd-nok path, .kd .kd-x path, .kd .kd-check path, .kd .kd-cross path, .kd .kd-solved line, .kd .kd-walls line, .kd .kd-outer { stroke-dashoffset: 0 !important; }
+    .kd .kd-x path, .kd .kd-check path, .kd .kd-cross path, .kd .kd-solved line, .kd .kd-walls line, .kd .kd-outer { stroke-dashoffset: 0 !important; }
   }
 `;
