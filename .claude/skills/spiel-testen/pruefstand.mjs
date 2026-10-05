@@ -13,6 +13,7 @@
 // animiert der Wechsel wie im Spiel), width (Standard 360), height (Standard 800), wait (ms bis zum Foto), reduced (ohne Bewegung),
 // act (async (page) => …, läuft vor dem Warten: Knöpfe antippen, z.B. page.click('.fertig')),
 // inspect (Funktion, läuft nach dem Foto in der Seite, ihr Ergebnis steht in `seen`: z.B. Maße von Elementen).
+// before (async (page) => …, läuft vor dem Laden: z.B. eingebettete fremde Seiten umleiten, siehe instagram-ersatz.cjs).
 // Bilder (game.imageUrl) sind graue Platzhalter. Schriften und globals.css sind die echten.
 
 import http from 'node:http';
@@ -85,7 +86,7 @@ async function start() {
   port = server.address().port;
 }
 
-export async function shot(game, G, state, { me = state.players[0].id, prev = null, file, width = 360, height = 800, wait = 1600, reduced = false, inspect, act } = {}) {
+export async function shot(game, G, state, { me = state.players[0].id, prev = null, file, width = 360, height = 800, wait = 1600, reduced = false, inspect, act, before } = {}) {
   await start();
   const players = state.players.map(({ id, name }) => ({ id, name }));
   const see = (s) => (G.view ? G.view(s, me) : s);
@@ -101,6 +102,7 @@ export async function shot(game, G, state, { me = state.players[0].id, prev = nu
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  if (before) await before(page); // vor dem Laden, z.B. fremde Seiten umleiten (instagram-ersatz.cjs)
   await page.goto(`http://localhost:${port}/`);
   await page.waitForFunction(() => window.ready, null, { timeout: 5000 }).catch(() => errors.push('render() ist nicht fertig geworden'));
   if (act) await act(page); // z.B. einen Knopf antippen, bevor das Foto entsteht

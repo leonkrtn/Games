@@ -177,6 +177,28 @@ Weil sie verloren gehen dürfen, einmal ohne sie spielen: beim Empfänger
 und neu laden. Die Ansicht muss dann allein aus dem gespeicherten Stand stimmen. Die abgebrochenen
 Anfragen erscheinen als `ERR_FAILED` unter den Konsolenfehlern (erwartet). Malflächen: Skill `malflaeche`.
 
+## 6. Eingebettete fremde Seiten (Instagram)
+
+Racker-Jagd zeigt Instagram-Beiträge als iframe. Im Test nie die echte Seite laden: `instagram-ersatz.cjs`
+in diesem Ordner leitet `instagram.com` auf eine kleine eigene Seite um (Kopfzeile, farbiges Bild mit der
+Kennung, Fußzeile), die ihre Höhe per `postMessage` meldet wie Instagram. `loads` zählt, wie oft jede
+Einbettung geladen wurde: Pro Phase und Seite einmal ist richtig, mehr heißt, `render` hat ein iframe
+ersetzt (Beitrag lädt bei jedem Zug der anderen neu).
+
+```js
+const { routeInstagram, loads } = require('/home/user/Games/.claude/skills/spiel-testen/instagram-ersatz.cjs');
+for (const [i, P] of pages.entries()) await routeInstagram(P, 'ABCDEF'[i]);   // nach start(), vor dem ersten Link
+// Prüfstand: shot(…, { before: (page) => routeInstagram(page, 'S') })
+```
+
+- iframes außerhalb des sichtbaren Bereichs malt Chromium in `fullPage`-Fotos nicht (graue Kästen), auch wenn
+  sie geladen sind. Ob sie laden, zeigt ein Zähler: `page.addInitScript(() => document.addEventListener('load',
+  (e) => e.target.tagName === 'IFRAME' && (window.__loaded = (window.__loaded || 0) + 1), true))`, dann scrollen.
+- Zwischenablage (Plus-Feld): `ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin })` und
+  `navigator.clipboard.writeText(…)` in der Seite.
+- Wie echte Beiträge aussehen (Höhe, Reels, private Konten), lässt sich hier nicht prüfen: nach dem Online-Gang
+  einmal auf dem Handy mit echten Links ansehen lassen.
+
 ## Prüfliste
 
 - [ ] Simulation mit vielen Partien und jeder Spielerzahl: Geheimnisse, Ende, Regeln, Texte.
@@ -187,4 +209,5 @@ Anfragen erscheinen als `ERR_FAILED` unter den Konsolenfehlern (erwartet). Malfl
 - [ ] Mit `reduced: true` und mit `width: 1000` angesehen.
 - [ ] Gesten (Ziehen, Tippen) mit `touchDrag` bzw. `touchscreen.tap` geprüft, falls das Spiel welche hat.
 - [ ] Bei `game.live`: einmal ohne Live-Nachrichten gespielt, Ansicht stimmt trotzdem.
+- [ ] Bei iframes: `loads` geprüft, nichts lädt bei Zügen der anderen neu.
 - [ ] `npm run check` und `npm run build` fehlerfrei.

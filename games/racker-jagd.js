@@ -1,18 +1,22 @@
 // Racker-Jagd: Wer findet auf Instagram den besten Racker?
 //
-// Ablauf: Zeit wählen (5, 10, 15 Minuten oder unbegrenzt) → jeder schickt bis zu drei Screenshots (geheim,
-// die anderen sehen nur die Anzahl) → gemeinsam Bild für Bild bewerten, reihum, alle anderen geben
-// gleichzeitig eins bis zehn (geheim, bis alle bewertet haben), das Bild bekommt den Durchschnitt →
-// Auflösung: Es zählt nur das bestbewertete Bild jedes Spielers, bei Gleichstand das zweitbeste, dann
-// das drittbeste. Zwei bis sechs Spieler.
+// Ablauf: Zeit wählen (5, 10, 15 Minuten oder unbegrenzt) → jeder schickt bis zu drei Links zu Instagram-Beiträgen
+// (geheim, die anderen sehen nur die Anzahl) → gemeinsam Beitrag für Beitrag bewerten, reihum, alle anderen geben
+// gleichzeitig eins bis zehn (geheim, bis alle bewertet haben), der Beitrag bekommt den Durchschnitt →
+// Auflösung: Es zählt nur der bestbewertete Racker jedes Spielers, bei Gleichstand der zweitbeste, dann
+// der drittbeste. Zwei bis sechs Spieler.
 //
-// Plattform-Funktionen: game.upload/game.imageUrl für die Screenshots, tick() und game.now()
-// für das Zeitlimit, notices() für passende Benachrichtigungen.
+// Instagram: Im Zustand steht nur die Kennung des Beitrags (code) und ob es ein Reel ist. Angezeigt wird er
+// mit Instagrams eigener Einbettung (iframe auf instagram.com/p/<code>/embed/), ohne API-Schlüssel, nur
+// öffentliche Beiträge. Ein iframe lädt neu, sobald es aus dem DOM genommen wird: Die Anzeige baut deshalb
+// jede Phase einmal auf und ändert danach nur die Teile, die sich wirklich geändert haben.
 //
-// Motion: Die Zeitwahl baut sich gestaffelt auf, eingeschickte Bilder fallen wie Polaroids in
-// ihren Platz, die verdeckten Karten des anderen drehen sich herein, beim Bewerten fliegt das
-// bewertete Bild weg und das nächste kommt herein, am Ende landen die Wertungen wie Stempel
-// und das zählende Bild wird eingekreist.
+// Plattform-Funktionen: tick() und game.now() für das Zeitlimit, notices() für passende Benachrichtigungen.
+//
+// Motion: Die Zeitwahl baut sich gestaffelt auf, eingeschickte Beiträge fallen wie Polaroids in
+// ihren Platz, die verdeckten Karten des anderen drehen sich herein, beim Bewerten fliegt der
+// bewertete Beitrag weg und der nächste kommt herein, am Ende landen die Wertungen wie Stempel
+// und der zählende Racker wird eingekreist.
 
 export const meta = {
   name: 'Racker-Jagd',
@@ -21,9 +25,11 @@ export const meta = {
 };
 
 const MAX = 3; // Einsendungen pro Spieler
-const TIMES = [5, 10, 15, 0]; // Minuten; 0 = unbegrenzt: bewertet wird erst, wenn beide fertig sind
-const GRACE = 10_000; // ms nach Ablauf: Bilder, die gerade hochgeladen werden, kommen noch an
-const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const TIMES = [5, 10, 15, 0]; // Minuten; 0 = unbegrenzt: bewertet wird erst, wenn alle fertig sind
+const GRACE = 10_000; // ms nach Ablauf: Links, die gerade unterwegs sind, kommen noch an
+const CODE = /^[A-Za-z0-9_-]{5,64}$/; // Kennung eines Beitrags
+const HOST = /^(?:www\.|m\.)?(?:instagram\.com|instagr\.am)$/i;
+const KIND = { p: 'p', tv: 'p', reel: 'reel', reels: 'reel' }; // Pfad im Link → Art des Beitrags
 const WORDS = ['null', 'eins', 'zwei', 'drei', 'vier', 'fünf', 'sechs', 'sieben', 'acht', 'neun', 'zehn', 'elf', 'zwölf', 'dreizehn', 'vierzehn', 'fünfzehn'];
 const word = (n) => WORDS[n] ?? String(n);
 
@@ -41,6 +47,29 @@ function list(names) {
   return names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} und ${names.at(-1)}`;
 }
 
+// Link zu einem Beitrag oder Reel → { code, kind }. Versteht auch Links ohne https://, mit Benutzername
+// (instagram.com/name/p/…) und mit Text drumherum, wie ihn die App beim Teilen mitschickt.
+function parseLink(text) {
+  const t = String(text ?? '').trim().slice(0, 2000);
+  if (!t) throw new Error('Füg zuerst einen Link ein.');
+  const m = t.match(/(?:https?:\/\/)?[\w.-]*(?:instagram\.com|instagr\.am)[^\s]*/i);
+  const notInstagram = new Error('Das ist kein Link zu Instagram.');
+  if (!m) throw notInstagram;
+  const raw = m[0].replace(/[.,;:!?)\]}>"'»«“”]+$/, '');
+  let url;
+  try {
+    url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+  } catch {
+    throw notInstagram;
+  }
+  if (!HOST.test(url.hostname)) throw notInstagram;
+  const parts = url.pathname.split('/').filter(Boolean);
+  const at = parts.findIndex((x, i) => i < 2 && Object.hasOwn(KIND, x.toLowerCase()));
+  if (at >= 0 && CODE.test(parts[at + 1] ?? '')) return { code: parts[at + 1], kind: KIND[parts[at].toLowerCase()] };
+  if (parts[0]?.toLowerCase() === 'stories') throw new Error('Storys lassen sich nicht zeigen. Nimm einen Beitrag oder ein Reel.');
+  throw new Error('Der Link führt zu keinem Beitrag. Tipp in Instagram beim Beitrag auf „Teilen“ und dann auf „Link kopieren“.');
+}
+
 export function setup(players) {
   return {
     players,
@@ -48,9 +77,9 @@ export function setup(players) {
     minutes: null,
     startedAt: null,
     deadline: null,
-    entries: Object.fromEntries(players.map((p) => [p.id, []])), // [{ id, w, h }]
+    entries: Object.fromEntries(players.map((p) => [p.id, []])), // [{ code, kind }]
     done: Object.fromEntries(players.map((p) => [p.id, false])),
-    order: [], // beim Bewerten: [{ owner, id, w, h, rating }]
+    order: [], // beim Bewerten: [{ owner, code, kind, rating, votes }]
     index: 0,
   };
 }
@@ -66,22 +95,23 @@ export function action(s, { player, type, data }) {
     }
     case 'einsenden': {
       if (s.phase !== 'suchen' || (limited(s) && now > s.deadline + GRACE)) throw new Error('Die Zeit ist um.');
-      const list = s.entries[player];
-      const id = String(data?.id ?? '');
-      if (!ID.test(id)) throw new Error('Das Bild ist nicht angekommen. Bitte nochmal senden.');
-      if (s.players.some((p) => s.entries[p.id].some((e) => e.id === id))) return;
-      if (list.length >= MAX) throw new Error('Du hast schon drei Bilder. Entferne erst eins.');
-      const size = (v) => Math.min(10_000, Math.max(1, Math.round(Number(v) || 1)));
-      list.push({ id, w: size(data.w), h: size(data.h) });
-      if (list.length === MAX) s.done[player] = true;
+      const mine = s.entries[player];
+      const post = parseLink(data?.link);
+      if (mine.some((e) => e.code === post.code)) return; // doppelt gesendet
+      if (s.players.some((p) => s.entries[p.id].some((e) => e.code === post.code))) {
+        throw new Error('Diesen Racker hat schon jemand anders gefunden. Such dir einen anderen.');
+      }
+      if (mine.length >= MAX) throw new Error('Du hast schon drei Racker eingeschickt. Entferne erst einen.');
+      mine.push(post);
+      if (mine.length === MAX) s.done[player] = true;
       return maybeStartReview(s);
     }
     case 'entfernen': {
       if (s.phase !== 'suchen' || (limited(s) && now > s.deadline)) throw new Error('Die Zeit ist um.');
-      const list = s.entries[player];
-      const i = list.findIndex((e) => e.id === data);
+      const mine = s.entries[player];
+      const i = mine.findIndex((e) => e.code === String(data));
       if (i < 0) return;
-      list.splice(i, 1);
+      mine.splice(i, 1);
       s.done[player] = false;
       return;
     }
@@ -98,7 +128,7 @@ export function action(s, { player, type, data }) {
       if (s.phase !== 'bewerten' || data?.i !== s.index) return; // doppelt getippt: zählt nur einmal
       const item = s.order[s.index];
       if (item.owner === player) {
-        throw new Error(s.players.length > 2 ? 'Dein eigenes Bild bewerten die anderen.' : 'Dein eigenes Bild bewertet der andere.');
+        throw new Error(s.players.length > 2 ? 'Deinen eigenen Racker bewerten die anderen.' : 'Deinen eigenen Racker bewertet der andere.');
       }
       if (votesOf(item)[player]) return;
       const n = Number(data.n);
@@ -115,8 +145,13 @@ export function action(s, { player, type, data }) {
   }
 }
 
-// Zeit abgelaufen (plus Nachfrist für laufende Uploads)? Dann wird bewertet.
+// Einsendung aus der Zeit vor den Links (Screenshot mit id statt code)
+const screenshot = (x) => x?.id !== undefined && x.code === undefined;
+
 export function tick(s, now) {
+  // Laufende Partien mit Screenshots fangen neu an; fertige zeigt render() noch mit ihren Bildern.
+  if (Object.values(s.entries ?? {}).flat().some(screenshot) || s.order.some(screenshot)) return setup(s.players);
+  // Zeit abgelaufen (plus Nachfrist für Links, die unterwegs sind)? Dann wird bewertet.
   if (s.phase === 'suchen' && limited(s) && now >= s.deadline + GRACE) startReview(s);
 }
 
@@ -124,7 +159,7 @@ function maybeStartReview(s) {
   if (s.players.every((p) => s.done[p.id])) startReview(s);
 }
 
-// Reihum: Bild 1 von A, Bild 1 von B, …, Bild 2 von A … Die Reihenfolge der Spieler wird ausgelost.
+// Reihum: Racker 1 von A, Racker 1 von B, …, Racker 2 von A … Die Reihenfolge der Spieler wird ausgelost.
 function startReview(s) {
   const players = [...s.players];
   for (let i = players.length - 1; i > 0; i--) {
@@ -147,7 +182,7 @@ function startReview(s) {
   }
 }
 
-// Jeder Spieler: Wertungen absteigend. Verglichen wird erst das beste Bild, dann das zweitbeste …
+// Jeder Spieler: Wertungen absteigend. Verglichen wird erst der beste Racker, dann der zweitbeste …
 const ratingsOf = (s, id) =>
   s.order
     .filter((o) => o.owner === id)
@@ -160,16 +195,16 @@ function finish(s) {
   const [ra, rb] = s.players.map((p) => ratingsOf(s, p.id));
   const decider = [0, 1, 2].find((i) => (ra[i] ?? 0) !== (rb[i] ?? 0));
   if (decider === undefined) {
-    s.result = { winners: [], text: 'Unentschieden. Alle Bilder gleich gut.' };
+    s.result = { winners: [], text: 'Unentschieden. Alle Racker gleich gut.' };
     return;
   }
   const w = (ra[decider] ?? 0) > (rb[decider] ?? 0) ? 0 : 1;
   const [winner, loser] = w === 0 ? s.players : [s.players[1], s.players[0]];
   const [best, other] = w === 0 ? [ra[0], rb[0]] : [rb[0], ra[0]];
   let text;
-  if (other === undefined) text = `${winner.name} gewinnt, ${loser.name} hat kein Bild geschickt.`;
+  if (other === undefined) text = `${winner.name} gewinnt, ${loser.name} hat keinen Racker geschickt.`;
   else if (decider === 0) text = `${winner.name} gewinnt, ${word(best)} zu ${word(other)}.`;
-  else text = `${winner.name} gewinnt. Gleiche Bestnote, das ${decider === 1 ? 'zweitbeste' : 'drittbeste'} Bild entscheidet.`;
+  else text = `${winner.name} gewinnt. Gleiche Bestnote, der ${decider === 1 ? 'zweitbeste' : 'drittbeste'} Racker entscheidet.`;
   s.result = { winners: [winner.id], text };
 }
 
@@ -184,7 +219,7 @@ function finishMany(s) {
   const sorted = [...all].sort(cmp);
   const best = sorted.filter((x) => cmp(x, sorted[0]) === 0);
   if (best.length === all.length) {
-    s.result = { winners: [], text: 'Unentschieden. Alle Bilder gleich gut.' };
+    s.result = { winners: [], text: 'Unentschieden. Alle Racker gleich gut.' };
     return;
   }
   if (best.length > 1) {
@@ -196,7 +231,7 @@ function finishMany(s) {
   const text =
     decider === 0
       ? `${w.p.name} gewinnt mit der besten Wertung, ${ratingWord(w.r[0])}.`
-      : `${w.p.name} gewinnt. Gleiche Bestnote, das ${decider === 1 ? 'zweitbeste' : 'drittbeste'} Bild entscheidet.`;
+      : `${w.p.name} gewinnt. Gleiche Bestnote, der ${decider === 1 ? 'zweitbeste' : 'drittbeste'} Racker entscheidet.`;
   s.result = { winners: [w.p.id], text };
 }
 
@@ -210,7 +245,7 @@ export function waitingFor(s) {
   return [];
 }
 
-// Benachrichtigungen: nur, wenn es wirklich etwas zu tun gibt (nicht bei jedem Bild des anderen).
+// Benachrichtigungen: nur, wenn es wirklich etwas zu tun gibt (nicht bei jedem Link der anderen).
 export function notices(s, before, player) {
   const others = s.players.map((p) => p.id).filter((id) => id !== player);
   if (before.phase === 'zeit' && s.phase === 'suchen') {
@@ -229,8 +264,8 @@ export function notices(s, before, player) {
   return [];
 }
 
-// Geheim bis zur Auflösung: die Bilder der anderen (nur die Anzahl), Bilder, die beim Bewerten
-// noch nicht dran waren, die Wertungen der eigenen Bilder und beim aktuellen Bild die Noten der anderen,
+// Geheim bis zur Auflösung: die Links der anderen (nur die Anzahl), Beiträge, die beim Bewerten
+// noch nicht dran waren, die Wertungen der eigenen Racker und beim aktuellen Beitrag die Noten der anderen,
 // bis alle bewertet haben (nur wer schon bewertet hat, steht in voted).
 export function view(s, me) {
   if (s.result) return s;
@@ -245,7 +280,7 @@ export function view(s, me) {
         const votes = votesOf(o);
         const voted = Object.keys(votes);
         if (o.owner === me) return { ...o, rating: null, votes: {}, voted, rated: o.rating !== null };
-        if (i > s.index) return { owner: o.owner, id: null, w: null, h: null, rating: null, votes: {}, voted: [] };
+        if (i > s.index) return { owner: o.owner, code: null, kind: null, rating: null, votes: {}, voted: [] };
         if (i === s.index) return { ...o, votes: votes[me] ? { [me]: votes[me] } : {}, voted };
         return { ...o, voted };
       }),
@@ -257,41 +292,129 @@ export function view(s, me) {
 // ---------- Anzeige (nur im Browser) ----------
 
 const TILT = [-2.2, 1.6, -0.8];
-const ui = new WeakMap(); // pro Spielfeld: Countdown, Upload, Zuschnitt (überlebt neues Zeichnen)
+const ui = new WeakMap(); // pro Spielfeld: Countdown, Senden, eingebettete Beiträge (überlebt neues Zeichnen)
 
 function local(el, game) {
   let u = ui.get(el);
   if (!u || u.signal !== game.signal) {
-    u = { signal: game.signal, timer: null, busy: false, editor: null, autoDone: false, lastRefresh: 0 };
+    u = { signal: game.signal, s: null, timer: null, sending: false, autoDone: false, lastRefresh: 0, frames: watchFrames(el, game) };
     ui.set(el, u);
-    game.signal.addEventListener('abort', () => {
-      clearInterval(u.timer);
-      u.editor?.close();
-    });
+    game.signal.addEventListener('abort', () => clearInterval(u.timer));
   }
   return u;
 }
 
+// HTML nur setzen, wenn es sich geändert hat (Knöpfe, Eingaben und iframes bleiben sonst stehen). true = neu gesetzt.
+const shownHtml = new WeakMap();
+function put(el, html) {
+  if (!el || shownHtml.get(el) === html) return false;
+  shownHtml.set(el, html);
+  el.innerHTML = html;
+  return true;
+}
+
 export function render(el, s, game) {
   const u = local(el, game);
+  u.s = s;
   clearInterval(u.timer);
   u.timer = null;
 
   let root = el.querySelector(':scope > .rj');
   if (!root) {
-    el.innerHTML = '<div class="rj"><div class="rj-main"></div><div class="rj-editor" hidden></div></div>';
+    el.innerHTML = '<div class="rj"><div class="rj-main"></div></div>';
     root = el.firstElementChild;
   }
   const main = root.querySelector('.rj-main');
-  if (s.phase !== 'suchen') u.editor?.close();
+  // Jede Phase wird einmal aufgebaut, danach nur noch geändert (sonst laden die Beiträge neu).
+  const fresh = main.dataset.phase !== s.phase;
+  if (fresh) {
+    main.dataset.phase = s.phase;
+    main.replaceChildren();
+  }
 
-  if (s.phase === 'zeit') renderTime(main, s, game);
-  else if (s.phase === 'suchen') renderSearch(root, main, s, game, u);
-  else if (s.phase === 'bewerten') renderReview(main, s, game);
-  else renderFinal(main, s, game);
+  if (s.phase === 'zeit') renderTime(main, s, game, fresh);
+  else if (s.phase === 'suchen') renderSearch(root, main, s, game, u, fresh);
+  else if (s.phase === 'bewerten') renderReview(main, s, game, u, fresh);
+  else renderFinal(main, s, game, u, fresh);
 }
 
 const marker = (game, id) => `<span class="marker" style="color:${game.color(id)}"></span>`;
+
+// --- Eingebettete Instagram-Beiträge ---
+
+// Instagram zeichnet die Einbettung erst ab etwa 326 px Breite ordentlich. Schmalere Plätze bekommen sie
+// in dieser Breite und verkleinert (transform), so bleibt sie wie ein Bildschirmfoto im Ganzen sichtbar.
+const IG_W = 326;
+const igLink = (item) => `https://www.instagram.com/${item.kind === 'reel' ? 'reel' : 'p'}/${item.code}/`;
+// Höhe, bis Instagram die echte meldet: Kopfzeile, Bild im Hochformat 4:5, Fußzeile
+const igGuess = (w) => Math.round(w * 1.25 + 230);
+
+// thumb: kleine Vorschau im Format 4:5 (nicht antippbar), sonst der ganze Beitrag.
+function post(game, item, { thumb = false, label }) {
+  const e = game.esc;
+  if (screenshot(item)) {
+    // Fertige Partie von vor den Links: Screenshot
+    return `<div class="rj-ig rj-shot ${thumb ? 'thumb' : ''}"><img src="${e(game.imageUrl(item.id))}" alt="${e(label)}"></div>`;
+  }
+  return `
+    <div class="rj-ig ${thumb ? 'thumb' : 'full'}">
+      <iframe src="${e(igLink(item))}embed/" title="${e(label)}" scrolling="no" allowfullscreen loading="lazy"
+        ${thumb ? 'tabindex="-1" aria-hidden="true"' : ''}></iframe>
+    </div>`;
+}
+
+// Passt die iframes an ihren Platz an (ResizeObserver) und übernimmt die Höhe, die Instagram per
+// postMessage meldet ({"type":"MEASURE","details":{"height":…}}, wie bei Instagrams embed.js).
+function watchFrames(el, game) {
+  const fit = (box) => {
+    const frame = box.querySelector('iframe');
+    const w = box.clientWidth;
+    if (!frame || !w) return;
+    const base = Math.max(w, IG_W);
+    const h = Number(box.dataset.h) || igGuess(base);
+    frame.style.width = `${base}px`;
+    frame.style.height = `${h}px`;
+    frame.style.transform = base === w ? '' : `scale(${w / base})`;
+    if (box.classList.contains('full')) box.style.height = `${Math.round((h * w) / base)}px`;
+  };
+  const ro = new ResizeObserver((entries) => entries.forEach((x) => fit(x.target)));
+  game.signal.addEventListener('abort', () => ro.disconnect());
+  window.addEventListener(
+    'message',
+    (ev) => {
+      if (ev.origin !== 'https://www.instagram.com') return;
+      let d = ev.data;
+      if (typeof d === 'string') {
+        try {
+          d = JSON.parse(d);
+        } catch {
+          return;
+        }
+      }
+      const h = Math.round(Number(d?.details?.height));
+      if (d?.type !== 'MEASURE' || !(h >= 120 && h <= 4000)) return;
+      for (const frame of el.querySelectorAll('.rj-ig iframe')) {
+        if (frame.contentWindow !== ev.source) continue;
+        const box = frame.parentElement;
+        if (box.dataset.h !== String(h)) {
+          box.dataset.h = h;
+          fit(box);
+        }
+      }
+    },
+    { signal: game.signal },
+  );
+  return {
+    // Neue Beiträge in area einmal einrichten
+    mount(area) {
+      area.querySelectorAll('.rj-ig:not([data-on])').forEach((box) => {
+        box.dataset.on = '';
+        fit(box);
+        ro.observe(box);
+      });
+    },
+  };
+}
 
 // --- Zeit wählen ---
 
@@ -299,7 +422,8 @@ const marker = (game, id) => `<span class="marker" style="color:${game.color(id)
 const LOOP = 'M50 25 C 40 10, 14 8, 12 25 C 10 42, 40 40, 50 25 C 60 10, 86 8, 88 25 C 90 42, 60 40, 50 25 Z';
 const ENDLESS = `<svg class="rj-inf" viewBox="0 0 100 50" aria-hidden="true"><path class="rj-inf-base" pathLength="1" d="${LOOP}"/><path class="rj-inf-run" pathLength="1" d="${LOOP}"/></svg>`;
 
-function renderTime(main, s, game) {
+function renderTime(main, s, game, fresh) {
+  if (!fresh) return;
   const intro = game.first ? 'intro' : '';
   main.innerHTML = `
     <p class="status rj-lead">Wie lange sucht ihr? Wer zuerst wählt, startet die Suche für ${s.players.length > 2 ? 'alle' : 'beide'}.</p>
@@ -312,10 +436,10 @@ function renderTime(main, s, game) {
       ).join('')}
     </div>
     <ol class="rj-rules ${intro}">
-      <li>Sucht auf Instagram einen richtig guten Racker und schickt ihn als Screenshot.</li>
+      <li>Sucht auf Instagram einen richtig guten Racker und schickt den Link zum Beitrag.</li>
       <li>Jeder hat bis zu drei Einsendungen.</li>
-      <li>${s.players.length > 2 ? 'Danach bewertet ihr Bild für Bild die Racker der anderen, von eins bis zehn. Jedes Bild bekommt den Durchschnitt.' : 'Danach bewertet ihr abwechselnd die Bilder des anderen, von eins bis zehn.'}</li>
-      <li>Es zählt nur euer bestbewertetes Bild.</li>
+      <li>${s.players.length > 2 ? 'Danach bewertet ihr Beitrag für Beitrag die Racker der anderen, von eins bis zehn. Jeder Racker bekommt den Durchschnitt.' : 'Danach bewertet ihr abwechselnd die Racker des anderen, von eins bis zehn.'}</li>
+      <li>Es zählt nur euer bestbewerteter Racker.</li>
     </ol>`;
 }
 
@@ -332,38 +456,130 @@ const BACK = `<svg viewBox="0 0 40 50" aria-hidden="true">
   <path class="rj-back-mark" d="M20 17 L27 25 L20 33 L13 25 Z"/>
 </svg>`;
 
-function renderSearch(root, main, s, game, u) {
+const LINK_FORM = `
+  <form class="rj-link" novalidate>
+    <label for="rj-link-input">Link zum Beitrag oder Reel</label>
+    <div class="rj-link-row">
+      <input id="rj-link-input" name="link" type="url" inputmode="url" autocomplete="off" autocapitalize="off"
+        spellcheck="false" enterkeyhint="send" placeholder="instagram.com/p/…">
+      <button class="btn" type="submit">Einschicken</button>
+    </div>
+    <p class="bad rj-link-error" role="alert" hidden></p>
+  </form>`;
+
+function clockHtml(s, game, intro) {
+  if (!limited(s)) {
+    return `<div class="rj-clock rj-endless ${intro}"><div class="rj-clock-row">${ENDLESS}<span class="rj-clock-label">Ohne Zeitlimit</span></div></div>`;
+  }
+  const total = s.deadline - s.startedAt;
+  const left = Math.max(0, s.deadline - game.now());
+  return `
+    <div class="rj-clock ${intro}">
+      <div class="rj-clock-row">
+        <span class="rj-clock-num" aria-hidden="true">${clock(left)}</span>
+        <span class="rj-clock-label">übrig</span>
+      </div>
+      <div class="rj-bar"><i style="animation-duration:${total}ms;animation-delay:-${total - left}ms;--left:${left / total}"></i></div>
+    </div>`;
+}
+
+function slotHtml(game, item, i, kind, fresh) {
+  const tilt = `--tilt:${TILT[i]}deg`;
+  if (kind === 'item') {
+    return `
+      <figure class="rj-card rj-slot ${fresh ? 'enter' : ''}" style="${tilt}">
+        <div class="rj-pic">${post(game, item, { thumb: true, label: `Dein Racker Nummer ${i + 1}` })}</div>
+        <button type="button" class="link rj-remove" data-action="entfernen" data-value="${game.esc(JSON.stringify(item.code))}">Entfernen</button>
+      </figure>`;
+  }
+  if (kind === 'add') {
+    return `
+      <button type="button" class="rj-slot rj-add" style="${tilt}">
+        <span class="rj-pic">
+          <span class="rj-add-idle">${PLUS}<span>Link einfügen</span></span>
+          <span class="rj-add-busy"><span>Wird gesendet</span><i class="rj-busy-bar"></i></span>
+        </span>
+      </button>`;
+  }
+  return `<div class="rj-slot rj-empty" style="${tilt}"><span class="rj-pic"><span class="rj-slot-num">${i + 1}</span></span></div>`;
+}
+
+function renderSearch(root, main, s, game, u, fresh) {
   const e = game.esc;
   const me = game.me;
   const others = s.players.map((p) => p.id).filter((id) => id !== me);
   const mine = s.entries[me];
   const before = game.prev?.phase === 'suchen' ? game.prev : null;
-  const knownIds = new Set((before?.entries[me] ?? []).map((x) => x.id));
   const timeUp = limited(s) && game.now() >= s.deadline;
   const done = s.done[me];
 
-  const slots = Array.from({ length: MAX }, (_, i) => {
+  if (fresh) {
+    const intro = game.first || game.prev?.phase === 'zeit' ? 'intro' : '';
+    main.innerHTML = `
+      ${clockHtml(s, game, intro)}
+      <div class="rj-body">
+        <section class="rj-mine">
+          <h3 class="rj-who">${marker(game, me)} Deine Racker</h3>
+          <div class="rj-slots">${'<div></div>'.repeat(MAX)}</div>
+          <div class="rj-adder"></div>
+          <p class="status rj-note"></p>
+          <div class="rj-actions"></div>
+        </section>
+        <div class="rj-others ${others.length > 1 ? 'many' : ''}"></div>
+      </div>`;
+  }
+
+  const clk = main.querySelector('.rj-clock');
+  if (limited(s)) {
+    clk.classList.toggle('over', timeUp);
+    clk.querySelector('.rj-clock-label').textContent = timeUp ? 'Zeit um' : 'übrig';
+  }
+
+  // Eigene Plätze: nur ersetzen, was sich geändert hat (die Vorschau ist ein iframe)
+  const slots = main.querySelector('.rj-slots');
+  const known = new Set((before?.entries[me] ?? []).map((x) => x.code));
+  for (let i = 0; i < MAX; i++) {
     const item = mine[i];
-    if (item) {
-      const fresh = !knownIds.has(item.id) && (before || game.first);
-      return `
-        <figure class="rj-card rj-slot ${fresh ? 'enter' : ''}" style="--tilt:${TILT[i]}deg">
-          <div class="rj-pic"><img src="${e(game.imageUrl(item.id))}" width="${item.w}" height="${item.h}" alt="Dein Racker Nummer ${i + 1}"></div>
-          ${timeUp ? '' : `<button type="button" class="link rj-remove" data-action="entfernen" data-value="${e(item.id)}">Entfernen</button>`}
-        </figure>`;
+    const kind = item ? 'item' : i === mine.length && !timeUp ? 'add' : 'empty';
+    const key = item ? `item:${item.code}` : kind;
+    let slot = slots.children[i];
+    if (slot.dataset.key !== key) {
+      const t = document.createElement('template');
+      t.innerHTML = slotHtml(game, item, i, kind, item && !known.has(item.code) && (before || game.first)).trim();
+      const next = t.content.firstElementChild;
+      next.dataset.key = key;
+      slot.replaceWith(next);
+      slot = next;
+      if (kind === 'add') slot.addEventListener('click', () => quickPaste(root, game, u));
     }
-    if (i === mine.length && !timeUp) {
-      return `
-        <label class="rj-slot rj-add ${u.busy ? 'busy' : ''}" style="--tilt:${TILT[i]}deg">
-          <input type="file" accept="image/*" class="rj-file">
-          <span class="rj-pic">
-            <span class="rj-add-idle">${PLUS}<span>Screenshot wählen</span></span>
-            <span class="rj-add-busy"><span>Wird gesendet</span><i class="rj-busy-bar"></i></span>
-          </span>
-        </label>`;
-    }
-    return `<div class="rj-slot rj-empty" style="--tilt:${TILT[i]}deg"><span class="rj-pic"><span class="rj-slot-num">${i + 1}</span></span></div>`;
-  }).join('');
+    slot.classList.toggle('locked', timeUp);
+  }
+  u.frames.mount(slots);
+
+  // Eingabefeld für den Link: bleibt stehen, solange es gebraucht wird (getippter Text geht nicht verloren)
+  const adder = main.querySelector('.rj-adder');
+  if (put(adder, !timeUp && mine.length < MAX ? LINK_FORM : '')) {
+    adder.querySelector('form')?.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      submitLink(root, game, u);
+    });
+  }
+  setBusy(root, u, u.sending);
+
+  let note;
+  if (timeUp) note = 'Die Zeit ist um. Gleich wird bewertet.';
+  else if (done) {
+    note = `Du bist fertig. Sobald ${others.length === 1 ? `${e(game.name(others[0]))} auch fertig ist` : 'alle fertig sind'}, wird bewertet.`;
+  } else if (!mine.length) note = 'Such auf Instagram einen Racker, tipp beim Beitrag auf „Teilen“ und „Link kopieren“ und füg den Link hier ein.';
+  else note = `Nur dein bester Racker zählt. Du kannst noch ${MAX - mine.length === 1 ? 'einen' : word(MAX - mine.length)} schicken.`;
+  put(main.querySelector('.rj-note'), note);
+
+  const actions = timeUp
+    ? ''
+    : done
+      ? '<div class="row"><button class="link" data-action="weitersuchen">Doch weitersuchen</button></div>'
+      : '<div class="row"><button class="btn primary" data-action="fertig">Fertig</button></div>';
+  put(main.querySelector('.rj-actions'), actions);
 
   // Die anderen: verdeckte Karten, so viele wie eingeschickt
   const theirs = others
@@ -376,70 +592,25 @@ function renderSearch(root, main, s, game, u) {
           ? `<div class="rj-back ${i >= prevCount ? 'enter' : ''}" style="--c:${game.color(them)};--tilt:${TILT[i]}deg">${BACK}</div>`
           : '<div class="rj-back rj-back-empty"></div>',
       ).join('');
-      const note = s.done[them] ? `${name} ist fertig.` : count ? `${name} hat ${word(count)} von drei eingeschickt.` : `${name} sucht noch.`;
+      const note_ = s.done[them] ? `${name} ist fertig.` : count ? `${name} hat ${word(count)} von drei eingeschickt.` : `${name} sucht noch.`;
       const newDone = s.done[them] && before && !before.done[them];
       return `
       <section class="rj-theirs">
         <h3 class="rj-who">${marker(game, them)} ${name} ${s.done[them] ? `<span class="rj-done ${newDone ? 'enter' : ''}">fertig</span>` : ''}</h3>
         <div class="rj-backs">${backs}</div>
-        <p class="muted rj-note">${note}</p>
+        <p class="muted rj-note">${note_}</p>
       </section>`;
     })
     .join('');
-
-  let note;
-  if (timeUp) note = 'Die Zeit ist um. Gleich wird bewertet.';
-  else if (done) {
-    note = `Du bist fertig. Sobald ${others.length === 1 ? `${e(game.name(others[0]))} auch fertig ist` : 'alle fertig sind'}, wird bewertet.`;
-  }
-  else if (!mine.length) note = 'Such auf Instagram einen Racker, mach einen Screenshot und lade ihn hier hoch.';
-  else note = `Nur dein bestes Bild zählt. Du kannst noch ${word(MAX - mine.length)} schicken.`;
-
-  const actions = timeUp
-    ? ''
-    : done
-      ? '<button class="link" data-action="weitersuchen">Doch weitersuchen</button>'
-      : '<button class="btn primary" data-action="fertig">Fertig</button>';
-
-
-  const total = s.deadline - s.startedAt;
-  const left = Math.max(0, s.deadline - game.now());
-  const clockIntro = game.first || game.prev?.phase === 'zeit' ? 'intro' : '';
-  main.innerHTML = `
-    ${
-      limited(s)
-        ? `<div class="rj-clock ${clockIntro} ${timeUp ? 'over' : ''}">
-            <div class="rj-clock-row">
-              <span class="rj-clock-num" aria-hidden="true">${clock(left)}</span>
-              <span class="rj-clock-label">${timeUp ? 'Zeit um' : 'übrig'}</span>
-            </div>
-            <div class="rj-bar"><i style="animation-duration:${total}ms;animation-delay:-${total - left}ms;--left:${left / total}"></i></div>
-          </div>`
-        : `<div class="rj-clock rj-endless ${clockIntro}">
-            <div class="rj-clock-row">${ENDLESS}<span class="rj-clock-label">Ohne Zeitlimit</span></div>
-          </div>`
-    }
-    <div class="rj-body">
-      <section class="rj-mine">
-        <h3 class="rj-who">${marker(game, me)} Deine Racker</h3>
-        <div class="rj-slots">${slots}</div>
-        <p class="status rj-note">${note}</p>
-        ${actions ? `<div class="row">${actions}</div>` : ''}
-      </section>
-      <div class="rj-others ${others.length > 1 ? 'many' : ''}">${theirs}</div>
-    </div>`;
-
-  main.querySelector('.rj-file')?.addEventListener('change', (ev) => {
-    const file = ev.target.files?.[0];
-    ev.target.value = '';
-    if (file) openEditor(root, file, s, game, u);
-  });
+  put(main.querySelector('.rj-others'), theirs);
 
   // Countdown: zeigt die Serverzeit, schickt bei null „fertig“ und fragt nach Ablauf der Nachfrist nach.
   if (!limited(s)) return;
+  const total = s.deadline - s.startedAt;
   const num = main.querySelector('.rj-clock-num');
   const bar = main.querySelector('.rj-bar i');
-  let shown = num.textContent;
+  let shown = clock(Math.max(0, s.deadline - game.now()));
+  num.textContent = shown;
   const update = () => {
     const now = game.now();
     const text = clock(Math.max(0, s.deadline - now));
@@ -452,15 +623,14 @@ function renderSearch(root, main, s, game, u) {
       }
     }
     if (now >= s.deadline && !timeUp) {
-      // Zeit gerade abgelaufen: Ansicht ohne Upload-Knöpfe, und wer nichts mehr hochlädt, ist fertig.
-      if (!done && !u.busy && !u.autoDone) {
+      // Zeit gerade abgelaufen: Ansicht ohne Eingabe, und wer nichts mehr schickt, ist fertig.
+      if (!done && !u.sending && !u.autoDone) {
         u.autoDone = true;
-        game.send('fertig');
+        // Ein getippter Link geht noch mit (Nachfrist), dann ist man fertig
+        if (root.querySelector('.rj-link input')?.value.trim()) submitLink(root, game, u, true).finally(() => game.send('fertig'));
+        else game.send('fertig');
       }
-      if (!u.busy) {
-        u.editor?.close();
-        render(root.parentElement, s, { ...game, prev: s, first: false });
-      }
+      if (!u.sending) render(root.parentElement, s, { ...game, prev: s, first: false });
     }
     if (now >= s.deadline + GRACE + 300 && now - u.lastRefresh > 2000) {
       u.lastRefresh = now;
@@ -475,158 +645,74 @@ const clock = (ms) => {
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 };
 
-// --- Zuschneiden und hochladen ---
-
 function setBusy(root, u, busy) {
-  u.busy = busy;
+  u.sending = busy;
   root.querySelector('.rj-add')?.classList.toggle('busy', busy);
+  const form = root.querySelector('.rj-link');
+  if (!form) return;
+  form.classList.toggle('busy', busy);
+  form.querySelector('.btn').disabled = busy;
+  form.querySelector('input').readOnly = busy;
 }
 
-function openEditor(root, file, s, game, u) {
-  u.editor?.close();
-  const box = root.querySelector('.rj-editor');
-  const url = URL.createObjectURL(file);
-  box.hidden = false;
-  root.classList.add('editing');
-  box.innerHTML = `
-    <p class="status">Zieh den Rahmen auf den Racker.</p>
-    <div class="rj-crop">
-      <img class="rj-crop-img" alt="Dein Screenshot" draggable="false">
-      <div class="rj-veil"><i></i></div>
-      <div class="rj-crop-box">
-        <i class="rj-h" data-h="nw"></i><i class="rj-h" data-h="ne"></i><i class="rj-h" data-h="sw"></i><i class="rj-h" data-h="se"></i>
-      </div>
-    </div>
-    <p class="bad rj-crop-error" role="alert" hidden></p>
-    <div class="row">
-      <button type="button" class="btn primary rj-send" disabled>Senden</button>
-      <button type="button" class="link rj-full">Ganzes Bild</button>
-      <button type="button" class="link rj-cancel">Abbrechen</button>
-    </div>`;
-  const img = box.querySelector('.rj-crop-img');
-  const area = box.querySelector('.rj-crop');
-  const frame = box.querySelector('.rj-crop-box');
-  const hole = box.querySelector('.rj-veil i');
-  const sendBtn = box.querySelector('.rj-send');
-  const error = box.querySelector('.rj-crop-error');
-  const MIN = 0.12;
-  let r = { x: 0, y: 0, w: 1, h: 1 }; // Ausschnitt in Anteilen des Bildes
-  let drag = null;
+function showError(root, text) {
+  const p = root.querySelector('.rj-link-error');
+  if (!p) return;
+  p.hidden = !text;
+  p.textContent = text;
+}
 
-  const place = () => {
-    const pos = { left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%` };
-    Object.assign(frame.style, pos);
-    Object.assign(hole.style, pos);
-  };
-  const close = () => {
-    URL.revokeObjectURL(url);
-    box.hidden = true;
-    box.replaceChildren();
-    root.classList.remove('editing');
-    u.editor = null;
-  };
-  u.editor = { close };
+// Link aus dem Feld prüfen und einschicken. Fehler im Link zeigt das Spiel sofort, alles andere der Server.
+// late: bei Ablauf der Zeit vom Countdown abgeschickt (der schickt danach selbst „fertig“).
+async function submitLink(root, game, u, late = false) {
+  const input = root.querySelector('.rj-link input');
+  if (!input || u.sending) return;
+  const s = u.s;
+  if (!late && limited(s) && game.now() > s.deadline) return;
+  let found;
+  try {
+    found = parseLink(input.value);
+  } catch (err) {
+    showError(root, err.message);
+    return;
+  }
+  if (s.entries[game.me].some((x) => x.code === found.code)) {
+    showError(root, 'Den hast du schon eingeschickt.');
+    return;
+  }
+  showError(root, '');
+  setBusy(root, u, true);
+  const ok = await game.send('einsenden', { link: igLink(found) });
+  if (game.signal.aborted) return;
+  setBusy(root, u, false);
+  const field = root.querySelector('.rj-link input');
+  if (ok && field) field.value = '';
+  if (!late && limited(u.s) && game.now() >= u.s.deadline) game.send('fertig');
+}
 
-  img.onload = () => {
-    // Vorschlag: volle Breite im Hochformat 4:5 (so groß sind Instagram-Fotos), mittig
-    const h = Math.min(1, (img.naturalWidth * 1.25) / img.naturalHeight);
-    r = { x: 0, y: (1 - h) / 2, w: 1, h };
-    place();
-    sendBtn.disabled = false;
-  };
-  img.onerror = () => {
-    error.hidden = false;
-    error.textContent = 'Das Bild konnte nicht geöffnet werden. Bitte einen Screenshot wählen.';
-  };
-  img.src = url;
-
-  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-  area.addEventListener('pointerdown', (ev) => {
-    if (!img.naturalWidth || u.busy) return;
-    const rect = area.getBoundingClientRect();
-    const px = clamp((ev.clientX - rect.left) / rect.width, 0, 1);
-    const py = clamp((ev.clientY - rect.top) / rect.height, 0, 1);
-    const handle = ev.target.closest('.rj-h')?.dataset.h;
-    const inside = ev.target.closest('.rj-crop-box');
-    drag = { mode: handle ?? (inside ? 'move' : 'new'), px, py, r0: { ...r }, rect };
-    area.setPointerCapture(ev.pointerId);
-    ev.preventDefault();
-  });
-  area.addEventListener('pointermove', (ev) => {
-    if (!drag) return;
-    const { rect, r0, mode } = drag;
-    const px = clamp((ev.clientX - rect.left) / rect.width, 0, 1);
-    const py = clamp((ev.clientY - rect.top) / rect.height, 0, 1);
-    const dx = px - drag.px;
-    const dy = py - drag.py;
-    if (mode === 'move') {
-      r = { ...r0, x: clamp(r0.x + dx, 0, 1 - r0.w), y: clamp(r0.y + dy, 0, 1 - r0.h) };
-    } else if (mode === 'new') {
-      const x = Math.min(px, drag.px);
-      const y = Math.min(py, drag.py);
-      r = { x, y, w: Math.max(Math.abs(dx), MIN), h: Math.max(Math.abs(dy), MIN) };
-      r.x = clamp(r.x, 0, 1 - r.w);
-      r.y = clamp(r.y, 0, 1 - r.h);
-    } else {
-      let { x, y, w, h } = r0;
-      if (mode.includes('w')) {
-        x = clamp(r0.x + dx, 0, r0.x + r0.w - MIN);
-        w = r0.x + r0.w - x;
-      } else {
-        w = clamp(r0.w + dx, MIN, 1 - r0.x);
-      }
-      if (mode.includes('n')) {
-        y = clamp(r0.y + dy, 0, r0.y + r0.h - MIN);
-        h = r0.y + r0.h - y;
-      } else {
-        h = clamp(r0.h + dy, MIN, 1 - r0.y);
-      }
-      r = { x, y, w, h };
-    }
-    place();
-  });
-  const stop = () => (drag = null);
-  area.addEventListener('pointerup', stop);
-  area.addEventListener('pointercancel', stop);
-
-  box.querySelector('.rj-cancel').addEventListener('click', close);
-  box.querySelector('.rj-full').addEventListener('click', () => {
-    r = { x: 0, y: 0, w: 1, h: 1 };
-    place();
-  });
-  sendBtn.addEventListener('click', async () => {
-    if (limited(s) && game.now() > s.deadline) {
-      close();
-      return;
-    }
-    // Ausschnitt in voller Auflösung auf ein Canvas zeichnen; game.upload verkleinert und verschickt es.
-    const canvas = document.createElement('canvas');
-    const sx = Math.round(r.x * img.naturalWidth);
-    const sy = Math.round(r.y * img.naturalHeight);
-    canvas.width = Math.max(1, Math.round(r.w * img.naturalWidth));
-    canvas.height = Math.max(1, Math.round(r.h * img.naturalHeight));
-    canvas.getContext('2d').drawImage(img, sx, sy, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
-    sendBtn.disabled = true;
-    sendBtn.textContent = 'Wird gesendet …';
-    error.hidden = true;
-    setBusy(root, u, true);
-    let uploaded;
-    try {
-      uploaded = await game.upload(canvas);
-    } catch (err) {
-      // Zuschnitt bleibt offen, damit man es gleich nochmal versuchen kann
-      setBusy(root, u, false);
-      error.hidden = false;
-      error.textContent = err.message;
-      sendBtn.disabled = false;
-      sendBtn.textContent = 'Senden';
-      return;
-    }
-    close();
-    await game.send('einsenden', { id: uploaded.id, w: uploaded.width, h: uploaded.height });
-    setBusy(root, u, false);
-    if (limited(s) && game.now() >= s.deadline) game.send('fertig');
-  });
+// Plus-Feld: Link direkt aus der Zwischenablage nehmen; geht das nicht, ins Eingabefeld springen.
+async function quickPaste(root, game, u) {
+  const input = root.querySelector('.rj-link input');
+  if (!input || u.sending) return;
+  if (!navigator.clipboard?.readText) {
+    input.focus();
+    return;
+  }
+  let text;
+  try {
+    text = await navigator.clipboard.readText();
+  } catch {
+    input.focus(); // nicht erlaubt: dann von Hand einfügen
+    return;
+  }
+  if (game.signal.aborted) return;
+  if (!/instagram\.com|instagr\.am/i.test(text)) {
+    showError(root, 'In der Zwischenablage ist kein Link zu Instagram.');
+    input.focus();
+    return;
+  }
+  input.value = text.trim();
+  submitLink(root, game, u);
 }
 
 // --- Gemeinsam bewerten ---
@@ -634,41 +720,63 @@ function openEditor(root, file, s, game, u) {
 const NOUN = ['', 'Eins', 'Zwei', 'Drei', 'Vier', 'Fünf', 'Sechs', 'Sieben', 'Acht', 'Neun', 'Zehn'];
 const SCRIBBLE = '<svg class="rj-wait" viewBox="0 0 120 16" aria-hidden="true"><path pathLength="1" d="M2 10 C 12 2, 20 2, 26 9 S 40 15, 48 8 S 62 2, 70 9 S 84 15, 92 8 S 108 3, 118 8"/></svg>';
 
-function bigCard(s, game, item, cls, stamp = '') {
+function bigCard(s, game, i, cls) {
   const e = game.esc;
+  const item = s.order[i];
   const mineCard = item.owner === game.me;
   return `
-    <figure class="rj-card rj-big ${cls}" style="--c:${game.color(item.owner)}">
-      <img src="${e(game.imageUrl(item.id))}" width="${item.w}" height="${item.h}" alt="${mineCard ? 'Dein Racker' : `Racker von ${e(game.name(item.owner))}`}">
+    <figure class="rj-card rj-big ${cls}" data-i="${i}" style="--c:${game.color(item.owner)}">
+      ${post(game, item, { label: mineCard ? 'Dein Racker' : `Racker von ${game.name(item.owner)}` })}
       <figcaption>${marker(game, item.owner)} ${mineCard ? 'Dein Racker' : `Von ${e(game.name(item.owner))}`}</figcaption>
-      ${stamp}
     </figure>`;
 }
 
-function renderReview(main, s, game) {
+function renderReview(main, s, game, u, fresh) {
   const e = game.esc;
   const item = s.order[s.index];
   const raters = ratersOf(s, item);
   const myVote = item.votes?.[game.me] ?? null;
   const iRate = raters.includes(game.me) && !myVote;
   const open = raters.filter((id) => !(item.voted ?? []).includes(id));
-  const names = (list_) => list(list_.map((id) => e(game.name(id))));
+  const names = (ids) => list(ids.map((id) => e(game.name(id))));
   const prev = game.prev;
   const moved = prev?.phase === 'bewerten' && prev.index < s.index;
   const intro = !moved && prev?.phase !== 'bewerten';
 
-  let leaving = '';
-  if (moved) {
-    const old = s.order[prev.index];
-    const stamp = old.rating
-      ? `<span class="rj-stamp" style="--c:${game.color(old.owner)}"><b>${fmtRating(old.rating)}</b></span>`
-      : '<span class="rj-stamp rj-stamp-word">bewertet</span>';
-    leaving = bigCard(s, game, old, 'leave', stamp);
-  }
+  if (fresh) main.innerHTML = '<div class="rj-progress"></div><div class="rj-stage"></div><div class="rj-askbox"></div>';
 
+  const progress = main.querySelector('.rj-progress');
+  progress.classList.toggle('intro', intro);
   const dots = s.order
     .map((o, i) => `<li class="${i < s.index ? 'done' : i === s.index ? 'now' : ''}" style="--c:${game.color(o.owner)};--i:${i}"></li>`)
     .join('');
+  put(progress, `<span class="muted">Racker ${word(s.index + 1)} von ${word(s.order.length)}</span><ol class="rj-dots" aria-hidden="true">${dots}</ol>`);
+
+  // Bühne: Der bewertete Beitrag fliegt mit seinem Stempel weg (dasselbe Element, damit er nicht neu lädt),
+  // der nächste kommt herein.
+  const stage = main.querySelector('.rj-stage');
+  const card = stage.querySelector('.rj-big:not(.leave)');
+  if (card?.dataset.i !== String(s.index)) {
+    if (card) {
+      const old = s.order[Number(card.dataset.i)];
+      if (moved && old && !game.reducedMotion) {
+        const stamp = old.rating
+          ? `<span class="rj-stamp" style="--c:${game.color(old.owner)}"><b>${fmtRating(old.rating)}</b></span>`
+          : '<span class="rj-stamp rj-stamp-word">bewertet</span>';
+        card.classList.remove('intro', 'next');
+        card.classList.add('leave');
+        card.insertAdjacentHTML('beforeend', stamp);
+        const gone = () => card.remove();
+        card.addEventListener('animationend', (ev) => ev.target === card && gone(), { signal: game.signal });
+        setTimeout(gone, 900);
+      } else card.remove();
+    }
+    stage.insertAdjacentHTML('beforeend', bigCard(s, game, s.index, intro ? 'intro' : moved ? 'next' : ''));
+    u.frames.mount(stage);
+    // Wer zum Bewerten nach unten gescrollt hat, sieht den neuen Beitrag
+    const top = stage.getBoundingClientRect().top;
+    if (moved && top < 0) window.scrollBy({ top: top - 16, behavior: game.reducedMotion ? 'auto' : 'smooth' });
+  }
 
   const scale = Array.from({ length: 10 }, (_, k) => {
     const n = k + 1;
@@ -678,59 +786,57 @@ function renderReview(main, s, game) {
 
   let ask;
   if (iRate) {
-    ask = `<p class="status rj-ask" data-new>Wie gut ist der Racker von ${e(game.name(item.owner))}?</p>
-           <div class="rj-scale ${intro || moved ? 'intro' : ''}" style="--c:${game.color(game.me)}">${scale}</div>`;
+    ask = `<p class="status rj-ask">Wie gut ist der Racker von ${e(game.name(item.owner))}?</p>
+           <div class="rj-scale" style="--c:${game.color(game.me)}">${scale}</div>`;
   } else if (myVote) {
     // Schon bewertet, die anderen noch nicht: eigene Note bleibt sichtbar
-    ask = `<p class="status rj-ask" ${justVoted ? '' : 'data-new'}>Du hast eine ${NOUN[myVote]} gegeben. Warte auf ${names(open)}.</p>
+    ask = `<p class="status rj-ask">Du hast eine ${NOUN[myVote]} gegeben. Warte auf ${names(open)}.</p>
            <div class="rj-scale locked" style="--c:${game.color(game.me)}">${scale}</div>`;
   } else {
     const who = open.length === raters.length && raters.length > 1 ? 'Die anderen bewerten' : `${names(open)} ${open.length === 1 ? 'bewertet' : 'bewerten'}`;
-    ask = `<p class="status rj-ask" data-new>${who} deinen Racker.</p>${SCRIBBLE}`;
+    ask = `<p class="status rj-ask">${who} deinen Racker.</p>${SCRIBBLE}`;
   }
-
-  main.innerHTML = `
-    <div class="rj-progress ${intro ? 'intro' : ''}">
-      <span class="muted">Bild ${word(s.index + 1)} von ${word(s.order.length)}</span>
-      <ol class="rj-dots" aria-hidden="true">${dots}</ol>
-    </div>
-    <div class="rj-stage">
-      ${leaving}
-      ${bigCard(s, game, item, intro ? 'intro' : moved ? 'next' : '')}
-    </div>
-    ${ask}`;
-
-  // Sofortige Rückmeldung beim Tippen, bis die Antwort vom Server da ist
-  main.querySelectorAll('.rj-score').forEach((b) =>
-    b.addEventListener('click', () => {
-      b.classList.add('picked');
-      main.querySelector('.rj-scale').classList.add('locked');
-    }),
-  );
-  main.querySelector('.rj-stage .leave')?.addEventListener('animationend', (ev) => ev.currentTarget.remove(), {
-    signal: game.signal,
-  });
+  // Knöpfe nur ersetzen, wenn sich die Frage ändert (nicht, wenn ein anderer bewertet)
+  const askbox = main.querySelector('.rj-askbox');
+  if (put(askbox, `<div data-i="${s.index}">${ask}</div>`)) {
+    if (!justVoted) askbox.querySelector('.rj-ask').classList.add('new');
+    if (iRate && (intro || moved)) askbox.querySelector('.rj-scale').classList.add('intro');
+    // Sofortige Rückmeldung beim Tippen, bis die Antwort vom Server da ist
+    askbox.querySelectorAll('.rj-score').forEach((b) =>
+      b.addEventListener('click', () => {
+        b.classList.add('picked');
+        askbox.querySelector('.rj-scale').classList.add('locked');
+      }),
+    );
+  }
 }
 
 // --- Auflösung ---
 
 const RING = '<svg class="rj-ring" viewBox="0 0 100 100" aria-hidden="true"><path pathLength="1" d="M58 9 C 30 6, 8 24, 9 50 C 10 76, 32 93, 55 91 C 80 89, 94 70, 92 46 C 90 24, 72 9, 44 12"/></svg>';
 
-function renderFinal(main, s, game) {
+function renderFinal(main, s, game, u, fresh) {
+  if (!fresh) return; // ändert sich nicht mehr; neu bauen hieße alle Beiträge neu laden
   const e = game.esc;
   const play = !game.prev?.result;
-  let n = 0; // fortlaufend über beide Spalten, für die Staffelung
+  let n = 0; // fortlaufend über alle Spalten, für die Staffelung
   const cols = s.players
     .map((p) => {
-      // Absteigend nach Wertung; bei gleicher Wertung zählt das zuerst gezeigte Bild
+      // Absteigend nach Wertung; bei gleicher Wertung zählt der zuerst gezeigte Beitrag
       const items = s.order.filter((o) => o.owner === p.id).sort((a, b) => b.rating - a.rating);
       const won = s.result.winners.includes(p.id);
       const cards = items
         .map((o, k) => {
           const j = n++;
+          const label = `Racker von ${game.name(p.id)}, ${ratingWord(o.rating)} von zehn`;
+          // Der beste ganz, die anderen als kleine Vorschau, die den Beitrag auf Instagram öffnet
+          let body = post(game, o, { thumb: k > 0, label });
+          if (k > 0 && !screenshot(o)) {
+            body = `<a class="rj-open" href="${e(igLink(o))}" target="_blank" rel="noopener noreferrer" aria-label="${e(label)}, auf Instagram öffnen">${body}</a>`;
+          }
           return `
             <figure class="rj-card rj-res ${k === 0 ? 'best' : ''}" style="--j:${j}">
-              <img src="${e(game.imageUrl(o.id))}" width="${o.w}" height="${o.h}" alt="Racker von ${e(game.name(p.id))}, ${ratingWord(o.rating)} von zehn">
+              ${body}
               ${k === 0 && won ? '<span class="rj-frame" aria-hidden="true"></span>' : ''}
               <span class="rj-stamp"><b>${fmtRating(o.rating)}</b>${k === 0 ? RING : ''}</span>
             </figure>`;
@@ -739,22 +845,22 @@ function renderFinal(main, s, game) {
       return `
         <section class="rj-col ${won ? 'won' : ''}" style="--c:${game.color(p.id)}">
           <h3 class="rj-who">${marker(game, p.id)} ${e(game.name(p.id))}${p.id === game.me ? ' <small class="muted">du</small>' : ''}</h3>
-          ${items.length ? `<div class="rj-gallery">${cards}</div>` : '<p class="muted">Kein Bild eingeschickt.</p>'}
+          ${items.length ? `<div class="rj-gallery">${cards}</div>` : '<p class="muted">Keinen Racker eingeschickt.</p>'}
         </section>`;
     })
     .join('');
   main.innerHTML = `<div class="rj-final ${s.players.length > 2 ? 'many' : ''} ${play ? 'play' : ''}">${cols}</div>`;
+  u.frames.mount(main);
 }
 
 export const style = `
-  .rj { display: grid; gap: 20px; }
-  .rj-main { display: grid; gap: 24px; min-width: 0; }
-  .rj-editor { display: grid; gap: 14px; }
-  .rj.editing .rj-body { display: none; }
+  .rj { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  /* minmax: Die iframes sind mindestens 326 px breit (verkleinert), das darf die Spalte nicht verbreitern */
+  .rj-main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; min-width: 0; }
   .rj-who { display: flex; align-items: center; gap: 8px; font-family: var(--font-display); font-weight: 800; font-size: var(--t-lg); line-height: 1.1; margin-bottom: 12px; }
   .rj-who small { font-family: var(--font-body); font-weight: 400; font-size: var(--t-sm); }
   .rj-note { margin-top: 12px; max-width: 46ch; }
-  .rj-mine .row { margin-top: 14px; }
+  .rj-actions .row { margin-top: 14px; }
 
   /* Polaroid: Papier mit breitem unterem Rand, leicht schräg */
   .rj-card, .rj-slot {
@@ -764,7 +870,15 @@ export const style = `
     transform: rotate(var(--tilt, 0deg));
   }
   .rj-pic { display: block; position: relative; aspect-ratio: 4 / 5; overflow: hidden; background: var(--wash); }
-  .rj-pic img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+  /* Eingebetteter Beitrag: iframe von Instagram, unter 326 px Breite verkleinert (siehe watchFrames) */
+  .rj-ig { position: relative; overflow: hidden; background: var(--wash); }
+  .rj-ig iframe { display: block; width: 100%; border: 0; transform-origin: 0 0; }
+  .rj-ig.full { min-height: 240px; }
+  .rj-ig.thumb { width: 100%; aspect-ratio: 4 / 5; }
+  .rj-ig.thumb iframe { pointer-events: none; }
+  .rj-shot img { display: block; width: 100%; height: auto; }
+  .rj-shot.thumb img { height: 100%; object-fit: cover; }
 
   /* ---- Zeit wählen ---- */
   .rj-lead { max-width: 40ch; }
@@ -820,15 +934,18 @@ export const style = `
   .rj-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; max-width: 420px; }
   .rj-slot.enter { animation: rj-drop 420ms cubic-bezier(.2,.8,.2,1) both; }
   .rj-remove { position: absolute; left: 0; right: 0; bottom: 4px; font-size: var(--t-sm); text-align: center; }
+  .rj-slot.locked .rj-remove { display: none; }
   .rj-empty { border-style: dashed; border-color: var(--hairline); }
   .rj-empty .rj-pic { background: none; display: grid; place-items: center; }
   .rj-slot-num { font-family: var(--font-display); font-weight: 800; font-size: var(--t-xl); color: var(--hairline); }
-  .rj-add { cursor: pointer; border: 2px dashed var(--ink); transition: background-color 140ms ease-out, transform 140ms cubic-bezier(.2,.8,.2,1); }
+  .rj-add {
+    display: block; width: 100%; appearance: none; font: inherit; color: var(--ink); text-align: center;
+    cursor: pointer; border: 2px dashed var(--ink);
+    transition: background-color 140ms ease-out, transform 140ms cubic-bezier(.2,.8,.2,1);
+  }
   .rj-add:hover { background: var(--wash); }
   .rj-add:active { transform: rotate(var(--tilt)) scale(.96); }
-  .rj-add:focus-within { outline: 2px solid var(--ink); outline-offset: 3px; }
   .rj-add .rj-pic { background: none; display: grid; place-items: center; text-align: center; font-size: var(--t-sm); font-weight: 700; line-height: 1.2; padding: 6px; }
-  .rj-file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
   .rj-add-idle { display: grid; justify-items: center; gap: 6px; }
   .rj-add svg { width: 34px; height: 34px; }
   .rj-add svg path { stroke: var(--ink); stroke-width: 3; fill: none; }
@@ -839,6 +956,15 @@ export const style = `
   .rj-busy-bar { display: block; width: 70%; height: 3px; background: var(--hairline); overflow: hidden; position: relative; }
   .rj-busy-bar::after { content: ''; position: absolute; inset: 0; width: 40%; background: var(--ink); animation: rj-busy 900ms cubic-bezier(.6,0,.2,1) infinite; }
   @keyframes rj-busy { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+
+  /* Link eingeben */
+  .rj-link { display: grid; margin-top: 18px; max-width: 420px; }
+  .rj-link-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .rj-link-row input { flex: 1 1 12em; }
+  .rj-link-row .btn { flex: 0 0 auto; }
+  .rj-link.busy input, .rj-link.busy .btn { opacity: .55; }
+  .rj-link-error { margin-top: 8px; }
+  .rj-link-error:not([hidden]) { animation: rj-rise 200ms cubic-bezier(.2,.8,.2,1) both; }
 
   /* ---- Verdeckte Karten des anderen ---- */
   .rj-others { display: grid; gap: 22px; }
@@ -858,20 +984,6 @@ export const style = `
   .rj-done { font-family: var(--font-body); font-weight: 700; font-size: var(--t-sm); color: var(--paper); background: var(--ink); padding: 1px 6px; border-radius: var(--radius); display: inline-block; transform: rotate(-3deg); }
   .rj-done.enter { animation: rj-stamp-in 320ms cubic-bezier(.2,.8,.2,1) both; }
 
-  /* ---- Zuschneiden ---- */
-  .rj-crop { position: relative; width: fit-content; max-width: 100%; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; }
-  .rj-crop-img { display: block; max-width: 100%; max-height: 62vh; width: auto; height: auto; pointer-events: none; }
-  /* Weißer Schleier außerhalb des Rahmens, auf das Bild begrenzt (die Griffe dürfen überstehen) */
-  .rj-veil { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
-  .rj-veil i { position: absolute; box-shadow: 0 0 0 100vmax rgba(255, 255, 255, .74); }
-  .rj-crop-box { position: absolute; outline: 2px solid var(--ink); cursor: move; }
-  .rj-h { position: absolute; width: 16px; height: 16px; background: var(--ink); }
-  .rj-h::before { content: ''; position: absolute; inset: -14px; }
-  .rj-h[data-h="nw"] { left: -8px; top: -8px; cursor: nwse-resize; }
-  .rj-h[data-h="ne"] { right: -8px; top: -8px; cursor: nesw-resize; }
-  .rj-h[data-h="sw"] { left: -8px; bottom: -8px; cursor: nesw-resize; }
-  .rj-h[data-h="se"] { right: -8px; bottom: -8px; cursor: nwse-resize; }
-
   /* ---- Bewerten ---- */
   .rj-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
   .rj-dots { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; }
@@ -880,14 +992,14 @@ export const style = `
   .rj-dots li.now { border-color: var(--c); border-width: 2.5px; }
   .rj-progress.intro li { animation: rj-rise 260ms cubic-bezier(.2,.8,.2,1) calc(var(--i) * 60ms) both; }
   .rj-stage { position: relative; }
-  .rj-big { width: fit-content; max-width: min(100%, 380px); --tilt: -1deg; }
-  .rj-big img { display: block; max-width: 100%; max-height: min(46vh, 460px); width: auto; height: auto; background: var(--wash); }
+  .rj-big { width: min(100%, 400px); --tilt: -.6deg; }
   .rj-big figcaption { position: absolute; left: 8px; bottom: 5px; font-size: var(--t-sm); font-weight: 700; display: flex; align-items: center; gap: 6px; }
   .rj-big.intro { animation: rj-deal 520ms cubic-bezier(.2,.8,.2,1) both; }
   .rj-big.next { animation: rj-next 440ms cubic-bezier(.2,.8,.2,1) 120ms both; }
   .rj-big.leave { position: absolute; left: 0; top: 0; z-index: 1; pointer-events: none; animation: rj-leave 460ms cubic-bezier(.6,0,.2,1) both; }
   .rj-ask { font-weight: 700; }
-  .rj-ask[data-new] { animation: rj-rise 260ms cubic-bezier(.2,.8,.2,1) both; }
+  .rj-ask.new { animation: rj-rise 260ms cubic-bezier(.2,.8,.2,1) both; }
+  .rj-askbox > div { display: grid; gap: 14px; }
   .rj-scale { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); max-width: 560px; border-top: 3px solid var(--line); }
   @media (min-width: 560px) { .rj-scale { grid-template-columns: repeat(10, minmax(0, 1fr)); } }
   .rj-score {
@@ -925,23 +1037,22 @@ export const style = `
   .rj-final.many .rj-who { font-size: var(--t-md); margin-bottom: 8px; }
   .rj-final.many .rj-gallery { gap: 16px 10px; }
   .rj-final.many .rj-card { padding: 4px 4px 18px; }
-  .rj-final.many .rj-res.best img { max-height: 34vh; }
   .rj-final.many .rj-stamp { right: -6px; bottom: -10px; min-width: 42px; height: 42px; font-size: var(--t-xl); }
   .rj-final.many .rj-res:not(.best) .rj-stamp { min-width: 30px; height: 30px; padding: 0 3px; font-size: var(--t-md); }
   .rj-col { min-width: 0; }
   .rj-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 16px; max-width: 360px; }
-  .rj-res img { display: block; width: 100%; height: auto; aspect-ratio: 4 / 5; object-fit: cover; background: var(--wash); }
   .rj-res.best { grid-column: 1 / -1; --tilt: -1.2deg; }
-  .rj-res.best img { aspect-ratio: auto; max-height: 52vh; object-fit: contain; }
   .rj-res:not(.best) { --tilt: 1.4deg; }
-  .rj-res:not(.best) img { opacity: .4; }
+  .rj-res:not(.best) .rj-ig { opacity: .4; }
   .rj-res:not(.best) .rj-stamp { min-width: 40px; height: 40px; font-size: var(--t-xl); }
+  .rj-open { display: block; transition: transform 140ms cubic-bezier(.2,.8,.2,1); }
+  .rj-open:active { transform: scale(.96); }
   .rj-ring { position: absolute; inset: -14px; width: calc(100% + 28px); height: calc(100% + 28px); overflow: visible; }
   .rj-ring path { fill: none; stroke: var(--c); stroke-width: 4; stroke-linecap: round; }
   .rj-frame { position: absolute; inset: -5px; border: 3px solid var(--c); border-radius: var(--radius-m); pointer-events: none; }
 
   .rj-final.play .rj-res { animation: rj-deal 420ms cubic-bezier(.2,.8,.2,1) calc(var(--j) * 70ms) both; }
-  .rj-final.play .rj-res:not(.best) img { animation: rj-dim 400ms ease-out 1000ms both; }
+  .rj-final.play .rj-res:not(.best) .rj-ig { animation: rj-dim 400ms ease-out 1000ms both; }
   .rj-final.play .rj-stamp { animation: rj-stamp-in 300ms cubic-bezier(.2,.8,.2,1) calc(380ms + var(--j) * 90ms) both; }
   .rj-final.play .rj-ring path { stroke-dasharray: 1; stroke-dashoffset: 1; animation: rj-draw 460ms cubic-bezier(.3,.7,.2,1) 900ms forwards; }
   .rj-final.play .rj-frame { animation: rj-frame 380ms cubic-bezier(.2,.8,.2,1) 1150ms both; }
