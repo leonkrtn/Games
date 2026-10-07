@@ -12,47 +12,56 @@ const C = {
   naht: '#b7ab93',
   mund: '#d33a2c',
   mundInnen: '#6e2219',
-  wange: '#ec9a8f',
   fleck: '#7a5d3f',
   fleckDark: '#5e4630',
 };
 
-// --- Der Hai (viewBox 0 0 170 124, schaut nach links) ---
+// --- Der Hai (viewBox 0 0 165 106, schaut nach links) ---
+// Schlank von der Seite wie das Kuscheltier: grau, flauschiger Rand, ovaler weißer Fleck vorn am Kopf mit
+// Naht, dicker roter Mundstrich, Flossen hängen nach unten.
 
 const BODY =
-  'M10 66 C12 50 34 34 66 31 C96 28 120 40 136 54 C139 60 138 67 132 73 C122 86 104 96 82 98 C54 100 28 92 16 80 C11 75 9 70 10 66 Z';
-const BELLY = 'M10 66 C20 60 36 58 50 64 C66 71 76 84 82 98 C54 100 28 92 16 80 C11 75 9 70 10 66 Z';
-const TAIL = 'M124 57 C133 49 143 37 151 22 C157 23 160 30 158 38 C156 48 153 56 149 62 C155 66 159 72 160 79 C157 83 151 83 145 80 C138 77 131 75 124 72 Z';
-const DORSAL = 'M58 34 C64 24 72 12 84 4 C88 4 90 7 89 11 C88 20 91 28 97 35 Z';
-const FIN_FAR = 'M86 90 C93 98 101 104 110 107 C112 105 111 101 108 97 C105 93 101 90 97 86 Z';
-const FIN_NEAR = 'M49 85 C48 96 52 106 59 114 C62 117 66 116 67 112 C70 104 72 96 72 88 C64 83 56 83 49 85 Z';
+  'M8 58 C10 44 32 32 62 30 C94 28 120 38 136 50 C139 55 138 61 133 65 C122 74 102 80 80 81 C50 82 24 78 14 70 C9 66 7 62 8 58 Z';
+const SHADE = 'M136 50 C139 55 138 61 133 65 C122 74 102 80 80 81 C98 76 114 69 124 60 C129 56 132 53 136 50 Z';
+const TAIL =
+  'M126 52 C134 46 143 36 150 22 C156 23 159 30 157 37 C155 44 152 50 148 55 C153 59 157 65 157 72 C154 76 148 76 143 73 C136 70 130 67 126 64 Z';
+const DORSAL = 'M58 33 C63 24 70 14 82 8 C86 8 88 11 87 15 C86 22 88 28 92 33 Z';
+const FIN_FAR = 'M84 76 C90 84 97 90 105 92 C107 90 106 86 103 82 C100 79 96 77 92 75 Z';
+const FIN_NEAR = 'M54 74 C53 84 56 94 62 100 C65 102 69 101 70 97 C72 89 72 81 70 75 C64 72 59 72 54 74 Z';
+const PATCH = { cx: 34, cy: 63, rx: 21, ry: 11.5, rot: 10 };
+
+// Flauschiger Rand: Tuschepunkte entlang der Kontur, halb von der Fläche verdeckt (wirkt wie Frottee)
+const fuzz = (d) =>
+  `<path d="${d}" fill="none" stroke="${INK}" stroke-width="4.4" stroke-dasharray="0.01 3" stroke-linecap="round"/><path d="${d}" fill="none" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>`;
+const plush = (d, fill) => `${fuzz(d)}<path d="${d}" fill="${fill}"/>`;
 
 // Mund und Augen je nach Stimmung (alle gezeichnet, CSS zeigt die passende: data-mund, data-auge)
+const stroke = (d, w = 4.4) => `<path d="${d}" fill="none" stroke="${C.mund}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>`;
 const MOUTHS = {
-  froh: `<path d="M16 70 C22 77.5 31 79.5 39.5 76.5" fill="none" stroke="${C.mund}" stroke-width="3.6" stroke-linecap="round"/>`,
-  mittel: `<path d="M17 72 C23 76 30 77.5 38 76.5" fill="none" stroke="${C.mund}" stroke-width="3.6" stroke-linecap="round"/>`,
-  traurig: `<path d="M18 77 C23 73 30 72.5 38 75.5" fill="none" stroke="${C.mund}" stroke-width="3.6" stroke-linecap="round"/>`,
-  auf: `<path d="M15.5 69.5 C23 72 31 74 39.5 73.5 C39 81 31.5 87 24 84 C19 82 16 76 15.5 69.5 Z" fill="${C.mundInnen}" stroke="${C.mund}" stroke-width="2.8" stroke-linejoin="round"/><path d="M21.5 81.5 C25.5 79 31.5 79.5 35 82.5 C31.5 85.5 25.5 85.5 21.5 81.5 Z" fill="#e2675a"/>`,
-  baeh: `<path d="M17 74 Q20.5 70.5 24 74 T31 74 T38 74" fill="none" stroke="${C.mund}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>`,
-  schlaf: `<path d="M20 73 C24 76 29 77 34 76" fill="none" stroke="${C.mund}" stroke-width="3.4" stroke-linecap="round"/>`,
+  froh: stroke('M21 62 C27 68 36 70.5 46.5 67'),
+  mittel: stroke('M22 64.5 C28 67.5 36 68.5 45 67'),
+  traurig: stroke('M23 68.5 C28 64.5 36 64 45 66.5'),
+  auf: `<path d="M20 61.5 C27 64.5 36 66 46 65 C45 71.5 37.5 75 30.5 73.5 C24.5 72 21 67 20 61.5 Z" fill="${C.mundInnen}" stroke="${C.mund}" stroke-width="2.8" stroke-linejoin="round"/><path d="M26.5 70.5 C30.5 68.6 36 69 39.5 71.3 C36.4 73.6 30.4 73.6 26.5 70.5 Z" fill="#e2675a"/>`,
+  baeh: stroke('M22 66 Q25.5 62.5 29 66 T36 66 T43 66', 3.6),
+  schlaf: stroke('M25 65 C29 68 34 69 39 68', 4),
 };
 const EYES = {
-  auf: `<circle cx="33" cy="51" r="3.6" fill="${INK}"/><circle cx="31.8" cy="49.8" r="1.15" fill="#fff"/>`,
-  froh: `<path d="M28.8 53 Q33 47.5 37.2 53" fill="none" stroke="${INK}" stroke-width="2.2" stroke-linecap="round"/>`,
-  zu: `<path d="M28.8 51.5 Q33 55.5 37.2 51.5" fill="none" stroke="${INK}" stroke-width="2.2" stroke-linecap="round"/>`,
-  muede: `<circle cx="33" cy="52" r="3.4" fill="${INK}"/><circle cx="31.6" cy="52.6" r="1" fill="#fff"/><path d="M28.6 47.6 L38.2 47.6 L37.8 52.6 C35 50.8 31.8 49.6 28.6 49.6 Z" fill="${C.hai}"/><path d="M28.4 49.5 C31.8 49.5 35 50.7 37.9 52.8" fill="none" stroke="${INK}" stroke-width="1.7" stroke-linecap="round"/><path d="M38.4 56.4 Q41 60.2 41 61.6 A2.6 2.6 0 0 1 35.8 61.6 Q35.8 60.2 38.4 56.4 Z" fill="#5a8fc8" stroke="${INK}" stroke-width="1.1" stroke-linejoin="round"/>`,
+  auf: `<circle cx="34" cy="47" r="3.8" fill="${INK}"/><circle cx="32.8" cy="45.8" r="1.2" fill="#fff"/>`,
+  froh: `<path d="M29.8 49 Q34 43.5 38.2 49" fill="none" stroke="${INK}" stroke-width="2.3" stroke-linecap="round"/>`,
+  zu: `<path d="M29.8 47.5 Q34 51.5 38.2 47.5" fill="none" stroke="${INK}" stroke-width="2.3" stroke-linecap="round"/>`,
+  muede: `<circle cx="34" cy="48" r="3.5" fill="${INK}"/><circle cx="32.6" cy="48.6" r="1" fill="#fff"/><path d="M29.4 43.4 L39.2 43.4 L38.8 48.6 C36 46.8 32.8 45.6 29.4 45.6 Z" fill="${C.hai}"/><path d="M29.2 45.5 C32.8 45.5 36 46.7 38.9 48.8" fill="none" stroke="${INK}" stroke-width="1.7" stroke-linecap="round"/><path d="M40.4 51.4 Q43 55.2 43 56.6 A2.6 2.6 0 0 1 37.8 56.6 Q37.8 55.2 40.4 51.4 Z" fill="#5a8fc8" stroke="${INK}" stroke-width="1.1" stroke-linejoin="round"/>`,
 };
 
 // Stellen für Flecken (Koordinaten im Hai, r = Größe), Reihenfolge mischt der Zustand (stainOrder)
 export const SPOTS = [
-  { x: 58, y: 46, r: 9 },
-  { x: 88, y: 41, r: 8 },
-  { x: 112, y: 57, r: 8.5 },
-  { x: 80, y: 64, r: 9.5 },
-  { x: 103, y: 80, r: 8 },
-  { x: 33, y: 86, r: 7.5 },
-  { x: 58, y: 88, r: 8.5 },
-  { x: 125, y: 66, r: 6.5 },
+  { x: 60, y: 42, r: 8 },
+  { x: 88, y: 39, r: 7 },
+  { x: 112, y: 50, r: 7 },
+  { x: 80, y: 58, r: 8.5 },
+  { x: 104, y: 68, r: 7 },
+  { x: 50, y: 56, r: 5 },
+  { x: 57, y: 69, r: 7 },
+  { x: 125, y: 60, r: 5.5 },
 ];
 
 /** Unregelmäßiger Klecks um (x, y), immer gleich für dieselbe Nummer. */
@@ -81,27 +90,12 @@ export function stain(i) {
   return `<g class="hai-fleck" data-fleck="${i}"><path d="${blob(s.x, s.y, s.r, i + 1)}" fill="${C.fleck}" opacity=".9"/><path d="${blob(s.x - 1, s.y - 1, s.r * 0.45, i + 4)}" fill="${C.fleckDark}" opacity=".55"/>${drops.join('')}</g>`;
 }
 
-// Kleine Schlingen wie bei Frottee, nur angedeutet
-const TERRY = [
-  [48, 40],
-  [68, 36],
-  [92, 35],
-  [110, 45],
-  [62, 52],
-  [84, 51],
-  [100, 64],
-  [120, 58],
-  [74, 70],
-  [112, 74],
-]
-  .map(([x, y]) => `<path d="M${x - 1.8} ${y} a1.8 1.8 0 0 0 3.6 0" />`)
-  .join('');
-
 /**
  * Der Hai als <g> (ohne äußeres svg). Teile mit Klassen, damit die Seite sie einzeln bewegen kann:
  * hai-tail, hai-dorsal, hai-fin, hai-body, hai-eye, hai-mouth, hai-stains (für die Flecken).
+ * eye/mouth: nur diese Variante zeichnen (für Bilder, die sich nicht ändern), sonst alle.
  */
-export function shark({ stains = '', eye, mouth, cheek = true } = {}) {
+export function shark({ stains = '', eye, mouth } = {}) {
   const eyes = Object.entries(EYES)
     .filter(([k]) => !eye || k === eye)
     .map(([k, d]) => `<g class="hai-eye" data-auge="${k}">${d}</g>`)
@@ -110,33 +104,28 @@ export function shark({ stains = '', eye, mouth, cheek = true } = {}) {
     .filter(([k]) => !mouth || k === mouth)
     .map(([k, d]) => `<g class="hai-mouth" data-mund="${k}">${d}</g>`)
     .join('');
+  const p = PATCH;
   return `<g class="hai-figure">
-  <g class="hai-tail"><path d="${TAIL}" fill="${C.hai}" stroke="${INK}" stroke-width="1.8" stroke-linejoin="round"/><path d="M149 62 C144 63 136 64 129 64" fill="none" stroke="${C.haiDark}" stroke-width="1.2" stroke-linecap="round"/></g>
-  <g class="hai-dorsal"><path d="${DORSAL}" fill="${C.hai}" stroke="${INK}" stroke-width="1.8" stroke-linejoin="round"/><path d="M81 12 C80 18 81 25 85 31" fill="none" stroke="${C.haiDark}" stroke-width="1.2" stroke-linecap="round"/></g>
-  <g class="hai-fin-far"><path d="${FIN_FAR}" fill="${C.haiDark}" stroke="${INK}" stroke-width="1.8" stroke-linejoin="round"/></g>
+  <g class="hai-tail">${plush(TAIL, C.hai)}</g>
+  <g class="hai-dorsal">${plush(DORSAL, C.hai)}</g>
+  <g class="hai-fin-far">${plush(FIN_FAR, C.haiDark)}</g>
   <g class="hai-body">
-    <path d="M108 89 L110.5 99 L117.5 97.2 L115 88 Z" fill="#fff" stroke="${INK}" stroke-width="1.3" stroke-linejoin="round"/><path d="M110.6 94 L115.8 92.7 M111.3 96.6 L116.6 95.2" stroke="${C.mund}" stroke-width=".9"/>
-    <path d="${BODY}" fill="${C.hai}"/>
-    <path d="M136 54 C139 60 138 67 132 73 C122 86 104 96 82 98 C99 91 114 82 124 70 C129 64 132 59 136 54 Z" fill="${C.haiDark}"/>
-    <path d="${BELLY}" fill="${C.bauch}"/>
-    <path d="M82 98 C54 100 28 92 16 80 C28 87 48 92 68 92 C74 94 78 96 82 98 Z" fill="${C.bauchDark}"/>
-    <g fill="none" stroke="${C.haiDark}" stroke-width="1.1" stroke-linecap="round" opacity=".7">${TERRY}</g>
-    <path d="M22 46 C30 39 42 35 54 34" fill="none" stroke="${C.haiLight}" stroke-width="2.6" stroke-linecap="round"/>
-    <path d="M13.5 69 C22 63.5 36 62 48.5 67.5 C62.5 74 72 85 77.5 96.5" fill="none" stroke="${C.naht}" stroke-width="1.2" stroke-dasharray="2.2 2.4" stroke-linecap="round"/>
-    <path d="${BODY}" fill="none" stroke="${INK}" stroke-width="1.8" stroke-linejoin="round"/>
+    ${fuzz(BODY)}<path d="${BODY}" fill="${C.hai}"/>
+    <path d="${SHADE}" fill="${C.haiDark}"/>
+    <ellipse cx="${p.cx}" cy="${p.cy}" rx="${p.rx}" ry="${p.ry}" transform="rotate(${p.rot} ${p.cx} ${p.cy})" fill="${C.bauch}"/>
+    <ellipse cx="${p.cx}" cy="${p.cy}" rx="${p.rx - 2.4}" ry="${p.ry - 2.3}" transform="rotate(${p.rot} ${p.cx} ${p.cy})" fill="none" stroke="${C.naht}" stroke-width="1.2" stroke-dasharray="2.2 2.4"/>
     <g class="hai-stains">${stains}</g>
-    ${cheek ? `<ellipse class="hai-cheek" cx="44.5" cy="71" rx="4.2" ry="2.5" fill="${C.wange}"/>` : ''}
     ${eyes}
     ${mouths}
   </g>
-  <g class="hai-fin"><path d="${FIN_NEAR}" fill="${C.hai}" stroke="${INK}" stroke-width="1.8" stroke-linejoin="round"/><path d="M56 89 C56 97 58 104 62 110" fill="none" stroke="${C.haiDark}" stroke-width="1.2" stroke-linecap="round"/></g>
+  <g class="hai-fin">${plush(FIN_NEAR, C.hai)}</g>
 </g>`;
 }
 
 /** Der Hai als eigenständiges kleines Bild (Startseite, Karte). mood: froh | mittel | traurig | schlaf */
 export function sharkSvg(mood = 'froh', className = '') {
   const eye = mood === 'schlaf' ? 'zu' : mood === 'traurig' ? 'muede' : 'auf';
-  return `<svg class="hai-pic ${className}" viewBox="4 0 160 124" aria-hidden="true">${shark({ eye, mouth: mood, cheek: mood === 'froh' })}</svg>`;
+  return `<svg class="hai-pic ${className}" viewBox="2 0 160 106" aria-hidden="true">${shark({ eye, mouth: mood })}</svg>`;
 }
 
 // --- Essen und Trinken (viewBox 0 0 40 40, Licht oben links) ---

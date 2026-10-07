@@ -606,7 +606,7 @@ function World({ data, user, now, send, take, begin, showToast, onHai }) {
     return `<svg class="hai-map" viewBox="0 0 ${MAP_W} ${MAP_H}" role="img" aria-label="Weltkarte mit den Orten, die ${data.hai.name} kennt">${worldMap()}
 <path class="hai-route" d="${route}" fill="none" stroke="#d33a2c" stroke-width="1.6" stroke-dasharray="4 4" stroke-linecap="round"/>
 <g class="hai-trail-layer"></g>${pins}
-<g class="hai-map-shark" transform="translate(${sx} ${sy})"><g class="hai-map-move"><g transform="translate(-23 -36) scale(.3)">${shark({ eye: 'auf', mouth: 'froh', cheek: false })}</g></g></g></svg>`;
+<g class="hai-map-shark" transform="translate(${sx} ${sy})"><g class="hai-map-move"><g transform="translate(-22 -30) scale(.3)">${shark({ eye: 'auf', mouth: 'froh' })}</g></g></g></svg>`;
   }, [h.visited.join(), h.place, freeKey, sel, data.hai.name]);
 
   // Karte so scrollen, dass der Hai zu sehen ist
@@ -862,12 +862,12 @@ function Postcard({ place: id, neu, name, onClose, onHai }) {
           className="hai-postcard-pic"
           aria-hidden="true"
           dangerouslySetInnerHTML={{
-            __html: `<svg viewBox="0 0 360 260">${scene(id)}<g transform="translate(10 128) scale(.72)">${shark({ eye: 'froh', mouth: 'froh' })}</g></svg>`,
+            __html: `<svg viewBox="0 0 360 260">${scene(id)}<g transform="translate(10 136) scale(.78)">${shark({ eye: 'froh', mouth: 'froh' })}</g></svg>`,
           }}
         />
         <Svg
           className="hai-stamp"
-          html={`<svg viewBox="0 0 60 70"><rect x="2" y="2" width="56" height="66" fill="#fff" stroke="#141414" stroke-width="1.6" stroke-dasharray="3 2.4"/><rect x="8" y="8" width="44" height="54" fill="#f3ede1" stroke="#141414" stroke-width="1.2"/><g transform="translate(9 22) scale(.26)">${shark({ eye: 'auf', mouth: 'froh', cheek: false })}</g>${mapIconSvg().replace('<svg', '<svg x="30" y="40" width="18" height="18"')}</svg>`}
+          html={`<svg viewBox="0 0 60 70"><rect x="2" y="2" width="56" height="66" fill="#fff" stroke="#141414" stroke-width="1.6" stroke-dasharray="3 2.4"/><rect x="8" y="8" width="44" height="54" fill="#f3ede1" stroke="#141414" stroke-width="1.2"/><g transform="translate(9 24) scale(.27)">${shark({ eye: 'auf', mouth: 'froh' })}</g>${mapIconSvg().replace('<svg', '<svg x="30" y="40" width="18" height="18"')}</svg>`}
         />
         <div className="hai-postcard-text">
           <p className="hai-postcard-title">{title}</p>

@@ -80,6 +80,13 @@ Passend zur Plattform (siehe `CLAUDE.md`, „Gestaltung der Plattform“ und „
   `data-…` zeichnen und per CSS am äußeren `svg` nur die passende zeigen (`data-auge`, `data-mund` in
   `components/hai-art.js` und `hai.css`). So wechselt das Gesicht mitten in einer Animation, ohne neu zu zeichnen.
   Für Bilder, die sich nicht ändern, nur die eine Variante ausgeben (`shark({ eye, mouth })`).
+- **Flauschiger Rand** (Kuscheltier, Frottee, Fell): unter die Fläche erst Tuschepunkte entlang der Kontur
+  (`stroke-dasharray="0.01 3"`, `stroke-linecap="round"`, Breite 4,4) und eine Kontur der Breite 3, darüber die
+  Fläche ohne Kontur. Die Hälfte jedes Punkts schaut heraus, der Rand wirkt weich (`fuzz` in `components/hai-art.js`).
+  Keine Glanzlichter auf Stoff, die wirken wie Plastik.
+- Gestaltung mit dem Nutzer abstimmen: mehrere Richtungen nebeneinander zeichnen (z.B. von der Seite, schräg von
+  vorn, rund, schlank), neben seinem Foto, groß und so klein wie in der App, und gleich in der echten Bühne zeigen.
+  Erst nach seiner Wahl einbauen.
 - Traurig liest sich im Profil nicht über Augenbrauen (wirkt schnell wütend): besser ein halb geschlossenes Lid und
   eine Träne.
 - Text in SVG nur für Zahlen und Buchstaben auf Spielmaterial, mit `style="font:800 12px var(--font-display)"`.

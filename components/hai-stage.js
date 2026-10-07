@@ -5,11 +5,11 @@
 import { shark, stain, SPOTS, FOOD_ART, SPONGE, heart, INK } from './hai-art';
 import { scene, NIGHT } from './hai-orte';
 
-export const ACTOR = { x: 8, y: 96 };
-const MOUTH = { x: ACTOR.x + 27, y: ACTOR.y + 76 };
-const HEAD = { x: ACTOR.x + 46, y: ACTOR.y + 28 };
+export const ACTOR = { x: 10, y: 110 };
+const MOUTH = { x: ACTOR.x + 31, y: ACTOR.y + 66 };
+const HEAD = { x: ACTOR.x + 44, y: ACTOR.y + 22 };
 const FACES = {
-  froh: { auge: 'auf', mund: 'froh', wange: true },
+  froh: { auge: 'auf', mund: 'froh' },
   mittel: { auge: 'auf', mund: 'mittel' },
   traurig: { auge: 'muede', mund: 'traurig' },
   schlaf: { auge: 'zu', mund: 'schlaf' },
@@ -85,13 +85,12 @@ export function createStage(host, { onScrubbed } = {}) {
   let busy = 0; // laufende Animationen mit eigenem Gesicht
   let cleaning = null;
 
-  const face = ({ auge, mund, wange }) => {
+  const face = ({ auge, mund }) => {
     if (auge) svg.dataset.auge = auge;
     if (mund) svg.dataset.mund = mund;
-    if (wange !== undefined) svg.dataset.wange = wange ? '1' : '';
   };
   const restFace = () => {
-    if (!busy) face({ wange: false, ...FACES[state.mood] });
+    if (!busy) face(FACES[state.mood]);
   };
   const setStains = (list) => {
     $('.hai-stains').innerHTML = list.map(stain).join('');
@@ -184,18 +183,18 @@ export function createStage(host, { onScrubbed } = {}) {
   // Reaktion nach dem Essen oder Trinken: mag / nicht / normal
   async function react(r) {
     if (r === 'mag') {
-      face({ auge: 'froh', mund: 'froh', wange: true });
+      face({ auge: 'froh', mund: 'froh' });
       hearts(5);
       if (!reduced())
         await done(swim.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(-10px)' }, { transform: 'translateY(0)' }, { transform: 'translateY(-6px)' }, { transform: 'translateY(0)' }], { duration: 700, easing: 'ease-in-out' }));
       await wait(reduced() ? 900 : 500);
     } else if (r === 'nicht') {
-      face({ auge: 'froh', mund: 'baeh', wange: false });
+      face({ auge: 'froh', mund: 'baeh' });
       if (!reduced())
         await done(swim.animate([0, -5, 5, -4, 4, 0].map((d) => ({ transform: `rotate(${d}deg)` })), { duration: 620, easing: 'ease-in-out' }));
       await wait(reduced() ? 900 : 400);
     } else {
-      face({ auge: 'froh', mund: 'froh', wange: true });
+      face({ auge: 'froh', mund: 'froh' });
       if (!reduced()) await done(swim.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(-7px)' }, { transform: 'translateY(0)' }], { duration: 380, easing: 'ease-in-out' }));
       await wait(reduced() ? 700 : 300);
     }
@@ -370,7 +369,7 @@ export function createStage(host, { onScrubbed } = {}) {
     /** Kopfschütteln, z.B. wenn er satt ist. */
     async refuse() {
       busy++;
-      face({ auge: 'zu', mund: 'mittel', wange: false });
+      face({ auge: 'zu', mund: 'mittel' });
       if (!reduced()) await done(swim.animate([0, -4, 4, -3, 3, 0].map((d) => ({ transform: `rotate(${d}deg)` })), { duration: 560, easing: 'ease-in-out' }));
       else await wait(600);
       busy--;

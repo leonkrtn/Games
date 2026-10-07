@@ -51,9 +51,6 @@
 .hai-stage[data-mund='schlaf'] .hai-mouth[data-mund='schlaf'] {
   display: inline;
 }
-.hai-stage:not([data-wange='1']) .hai-cheek {
-  display: none;
-}
 .hai-stage[data-weg='1'] .hai-actor {
   visibility: hidden;
 }
