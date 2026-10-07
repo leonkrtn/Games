@@ -76,6 +76,12 @@ Passend zur Plattform (siehe `CLAUDE.md`, „Gestaltung der Plattform“ und „
   `transform-box: fill-box; transform-origin: …` im Spiel-CSS. Nur `transform` und `opacity`
   animieren.
 - Wiederholungen (Schraffur, Tupfen, Speichen) mit `Array.from` erzeugen, nicht abtippen.
+- Eine Figur mit mehreren Gesichtern (froh, traurig, schläft, Maul offen): alle Augen und Münder als Gruppen mit
+  `data-…` zeichnen und per CSS am äußeren `svg` nur die passende zeigen (`data-auge`, `data-mund` in
+  `components/hai-art.js` und `hai.css`). So wechselt das Gesicht mitten in einer Animation, ohne neu zu zeichnen.
+  Für Bilder, die sich nicht ändern, nur die eine Variante ausgeben (`shark({ eye, mouth })`).
+- Traurig liest sich im Profil nicht über Augenbrauen (wirkt schnell wütend): besser ein halb geschlossenes Lid und
+  eine Träne.
 - Text in SVG nur für Zahlen und Buchstaben auf Spielmaterial, mit `style="font:800 12px var(--font-display)"`.
 - Beschriftung auf gemustertem Grund (Raumnamen auf Dielen und Fliesen): SVG-Text mit `paint-order: stroke`
   und einer Kontur in Papierfarbe stellt ihn frei, ohne Kasten dahinter (`.kd-label` in `games/krimidoku.js`).
@@ -96,6 +102,18 @@ node .claude/skills/zeichnen/vorschau.mjs <datei.svg|datei.html> <ausgabe.png>
 Die SVG-Entwürfe dafür in den Scratchpad-Ordner schreiben (nicht ins Projekt), das PNG mit dem
 Read-Werkzeug ansehen. Für eine HTML-Datei: jedes `<svg>` darin wird einzeln gezeigt, so lassen sich
 Varianten oder alle Figuren eines Spiels vergleichen.
+
+**Viele Zeichnungen auf einmal** (zwanzig Speisen, vierzehn Bühnenbilder): `raster.cjs` legt alle `<svg>` einer
+HTML-Datei als Raster auf ein Blatt, jedes groß, klein und in Graustufen, beschriftet mit `data-name`:
+
+```bash
+node .claude/skills/zeichnen/raster.cjs <datei.html> <ausgabe.png> 80 28 7     # groß, klein, Spalten
+```
+
+Liegen die Zeichnungen als Zeichenketten in einem Modul ohne React (wie `components/hai-art.js`), schreibt ein
+kleines Skript im Scratchpad die HTML-Datei direkt daraus (`import { FOOD_ART } from '…/hai-art.js'`), so sieht
+man nach jeder Änderung den echten Stand. Bühnenbilder (360 × 260) mit `raster.cjs … 300 90 3` ansehen, die Figur
+gleich hineinsetzen: Erst dann sieht man, ob sie das Wahrzeichen verdeckt.
 
 ## Prüfliste vor dem Einbauen
 

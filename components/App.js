@@ -8,6 +8,7 @@ import Room from './Room';
 import Friends from './Friends';
 import NotifySettings from './NotifySettings';
 import NewGroup from './NewGroup';
+import Hai from './Hai';
 import {
   pushSupport,
   registerServiceWorker,
@@ -17,7 +18,7 @@ import {
   deviceLabel,
 } from '@/lib/push-client';
 
-// Ansicht aus der Adresse: ?raum=CODE (Spielzimmer) oder ?seite=freunde|gruppe|benachrichtigungen
+// Ansicht aus der Adresse: ?raum=CODE (Spielzimmer) oder ?seite=freunde|gruppe|benachrichtigungen|hai
 const roomFromUrl = () => new URLSearchParams(location.search).get('raum');
 const pageFromUrl = () => new URLSearchParams(location.search).get('seite');
 
@@ -79,7 +80,7 @@ export default function App() {
     history.replaceState(null, '', location.pathname);
   }, []);
 
-  const push = usePushDevice(room ?? 'home', Boolean(user), showToast);
+  const push = usePushDevice(room ?? (page === 'hai' ? 'hai' : 'home'), Boolean(user), showToast);
   endpointRef.current = push.endpoint;
 
   if (user === undefined) return null;
@@ -107,6 +108,8 @@ export default function App() {
             showToast={showToast}
             onUnauthorized={onUnauthorized}
           />
+        ) : page === 'hai' ? (
+          <Hai user={user} goHome={goHome} showToast={showToast} onUnauthorized={onUnauthorized} />
         ) : page === 'benachrichtigungen' ? (
           <NotifySettings goHome={goHome} showToast={showToast} push={push} onUnauthorized={onUnauthorized} />
         ) : (
@@ -128,7 +131,7 @@ export default function App() {
 
 /**
  * Benachrichtigungen für dieses Gerät. Solange die App sichtbar ist, meldet sie alle 30 Sekunden,
- * welche Ansicht offen ist (Freundesliste oder ein Spielzimmer). Dafür schickt der Server dann nichts.
+ * welche Ansicht offen ist (Freundesliste, ein Spielzimmer oder der Hai). Dafür schickt der Server dann nichts.
  */
 function usePushDevice(view, loggedIn, showToast) {
   const [support, setSupport] = useState(() => pushSupport());

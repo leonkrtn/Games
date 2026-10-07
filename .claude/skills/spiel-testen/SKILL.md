@@ -155,6 +155,27 @@ Die Bilder sind Platzhalter, also Bilder-Layouts zusätzlich
 im echten Spiel ansehen. Den ersten Wurf zeigt `game.first`: Ein Auftakt mit vielen Karten kann beim Foto
 noch laufen (dann `wait` erhöhen, oder es ist ein Hinweis, dass der Auftakt zu lang ist).
 
+## Uhrzeit und Zustände vortäuschen (abgefangene Antworten)
+
+Was von der Tageszeit oder vergangenen Stunden abhängt (Hai schläft nachts, ist weggeschwommen, hat Hunger), lässt
+sich im Browser nicht abwarten. Die Antwort des Servers abfangen, ändern und weiterreichen; die Seite rechnet dann
+mit der vorgetäuschten Serverzeit (`now` in der Antwort, siehe `useHai` in `components/Hai.js`):
+
+```js
+await A.route('**/api/hai', async (route) => {
+  const res = await route.fetch();
+  const r = await res.json();
+  if (r.hai) { r.now = Date.UTC(2026, 9, 7, 23, 30); r.hai.at = r.now; r.hai.need = { essen: 8, trinken: 20, sauber: 12 }; }
+  await route.fulfill({ response: res, json: r });
+});
+await A.goto('http://localhost:3100/?seite=hai');
+```
+
+Vor dem nächsten Zustand `await A.unroute('**/api/hai')`. Echte Züge prüft das nicht (der Server rechnet mit seiner
+Uhr), dafür die Regeln in Node mit festen Zeitpunkten simulieren (`advance(h, t)` in `lib/hai.js`). Ganzer Ablauf mit
+zwei Konten: adoptieren (`/api/hai` mit `t: 'adopt'`), Meilen über zwei Partien Tic-Tac-Toe per API sammeln, dann
+reisen. Beim Schrubben mit `touchPath` über den Hai prüfen, dass `scrollY` gleich bleibt.
+
 ## 4. Finger-Gesten
 
 `page.mouse` und `page.click` prüfen nicht, ob die Seite beim Ziehen mit dem Finger scrollt.

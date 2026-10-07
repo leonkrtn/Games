@@ -9,6 +9,7 @@ const KINDS = [
   { key: 'start', title: 'Neues Spiel', hint: 'Jemand startet ein Spiel mit dir.' },
   { key: 'end', title: 'Spielende', hint: 'Ein Spiel ist vorbei, mit dem Ergebnis.' },
   { key: 'friends', title: 'Freunde und Gruppen', hint: 'Neue und angenommene Anfragen, jemand holt dich in eine Gruppe.' },
+  { key: 'hai', title: 'Hai', hint: 'Jemand füttert euren Hai, putzt ihn oder reist mit ihm.' },
 ];
 
 // Benachrichtigungen verwalten: dieses Gerät, worüber, von wem, alle Geräte des Kontos.

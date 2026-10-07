@@ -6,6 +6,7 @@ import { getSupabase } from '@/lib/supabase-browser';
 import { isIos, isStandalone } from '@/lib/push-client';
 import { storage } from './api';
 import { PLAYER_COLORS } from '@/lib/colors';
+import { HaiCard } from './Hai';
 
 // Zahlen im Text als Wort (die Textschrift hat eine durchgestrichene Null)
 const WORDS = ['keine', 'eine', 'zwei', 'drei', 'vier', 'fünf', 'sechs', 'sieben', 'acht', 'neun', 'zehn', 'elf', 'zwölf'];
@@ -130,6 +131,13 @@ export default function Home({ user, openRoom, openPage, showToast, push, onLogo
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {data?.hai && (
+        <section>
+          <h2 className="section-title">Hai</h2>
+          <HaiCard hai={data.hai} onOpen={() => openPage('hai')} />
         </section>
       )}
 
@@ -290,6 +298,12 @@ function Menu({ data, push, openPage }) {
         <span className="menu-title">Freunde verwalten</span>
         <span className="menu-status">{friends}</span>
       </button>
+      {data && !data.hai && data.friends.length > 0 && (
+        <button className="menu-row" id="menu-hai" onClick={() => openPage('hai')}>
+          <span className="menu-title">Hai adoptieren</span>
+          <span className="menu-status">Ein Kuscheltier für dich und eine Person</span>
+        </button>
+      )}
       <button className="menu-row" id="menu-group" onClick={() => openPage('gruppe')}>
         <span className="menu-title">Gruppe gründen</span>
         <span className="menu-status">Ein Spielzimmer für bis zu sechs Leute</span>
