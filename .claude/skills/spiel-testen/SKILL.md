@@ -39,6 +39,11 @@ Dann einige tausend Partien mit zufälligen, gültigen Zügen spielen, **mit jed
 Läuft eine Simulation länger als zwei Minuten, die Zahl der Partien senken; Tempo misst man mit
 zwanzig Partien.
 
+**Bestimmten Zufall erzwingen** (eine Sechs, ein Wurf, der schlägt): `Math.random` nur um den einen Zug ersetzen,
+z.B. `Math.random = () => (wurf - 1) / 6 + 0.01; G.action(t, …); Math.random = original;`. So entstehen gezielte
+`prev`/`view`-Paare für den Prüfstand. Beim Prüfstand mit `prev` ist das erste Zeichnen `game.first`: Der Auftakt
+läuft mit, Einzelbilder des Wechsels deshalb erst nach gut einer Sekunde ansehen.
+
 ## 2. Im Browser spielen (zwei bis sechs Konten)
 
 **Nicht mit `npm run dev` testen:** Next.js hängt dabei einen Block an `CLAUDE.md` an (falls doch
