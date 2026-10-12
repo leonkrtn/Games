@@ -93,6 +93,11 @@ export function tick(s, now) {
   }
 }
 
+// Bildschirm: gesicherte Nüsse
+export function points(s) {
+  return s.scores;
+}
+
 export function waitingFor(s) {
   if (s.phase === 'ende') return [];
   if (s.phase === 'sonder') return [s.special.by, ...s.special.dogs];

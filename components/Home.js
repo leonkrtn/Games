@@ -243,7 +243,7 @@ function FriendRow({ friend, me, onOpen }) {
 
 // Gruppe: Name, wer dran ist, darunter alle Mitglieder mit ihren gewonnenen Spielen
 function GroupRow({ group, me, onOpen }) {
-  const { name, members, scores, order, game } = group;
+  const { name, members, scores, order, game, screen } = group;
   const color = (id) => PLAYER_COLORS[order?.indexOf(id)] ?? 'var(--ink)';
   const nameOf = (id) => members.find((m) => m.id === id)?.name ?? '?';
   const waiting = game?.waiting ?? [];
@@ -262,15 +262,22 @@ function GroupRow({ group, me, onOpen }) {
         {status}
       </span>
       <span className="group-members">
-        {members.map((m) => (
-          <span key={m.id} className="group-member">
-            <span className="marker" style={{ color: color(m.id) }} aria-hidden="true" />
-            {m.id === me.id ? 'Du' : m.name}
-            <span className="num" style={{ color: color(m.id) }}>
-              {scores?.[m.id] ?? 0}
+        {members.map((m) =>
+          m.id === screen ? (
+            <span key={m.id} className="group-member is-screen">
+              {m.id === me.id ? 'Du' : m.name}
+              <small>Bildschirm</small>
             </span>
-          </span>
-        ))}
+          ) : (
+            <span key={m.id} className="group-member">
+              <span className="marker" style={{ color: color(m.id) }} aria-hidden="true" />
+              {m.id === me.id ? 'Du' : m.name}
+              <span className="num" style={{ color: color(m.id) }}>
+                {scores?.[m.id] ?? 0}
+              </span>
+            </span>
+          ),
+        )}
       </span>
     </button>
   );
@@ -306,7 +313,7 @@ function Menu({ data, push, openPage }) {
       )}
       <button className="menu-row" id="menu-group" onClick={() => openPage('gruppe')}>
         <span className="menu-title">Gruppe gründen</span>
-        <span className="menu-status">Ein Spielzimmer für bis zu sechs Leute</span>
+        <span className="menu-status">Ein Spielzimmer für bis zu sechs Spieler</span>
       </button>
       <button className="menu-row" id="menu-notify" onClick={() => openPage('benachrichtigungen')}>
         <span className="menu-title">Benachrichtigungen</span>

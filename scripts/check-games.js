@@ -16,6 +16,8 @@ for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.js')).sort()) 
     for (const fn of ['setup', 'action', 'render']) {
       if (typeof mod[fn] !== 'function') problems.push(`export function ${fn} fehlt`);
     }
+    // Bildschirm: present() zeichnet, was screen() liefert
+    if (mod.present && typeof mod.screen !== 'function') problems.push('present() ohne screen(): der Bildschirm bekäme keinen Spielstand');
     if (typeof mod.setup === 'function') {
       const [min = 1, max = 99] = mod.meta?.players ?? [];
       // Spieloptionen: einmal mit den Vorgaben, dann jede Wahl einzeln.
@@ -35,6 +37,11 @@ for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.js')).sort()) 
           structuredClone(state);
           JSON.stringify(state);
           for (const p of players) JSON.stringify(mod.view ? mod.view(state, p.id) : state);
+          if (mod.screen) JSON.stringify(mod.screen(state));
+          if (mod.points) {
+            const pts = mod.points(state);
+            if (!pts || players.some((p) => !Number.isFinite(pts[p.id]))) problems.push('points() muss für jeden Spieler eine Zahl liefern');
+          }
         }
       }
     }

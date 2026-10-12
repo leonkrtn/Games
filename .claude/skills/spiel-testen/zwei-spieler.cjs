@@ -7,6 +7,7 @@
 //   const { A } = await start({ game: 'qwixx', options: ['Gemixxt', 'Eine Minute'] });   // Lobby-Einstellungen per Text
 //   const { A } = await start({ game: 'flip-7', width: 1000, reduced: true });           // Desktop, ohne Bewegung
 //   const { pages } = await start({ game: 'flip-7', players: 5 });                      // Gruppe: pages[0] = Anna …
+//   const { pages, tv } = await start({ game: 'kunstkritik', players: 3, screen: true }); // dazu ein Fernseher (1280 × 720)
 
 const path = require('node:path');
 const { execSync } = require('node:child_process');
@@ -35,16 +36,17 @@ async function api(page, url, body) {
 
 const NAMES = ['Anna', 'Ben', 'Cem', 'Dora', 'Emil', 'Fiona'];
 
-async function start({ game, options = [], players = 2, base = 'http://localhost:3100', width = 360, height = 780, scale = 2, reduced = false } = {}) {
+// screen: zusätzlich ein Konto „Fernseher“ in der Gruppe, das als Bildschirm gewählt ist (Seite `tv`, quer, ohne Touch).
+async function start({ game, options = [], players = 2, base = 'http://localhost:3100', width = 360, height = 780, scale = 2, reduced = false, screen = false, tvWidth = 1280, tvHeight = 720 } = {}) {
   const { chromium } = loadPlaywright();
   const browser = await chromium.launch();
   const errors = [];
   const suffix = Date.now() % 100000;
-  const player = async (name) => {
+  const player = async (name, tv = false) => {
     const ctx = await browser.newContext({
-      viewport: { width, height },
-      deviceScaleFactor: scale,
-      hasTouch: true,
+      viewport: tv ? { width: tvWidth, height: tvHeight } : { width, height },
+      deviceScaleFactor: tv ? 1 : scale,
+      hasTouch: !tv,
       reducedMotion: reduced ? 'reduce' : 'no-preference',
     });
     const page = await ctx.newPage();
@@ -57,11 +59,12 @@ async function start({ game, options = [], players = 2, base = 'http://localhost
   };
   const pages = [];
   for (const name of NAMES.slice(0, players)) pages.push(await player(name));
+  const tv = screen ? await player('Fernseher', true) : null;
   const [A, B] = pages;
   const { inviteCode } = await api(A, '/api/account', { t: 'home' });
-  for (const p of pages.slice(1)) await api(p, '/api/account', { t: 'friend-invite', code: inviteCode });
+  for (const p of [...pages.slice(1), ...(tv ? [tv] : [])]) await api(p, '/api/account', { t: 'friend-invite', code: inviteCode });
   let room;
-  if (players > 2) {
+  if (players > 2 || tv) {
     const { friends } = await api(A, '/api/account', { t: 'home' });
     const r = await api(A, '/api/account', { t: 'group-create', name: 'Testgruppe', members: friends.map((f) => f.user.id) });
     if (r.error) throw new Error(r.error);
@@ -69,7 +72,12 @@ async function start({ game, options = [], players = 2, base = 'http://localhost
   } else {
     room = (await api(A, '/api/account', { t: 'home' })).friends[0].room;
   }
-  for (const p of pages) await p.goto(`${base}/?raum=${room}`);
+  if (tv) {
+    const { user } = await api(tv, '/api/account', { t: 'me' });
+    const r = await api(A, '/api/room', { t: 'screen', room, user: user.id });
+    if (r.error) throw new Error(r.error);
+  }
+  for (const p of [...pages, ...(tv ? [tv] : [])]) await p.goto(`${base}/?raum=${room}`);
   if (game) {
     await A.click(`[data-game="${game}"]`);
     // Spiele mit meta.options öffnen erst die Einstellungen, ohne starten sie sofort.
@@ -79,8 +87,9 @@ async function start({ game, options = [], players = 2, base = 'http://localhost
     }
     await A.waitForSelector('#game > *');
     for (const p of pages.slice(1)) await p.waitForSelector('#game > *', { timeout: 10000 }); // Testmodus: fragt jede Sekunde nach
+    if (tv) await tv.waitForSelector('#tv .tv-stage, #tv .tv-board', { timeout: 10000 });
   }
-  return { browser, A, B, pages, room, errors, api: (page, body) => api(page, '/api/room', { room, ...body }) };
+  return { browser, A, B, pages, tv, room, errors, api: (page, body) => api(page, '/api/room', { room, ...body }) };
 }
 
 // Echtes Ziehen mit dem Finger (Touch-Ereignisse über das DevTools-Protokoll). Anders als page.mouse

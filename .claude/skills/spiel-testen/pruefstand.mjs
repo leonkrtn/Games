@@ -14,6 +14,9 @@
 // act (async (page) => …, läuft vor dem Warten: Knöpfe antippen, z.B. page.click('.fertig')),
 // inspect (Funktion, läuft nach dem Foto in der Seite, ihr Ergebnis steht in `seen`: z.B. Maße von Elementen).
 // before (async (page) => …, läuft vor dem Laden: z.B. eingebettete fremde Seiten umleiten, siehe instagram-ersatz.cjs).
+// present: zeichnet den Bildschirm einer Gruppe (screen() und present() des Spiels, große Schrift wie am
+// Fernseher), dazu am besten width: 1280, height: 720. screen: { id, name } gibt render() einen Bildschirm im Raum
+// (game.screen), z.B. für die Fernbedienung am Ende von Kunstkritik.
 // Bilder (game.imageUrl) sind graue Platzhalter. Schriften und globals.css sind die echten.
 
 import http from 'node:http';
@@ -31,7 +34,7 @@ const PLACEHOLDER =
 
 const PAGE = `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="/fonts/big-shoulders/opsz.css"><link rel="stylesheet" href="/fonts/atkinson-hyperlegible-next/index.css">
-<link rel="stylesheet" href="/globals.css"></head><body><main class="shell"><div id="game"></div></main>
+<link rel="stylesheet" href="/globals.css"></head><body><main class="shell"><div class="tv"><div class="tv-stage"><div id="game"></div></div></div></main>
 <script type="module">
 const st = await (await fetch('/state.json')).json();
 const mod = await import('/games/' + st.game + '.js');
@@ -40,8 +43,9 @@ const COLORS = ['var(--p1)', 'var(--p2)', 'var(--p3)', 'var(--p4)', 'var(--p5)',
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const ctrl = new AbortController();
 window.sent = [];
+if (st.present) document.documentElement.classList.add('tv-mode');
 const api = (prev) => ({
-  me: st.me, players: st.players, name: (id) => st.players.find((p) => p.id === id)?.name ?? '?',
+  me: st.me, players: st.players, screen: st.screen ?? null, name: (id) => st.players.find((p) => p.id === id)?.name ?? '?',
   color: (id) => COLORS[st.players.findIndex((p) => p.id === id)] ?? 'var(--muted)',
   send: (type, data) => { window.sent.push([type, data]); return Promise.resolve(); }, esc, result: st.view.result ?? null,
   upload: async () => ({}), imageUrl: () => ${JSON.stringify(PLACEHOLDER)},
@@ -49,8 +53,9 @@ const api = (prev) => ({
   prev, first: prev === null, signal: ctrl.signal, reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
 });
 const el = document.getElementById('game');
-if (st.prev) mod.render(el, st.prev, api(null));
-mod.render(el, st.view, api(st.prev ?? null));
+const draw = st.present ? mod.present : mod.render;
+if (st.prev) draw(el, st.prev, api(null));
+draw(el, st.view, api(st.prev ?? null));
 window.ready = true;
 </script></body></html>`;
 
@@ -86,11 +91,12 @@ async function start() {
   port = server.address().port;
 }
 
-export async function shot(game, G, state, { me = state.players[0].id, prev = null, file, width = 360, height = 800, wait = 1600, reduced = false, inspect, act, before } = {}) {
+export async function shot(game, G, state, { me = state.players[0].id, prev = null, file, width = 360, height = 800, wait = 1600, reduced = false, inspect, act, before, present = false, screen = null } = {}) {
   await start();
   const players = state.players.map(({ id, name }) => ({ id, name }));
-  const see = (s) => (G.view ? G.view(s, me) : s);
-  current = { game, view: see(state), prev: prev ? see(prev) : null, me, players };
+  if (present) me = 'bildschirm';
+  const see = (s) => (present ? G.screen(s) : G.view ? G.view(s, me) : s);
+  current = { game, view: see(state), prev: prev ? see(prev) : null, me, players, present, screen };
   browser ??= await loadPlaywright().chromium.launch();
   const ctx = await browser.newContext({
     viewport: { width, height },

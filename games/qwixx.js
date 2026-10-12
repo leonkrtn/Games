@@ -140,6 +140,11 @@ export function tick(s, now) {
   }
 }
 
+// Bildschirm: Punkte jedes Blocks, wie sie gerade stehen
+export function points(s) {
+  return Object.fromEntries(s.players.map((p) => [p.id, scoreOf(s, p.id).total]));
+}
+
 export function waitingFor(s) {
   if (s.phase === 'wuerfeln' || s.phase === 'farbe') return [s.active];
   if (s.phase === 'weiss') return s.players.filter((p) => s.round.white[p.id] === null).map((p) => p.id);

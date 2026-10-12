@@ -1316,6 +1316,292 @@ textarea:focus {
   white-space: nowrap;
 }
 
+/* ---------- Bildschirm einer Gruppe (Fernseher, components/Screen.js) ---------- */
+
+/* Große Schrift über rem: alle Größen (--t-…) wachsen mit der Breite des Bildschirms */
+html.tv-mode {
+  font-size: clamp(16px, 1.25vw, 30px);
+}
+html.tv-mode .shell {
+  max-width: none;
+  padding: max(2.5vh, env(safe-area-inset-top)) max(4vw, env(safe-area-inset-right)) max(3vh, env(safe-area-inset-bottom))
+    max(4vw, env(safe-area-inset-left));
+}
+.tv {
+  display: grid;
+  gap: 3.5vh;
+  align-content: start;
+  min-width: 0;
+}
+.tv:not(.awake) {
+  cursor: none;
+}
+.tv-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 24px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+.tv-where {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--t-md);
+  line-height: 1.1;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.tv-tools {
+  display: flex;
+  gap: 24px;
+  opacity: 0;
+  transition: opacity 300ms ease-out;
+}
+.tv.awake .tv-tools,
+.tv-tools:focus-within {
+  opacity: 1;
+}
+.tv-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--t-4xl);
+  line-height: 0.95;
+  overflow-wrap: break-word;
+}
+.tv-sub {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--t-xl);
+  line-height: 1;
+  margin-bottom: 12px;
+}
+.tv-stage {
+  min-width: 0;
+}
+.tv-who {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--t-2xl);
+  line-height: 1.1;
+}
+.tv-who .marker {
+  color: var(--c);
+  flex: none;
+}
+.tv-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Ohne Spiel: gewonnene Spiele und Verlauf */
+.tv-lobby {
+  display: grid;
+  gap: 5vh;
+}
+.tv-wins .tv-title {
+  margin-bottom: 2.5vh;
+}
+.tv-wins-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 4vw;
+  border-top: 3px solid var(--line);
+}
+.tv-wins-list.many {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18em), 1fr));
+}
+.tv-wins-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  padding: 1.6vh 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.tv-wins-list .tv-wins-num {
+  font-size: var(--t-4xl);
+  line-height: 0.9;
+  color: var(--c);
+}
+.tv-history ol {
+  border-top: 2px solid var(--line);
+}
+.tv-history li {
+  display: grid;
+  grid-template-columns: 5em 10em minmax(0, 1fr);
+  gap: 4px 1.2em;
+  align-items: baseline;
+  padding: 1vh 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.tv-history time {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--t-md);
+  color: var(--muted);
+}
+.tv-history-game {
+  font-weight: 700;
+}
+@media (max-width: 599px) {
+  .tv-history li {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .tv-history-text {
+    grid-column: 1 / -1;
+  }
+}
+.tv-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 24px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+  font-size: var(--t-sm);
+}
+
+/* Im Spiel ohne eigene Anzeige: Tafel mit Punkten der Partie, wer dran ist, gewonnene Spiele */
+.tv-board {
+  display: grid;
+  gap: 2.5vh;
+}
+.tv-status {
+  font-size: var(--t-xl);
+  font-weight: 700;
+  line-height: 1.2;
+  min-height: 1.2em;
+}
+.tv-table {
+  border-top: 3px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.tv-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1.2em;
+  padding: 1.4vh 0.6em;
+  border-bottom: 1px solid var(--hairline);
+  transition:
+    background-color 300ms ease-out,
+    opacity 400ms ease-out;
+}
+.tv-row:last-child {
+  border-bottom: 0;
+}
+.has-pts .tv-row {
+  grid-template-columns: minmax(0, 1fr) 7em 6em;
+}
+.tv-row-head {
+  padding-block: 0.6em;
+  font-size: var(--t-sm);
+  color: var(--muted);
+}
+.tv-row > :not(:first-child) {
+  justify-self: end;
+  text-align: right;
+}
+.tv-row.is-turn {
+  background: color-mix(in srgb, var(--c) 10%, white);
+}
+.tv-turn {
+  flex: none;
+  padding: 0 0.4em;
+  border: 2px solid currentColor;
+  border-radius: var(--radius);
+  color: var(--c);
+  font-family: var(--font-body);
+  font-size: var(--t-sm);
+  font-weight: 700;
+  line-height: 1.5;
+  opacity: 0;
+  transform: translateX(-0.4em);
+  transition:
+    opacity 250ms ease-out,
+    transform 250ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.tv-row.is-turn .tv-turn {
+  opacity: 1;
+  transform: none;
+}
+.tv-pts {
+  font-size: var(--t-4xl);
+  line-height: 0.9;
+  color: var(--c);
+}
+.tv-row .tv-wins-num {
+  font-size: var(--t-2xl);
+  line-height: 0.9;
+}
+.tv-board.is-done .tv-row.won .tv-name {
+  color: var(--c);
+}
+.tv-board.is-done .tv-row:not(.won):not(.tv-row-head) {
+  opacity: 0.45;
+}
+/* Fünf oder sechs Spieler passen ohne Scrollen auf einen Fernseher */
+.tv-board.many .tv-row {
+  padding-block: 0.9vh;
+}
+.tv-board.many .tv-who {
+  font-size: var(--t-xl);
+}
+.tv-board.many .tv-pts {
+  font-size: var(--t-3xl);
+}
+.tv-board.many .tv-row .tv-wins-num {
+  font-size: var(--t-xl);
+}
+@media (max-width: 599px) {
+  .has-pts .tv-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+}
+
+/* Reaktionen der Spieler groß über dem Bildschirm */
+html.tv-mode .react-fly {
+  bottom: 6vh;
+}
+html.tv-mode .react-fly .face {
+  width: 13vh;
+  height: 13vh;
+}
+html.tv-mode .react-name {
+  font-size: var(--t-lg);
+  max-width: 30vw;
+}
+
+/* Spielzimmer: wer der Bildschirm ist, und die Wahl in der Lobby */
+.board-screen {
+  margin-top: 8px;
+  font-size: var(--t-sm);
+  color: var(--muted);
+}
+.board-screen-name {
+  color: var(--ink);
+  font-weight: 700;
+}
+.screen-pick {
+  max-width: 420px;
+  margin-bottom: 32px;
+}
+.screen-pick .field-hint {
+  margin-top: 6px;
+}
+.group-member.is-screen small {
+  color: var(--muted);
+  font-size: inherit;
+}
+
 /* ---------- Meldungen ---------- */
 
 .toast {

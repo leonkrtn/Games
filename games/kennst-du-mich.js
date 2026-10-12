@@ -229,6 +229,11 @@ function list(names) {
 }
 
 // Für Benachrichtigungen: auf wen wartet das Spiel gerade?
+// Bildschirm: Punkte dieser Partie
+export function points(state) {
+  return state.score;
+}
+
 export function waitingFor(state) {
   state = upgrade(state);
   if (state.phase === 'fragen' || state.phase === 'pruefen') return [state.subject];

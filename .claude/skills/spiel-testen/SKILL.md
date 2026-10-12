@@ -1,6 +1,6 @@
 ---
 name: spiel-testen
-description: Spiele im Spielzimmer gründlich testen, bevor sie online gehen. Spiellogik in Node simulieren (tausende Partien mit jeder Spielerzahl, Geheimnisse in view, jede Partie endet), mit zwei bis sechs Konten im echten Browser spielen (Handy-Breite, Desktop, ohne Bewegung), seltene Zustände im Prüfstand zeichnen, Bildschirmfotos ansehen und Finger-Gesten wie Ziehen prüfen. Laden, wenn ein neues Spiel fertig ist, ein Spiel geändert wurde oder ein Fehler gemeldet wird.
+description: Spiele im Spielzimmer gründlich testen, bevor sie online gehen. Spiellogik in Node simulieren (tausende Partien mit jeder Spielerzahl, Geheimnisse in view, jede Partie endet), mit zwei bis sechs Konten im echten Browser spielen (Handy-Breite, Desktop, ohne Bewegung, dazu ein Fernseher als Bildschirm der Gruppe), seltene Zustände im Prüfstand zeichnen, Bildschirmfotos ansehen und Finger-Gesten wie Ziehen prüfen. Laden, wenn ein neues Spiel fertig ist, ein Spiel geändert wurde oder ein Fehler gemeldet wird.
 ---
 
 # Spiele testen
@@ -107,6 +107,15 @@ for (const p of pages) { const b = await p.$('[data-action="ziehen"]'); if (b) a
   meist richtig: dann das Element anklicken, das ein Mensch trifft (z.B. das Schiff statt der Zelle
   darunter).
 
+**Bildschirm (Fernseher):** `start({ game, players: 3, screen: true })` legt zusätzlich ein Konto „Fernseher“ an,
+holt es in die Gruppe, wählt es als Bildschirm und gibt seine Seite als `tv` zurück (1280 × 720, ohne Touch;
+`tvWidth`/`tvHeight` ändern das). `pages` enthält nur die Spieler. Zu prüfen: Der Fernseher zeigt nichts, was
+einem Spieler einen Vorteil gibt (in Node: `screen()` gegen den Zustand halten, z.B. kein Wort vor dem letzten
+„Los“), Züge vom Fernseher werden abgelehnt („Der Bildschirm spielt nicht mit.“), alles passt in 1280 × 720
+ohne Scrollen, und Steuerung von den Handys (Kunstkritik: Zurück und Weiter am Ende) kommt auf allen Handys und
+dem Fernseher gleich an. Live-Vorschauen (Montagsmaler) mitten in einem langsamen Strich fotografieren:
+`const p = touchPath(A, punkte, { steps: 8 }); await sleep(1600); await tv.screenshot(…); await p;`.
+
 ## 3. Prüfstand: seltene Zustände gezielt zeichnen
 
 Manches kommt im echten Spiel selten oder erst spät (Sonderrunde, volle Hände, Endwertung zu sechst,
@@ -147,6 +156,12 @@ inspect: () => [...document.querySelectorAll('#game *')].flatMap((el) => {
           ...(text.length >= 8 && lines >= 3 && r.width < 220 ? [`schmal: ${el.className} ${Math.round(r.width)}px`] : [])];
 }),
 ```
+
+**Bildschirm im Prüfstand:** `present: true` zeichnet mit `screen()` und `present()` und großer Schrift wie am
+Fernseher, dazu `width: 1280, height: 720`. Ein Zustand mit z.B. `state.show = 3` zeigt eine bestimmte Tafel der
+Vorstellung. `screen: { id: 'tv', name: 'Fernseher' }` gibt `render()` einen Bildschirm im Raum (`game.screen`),
+z.B. für die Fernbedienung auf dem Handy. Fehlt etwas auf dem Foto, Breiten per `inspect` messen: Ein Bild,
+das null breit ist, steckt meist mit Prozentbreite in einer Grid-Spalte `auto`.
 
 Es gibt nur Chromium, kein WebKit: Für das iPhone mit `width: 390, height: 844, scale: 3` (bei `start`)
 testen, Safari-Eigenheiten lassen sich so nicht prüfen.
@@ -232,4 +247,5 @@ for (const [i, P] of pages.entries()) await routeInstagram(P, 'ABCDEF'[i]);   //
 - [ ] Gesten (Ziehen, Tippen) mit `touchDrag` bzw. `touchscreen.tap` geprüft, falls das Spiel welche hat.
 - [ ] Bei `game.live`: einmal ohne Live-Nachrichten gespielt, Ansicht stimmt trotzdem.
 - [ ] Bei iframes: `loads` geprüft, nichts lädt bei Zügen der anderen neu.
+- [ ] Hat das Spiel `present()`: mit `screen: true` im Browser und im Prüfstand mit `present: true` angesehen.
 - [ ] `npm run check` und `npm run build` fehlerfrei.

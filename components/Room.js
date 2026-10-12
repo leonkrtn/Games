@@ -4,12 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { account, roomApi } from './api';
 import GameView from './GameView';
 import Reactions, { Face, ReactionDock, useReactions } from './Reactions';
+import Screen from './Screen';
 import { createLive, relay } from './live';
 import { countWord } from './Home';
 import { getSupabase } from '@/lib/supabase-browser';
 import { playerColor } from '@/lib/colors';
 
-const GROUP_MAX = 6;
+const GROUP_MAX = 7; // sechs Spieler und ein Bildschirm (lib/room.js)
 
 // Das gemeinsame Spielzimmer mit einer befreundeten Person oder einer Gruppe.
 export default function Room({ code, user, goHome, showToast, onUnauthorized }) {
@@ -157,6 +158,16 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
     );
   }
 
+  // Dieses Konto ist der Bildschirm der Gruppe: große Anzeige ohne Eingaben (components/Screen.js)
+  if (snap.role === 'screen') {
+    return (
+      <>
+        <Screen snap={snap} code={code} now={now} refresh={refresh} live={live} reactions={reactions} send={send} goHome={goHome} />
+        <ConnectionNote show={!connected} />
+      </>
+    );
+  }
+
   const players = snap.players.map(({ id, name }) => ({ id, name }));
 
   return (
@@ -167,6 +178,12 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
           {snap.group && <h1 className="room-name">{snap.group.name}</h1>}
           <p className="board-caption">Gewonnene Spiele</p>
           <Scoreboard snap={snap} online={online} recent={recent} />
+          {snap.screen && snap.game && (
+            <p className="board-screen" id="board-screen">
+              Bildschirm: <span className="board-screen-name">{snap.screen.name}</span>
+              {online && !online.has(snap.screen.id) && <span className="team-away">gerade nicht da</span>}
+            </p>
+          )}
           <ReactionDock reactions={reactions} />
         </aside>
 
@@ -189,6 +206,7 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
                 onAction={onAction}
                 onRefresh={refresh}
                 live={live}
+                screen={snap.screen}
               />
             </div>
           ) : (
@@ -249,11 +267,13 @@ function Result({ result, players, send }) {
 }
 
 function Lobby({ snap, send, unfriend, leave, showToast }) {
-  const n = snap.players.length;
+  const n = snap.players.length; // wer mitspielt (ohne Bildschirm)
   const [open, setOpen] = useState(null); // Spiel mit Optionen, das gerade eingestellt wird
   const [edit, setEdit] = useState(null); // Gruppe: 'add' | 'rename' | null
+  const members = snap.players.length + (snap.screen ? 1 : 0);
   return (
     <div id="lobby">
+      {snap.group && members >= 3 && <ScreenPick snap={snap} send={send} />}
       <h2 className="section-title">Spiele</h2>
       <ul className="game-list">
         {snap.games.map((g) => {
@@ -298,7 +318,7 @@ function Lobby({ snap, send, unfriend, leave, showToast }) {
       <div className="room-foot">
         {snap.group ? (
           <>
-            {n < GROUP_MAX && (
+            {members < GROUP_MAX && (
               <button className="link" id="group-add" aria-expanded={edit === 'add'} onClick={() => setEdit(edit === 'add' ? null : 'add')}>
                 Freund dazuholen
               </button>
@@ -323,11 +343,43 @@ function Lobby({ snap, send, unfriend, leave, showToast }) {
   );
 }
 
+// Gruppe: ein Mitglied als Bildschirm wählen. Es spielt nicht mit und zeigt alles groß, z.B. auf dem Fernseher.
+function ScreenPick({ snap, send }) {
+  const members = [...snap.players, ...(snap.screen ? [snap.screen] : [])];
+  const [busy, setBusy] = useState(false);
+  const change = async (e) => {
+    setBusy(true);
+    await send({ t: 'screen', user: e.target.value || null });
+    setBusy(false);
+  };
+  return (
+    <div className="screen-pick">
+      <label htmlFor="screen-select">Bildschirm</label>
+      <select id="screen-select" value={snap.screen?.id ?? ''} onChange={change} disabled={busy}>
+        <option value="">Keiner</option>
+        {members.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.id === snap.me ? `${m.name} (du)` : m.name}
+          </option>
+        ))}
+      </select>
+      <p className="field-hint muted">
+        {snap.screen
+          ? 'Spielt nicht mit und zeigt alles groß, zum Beispiel auf dem Fernseher.'
+          : members.length > 6
+            ? 'Zu siebt ist einer der Bildschirm: Er spielt nicht mit und zeigt alles groß, zum Beispiel auf dem Fernseher.'
+            : 'Ein Mitglied, das nicht mitspielt und alles groß zeigt, zum Beispiel ein Fernseher mit eigenem Konto.'}
+      </p>
+    </div>
+  );
+}
+
 // Gruppe: eigene Freunde dazuholen (nur in der Lobby, die Liste kommt von der Startseite).
 function AddMember({ snap, send, close, showToast }) {
   const [friends, setFriends] = useState(null);
   const [chosen, setChosen] = useState('');
-  const members = snap.players.map((p) => p.id).join(' '); // nur neu laden, wenn sich die Mitglieder ändern
+  // nur neu laden, wenn sich die Mitglieder ändern (der Bildschirm ist auch Mitglied)
+  const members = [...snap.players, ...(snap.screen ? [snap.screen] : [])].map((p) => p.id).join(' ');
   useEffect(() => {
     let live = true;
     account({ t: 'home' })

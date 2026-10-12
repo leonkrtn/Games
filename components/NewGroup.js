@@ -5,9 +5,9 @@ import { account } from './api';
 import { useHomeData } from './Home';
 import { Check } from './NotifySettings';
 
-const MAX_OTHERS = 5; // mit dir zusammen höchstens sechs
+const MAX_OTHERS = 6; // mit dir zusammen höchstens sieben: sechs Spieler und ein Bildschirm
 
-// Gruppe gründen: Name und zwei bis fünf Freunde wählen, danach geht es direkt ins neue Spielzimmer.
+// Gruppe gründen: Name und zwei bis sechs Freunde wählen, danach geht es direkt ins neue Spielzimmer.
 export default function NewGroup({ user, goHome, openRoom, showToast, onUnauthorized }) {
   const { data } = useHomeData(user, showToast, onUnauthorized);
   const [name, setName] = useState('');
@@ -39,8 +39,9 @@ export default function NewGroup({ user, goHome, openRoom, showToast, onUnauthor
         <h1 className="page-title">Gruppe gründen</h1>
       </header>
       <p className="page-intro">
-        Eine Gruppe hat ein eigenes Spielzimmer mit Punktestand und Verlauf, für bis zu sechs Leute. Dazuholen kannst du
-        deine Freunde, auch später noch.
+        Eine Gruppe hat ein eigenes Spielzimmer mit Punktestand und Verlauf, für bis zu sechs Spieler. Dazu kann ein
+        Bildschirm kommen, der nicht mitspielt und alles groß zeigt, zum Beispiel ein Fernseher mit eigenem Konto.
+        Dazuholen kannst du deine Freunde, auch später noch.
       </p>
 
       <form className="group-form" onSubmit={submit}>
@@ -65,7 +66,7 @@ export default function NewGroup({ user, goHome, openRoom, showToast, onUnauthor
             <p className="empty">Für eine Gruppe brauchst du mindestens zwei Freunde.</p>
           ) : (
             <>
-              <p className="page-intro">Wähle zwei bis fünf Freunde.</p>
+              <p className="page-intro">Wähle zwei bis sechs Freunde. Zu siebt ist einer der Bildschirm.</p>
               <div className="checks">
                 {friends.map((f) => (
                   <Check

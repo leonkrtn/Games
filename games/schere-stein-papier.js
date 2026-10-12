@@ -67,6 +67,11 @@ function list(names) {
 }
 
 // Für Benachrichtigungen: wer hat in dieser Runde noch nicht gewählt?
+// Bildschirm: gewonnene Runden dieser Partie
+export function points(state) {
+  return state.score;
+}
+
 export function waitingFor(state) {
   return state.players.map((p) => p.id).filter((id) => !state.picks[id]);
 }

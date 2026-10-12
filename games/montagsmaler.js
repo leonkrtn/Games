@@ -13,6 +13,10 @@
 // Striche schon während des Zeichnens über game.live an die anderen Browser; gespeichert wird jeder
 // fertige Befehl mit einer laufenden Nummer (seq), damit nichts doppelt oder in falscher Reihenfolge ankommt.
 //
+// Bildschirm (ein Gruppenmitglied, das nicht mitspielt, z.B. ein Fernseher): screen() zeigt, was die Rater
+// sehen, present() zeichnet es groß ohne Eingaben: Zeichnung live, Zeit, Wortstriche, Versuche aller, wer
+// zeichnet und wer es erraten hat, die Auflösung und am Ende die Galerie.
+//
 // Motion: Die Runden bauen sich als Kästchen auf, die Buchstaben-Striche fallen ein, Stifte heben
 // sich bei der Auswahl, der Eimer zieht einen Ring, „Alles löschen“ reißt das Blatt ab, falsche
 // Versuche rutschen in die Liste. Ist das Wort erraten, schrumpft die Zeichnung in die Auflösung,
@@ -191,6 +195,7 @@ const NUMBERS = ['null', 'eins', 'zwei', 'drei', 'vier', 'fünf', 'sechs', 'sieb
   'zweiundzwanzig', 'dreiundzwanzig', 'vierundzwanzig'];
 const word = (n) => NUMBERS[n] ?? String(n);
 const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+const names = (l) => (l.length < 2 ? l.join('') : `${l.slice(0, -1).join(', ')} und ${l.at(-1)}`);
 
 const LETTER = /\p{L}/u;
 const letterCount = (w) => [...w].filter((ch) => LETTER.test(ch)).length;
@@ -433,6 +438,11 @@ export function view(s, me) {
     v.suggestions = Array.from({ length: SUGGEST_EACH }, (_, i) => SUGGESTIONS[deck[(deckPos + i) % deck.length]]);
   }
   return v;
+}
+
+// Bildschirm: was die Rater sehen (kein Wort, keine Vorschläge)
+export function screen(s) {
+  return view(s, null);
 }
 
 
@@ -845,6 +855,11 @@ function reset(u) {
   });
 }
 
+// Bildschirm: dieselbe Ansicht wie für die Rater, ohne Eingaben und groß (game.tv)
+export function present(el, s, game) {
+  render(el, s, { ...game, tv: true });
+}
+
 export function render(el, s, game) {
   const u = local(el, game);
   u.s = s;
@@ -853,7 +868,7 @@ export function render(el, s, game) {
 
   let root = el.querySelector(':scope > .mm');
   if (!root) {
-    el.innerHTML = '<div class="mm"><div class="mm-track"></div><div class="mm-stage"></div></div>';
+    el.innerHTML = `<div class="mm ${game.tv ? 'mm-tv' : ''}"><div class="mm-track"></div><div class="mm-stage"></div></div>`;
     root = el.firstElementChild;
   }
   renderTrack(root.querySelector('.mm-track'), s, game);
@@ -962,7 +977,7 @@ function revealHtml(s, game) {
   const r = s.past[s.past.length - 1];
   const who = r.drawer === game.me ? 'Du hast' : `${game.esc(game.name(r.drawer))} hat`;
   // Zu mehreren steht dabei, wer es erraten hat
-  const by = s.players.length > 2 && r.by ? `${r.by === game.me ? 'Du hast' : `${game.esc(game.name(r.by))} hat`} es erraten` : 'Erraten';
+  const by = (s.players.length > 2 || game.tv) && r.by ? `${r.by === game.me ? 'Du hast' : `${game.esc(game.name(r.by))} hat`} es erraten` : 'Erraten';
   let res;
   if (!r.guessed) res = 'Nicht erraten.';
   else if (r.ms === null) res = `${by}, noch bevor der erste Strich da war.`;
@@ -1019,7 +1034,7 @@ function renderReady(stage, s, game) {
     <p class="status">${game.esc(game.name(s.drawer))} hat ein Wort.</p>
     ${slotsHtml(game, s.pattern, null, 'drop')}
     <p class="muted">${cap(word(n))} Buchstaben. Die Zeit läuft ab dem ersten Strich.</p>
-    <div class="row"><button class="btn primary" data-action="bereit">Bereit</button></div>
+    ${game.tv ? '<p class="status">Sobald jemand auf Bereit tippt, geht es los.</p>' : '<div class="row"><button class="btn primary" data-action="bereit">Bereit</button></div>'}
   </div>`;
 }
 
@@ -1065,9 +1080,10 @@ function toolsHtml() {
 function renderBoard(stage, s, game, u) {
   const signal = u.stage.signal;
   const drawer = u.drawer;
+  const tv = Boolean(game.tv);
   const many = guessersOf(s).length > 1;
   const otherName = game.esc(game.name(drawer ? guessersOf(s)[0] : s.drawer));
-  const triesTitle = drawer ? (many ? 'Versuche der anderen' : `Versuche von ${otherName}`) : many ? 'Versuche' : 'Deine Versuche';
+  const triesTitle = drawer ? (many ? 'Versuche der anderen' : `Versuche von ${otherName}`) : many || tv ? 'Versuche' : 'Deine Versuche';
   const n = slotCount(s.pattern);
   stage.innerHTML = `
     <div class="mm-board ${drawer ? 'is-drawer' : 'is-guesser'}">
@@ -1086,7 +1102,9 @@ function renderBoard(stage, s, game, u) {
         <svg class="mm-frame" viewBox="0 0 100 100" aria-hidden="true"><rect pathLength="1" x=".4" y=".4" width="99.2" height="99.2"/></svg>
       </div>
       ${
-        drawer
+        tv
+          ? ''
+          : drawer
           ? toolsHtml()
           : `<form class="mm-guess" autocomplete="off">
               <label for="mm-guess-in">Dein Tipp</label>
@@ -1101,7 +1119,7 @@ function renderBoard(stage, s, game, u) {
         <h3 class="mm-tries-title">${triesTitle}</h3>
         <ol class="mm-tries-list" aria-live="polite"></ol>
       </section>
-      ${drawer ? '' : '<div class="mm-giveup"><button type="button" class="link">Aufgeben</button></div>'}
+      ${drawer || tv ? '' : '<div class="mm-giveup"><button type="button" class="link">Aufgeben</button></div>'}
     </div>`;
 
   const board = stage.firstElementChild;
@@ -1132,9 +1150,10 @@ function renderBoard(stage, s, game, u) {
     bindTools(u, signal);
     bindDrawing(u, signal);
     syncTools(u);
-  } else bindGuess(u, signal);
+  } else if (!tv) bindGuess(u, signal);
   startClock(u, signal);
   updateBoard(u);
+  if (tv) return;
 
   // Malfläche und Werkzeuge (bzw. Eingabe) ganz ins Bild holen
   requestAnimationFrame(() => {
@@ -1224,7 +1243,14 @@ function renderTries(u) {
   for (const g of list.slice(u.triesShown)) {
     const li = document.createElement('li');
     li.className = `mm-try enter ${g.close ? 'close' : ''}`;
-    const who = many && g.by ? `<span class="marker" style="color:${game.color(g.by)}" title="${game.esc(game.name(g.by))}"></span> ` : '';
+    // Auf dem Bildschirm steht bei jedem Versuch, von wem er ist
+    const who = !g.by
+      ? ''
+      : game.tv
+        ? `<span class="marker" style="color:${game.color(g.by)}"></span><span class="mm-try-by">${game.esc(game.name(g.by))}</span> `
+        : many
+          ? `<span class="marker" style="color:${game.color(g.by)}" title="${game.esc(game.name(g.by))}"></span> `
+          : '';
     li.innerHTML = `<span>${who}${game.esc(g.text)}</span>${g.close ? '<b class="mm-close">knapp</b>' : ''}`;
     board.list.prepend(li);
   }
@@ -1241,7 +1267,11 @@ function renderNote(u) {
     board.el.querySelector('.mm-giveup').hidden = gaveUp;
   }
   let text = '';
-  if (u.full) text = 'Das Bild ist voll. Nimm etwas zurück oder lösche alles.';
+  if (game.tv) {
+    const gave = (s.gaveUp ?? []).map((id) => game.name(id));
+    if (!s.startedAt && !u.livePreview && !u.liveCmds.size) text = `${game.name(s.drawer)} fängt gleich an.`;
+    else if (gave.length) text = `${names(gave)} ${gave.length === 1 ? 'hat' : 'haben'} aufgegeben.`;
+  } else if (u.full) text = 'Das Bild ist voll. Nimm etwas zurück oder lösche alles.';
   else if (gaveUp) text = 'Du hast aufgegeben. Die anderen raten weiter.';
   else if (!s.startedAt) {
     text = u.drawer
@@ -1504,12 +1534,16 @@ function onLive(u, data) {
     if (u.livePreview && u.livePreview.s <= cmd.s) u.livePreview = null;
     if (cmd.t === 'c') tearFx(u);
     updateDrawing(u);
+    if (u.game.tv) renderNote(u);
     if (cmd.t === 'f' && isInt(cmd.x, 0, S - 1) && isInt(cmd.y, 0, S - 1) && isInt(cmd.c, 1, COLORS - 1)) rippleFx(u, cmd.x, cmd.y, cmd.c);
   } else if (data.k === 'pt') {
     const p = data.p;
     if (!Array.isArray(p) || p.length % 2 || p.length > 4000 || !isInt(data.c, 0, COLORS - 1) || !isInt(data.w, 0, 2)) return;
     if (typeof data.s !== 'number' || data.s <= (u.model?.seq ?? s.drawing.seq)) return;
-    if (data.i === 0) u.livePreview = { s: data.s, c: data.c, w: data.w, pts: [] };
+    if (data.i === 0) {
+      u.livePreview = { s: data.s, c: data.c, w: data.w, pts: [] };
+      if (u.game.tv) renderNote(u); // Bildschirm: „fängt gleich an“ verschwindet mit dem ersten Strich
+    }
     const pv = u.livePreview;
     if (!pv || pv.s !== data.s || data.i !== pv.pts.length) return; // Lücke: auf den fertigen Strich warten
     for (let i = 0; i < p.length; i += 2) {
@@ -1608,7 +1642,7 @@ function renderEnd(stage, s, game, u) {
     })
     .join('');
   stage.innerHTML = `<section class="mm-gallery">
-      <h3 class="mm-gallery-title">Eure Bilder</h3>
+      <h3 class="mm-gallery-title">${game.tv && game.result?.text ? game.esc(game.result.text) : 'Eure Bilder'}</h3>
       <ol class="mm-tiles">${tiles}</ol>
     </section>`;
   // Bilder nacheinander malen, damit die Seite dabei nicht stockt
@@ -1819,6 +1853,50 @@ export const style = `
   .mm-tile.is-miss .mm-tile-pic canvas { opacity: .82; }
   .mm-tile-word { font-family: var(--font-display); font-weight: 800; font-size: var(--t-md); line-height: 1.1; margin-top: 10px; overflow-wrap: anywhere; }
   .mm-tile-meta { font-size: var(--t-sm); color: var(--muted); }
+
+  /* Bildschirm (present): groß, am Fernseher Zeichnung links, Wort, Zeit und Versuche rechts */
+  .mm-tv { gap: 2.5vh; }
+  .mm-tv .mm-track-cap { font-size: var(--t-md); color: var(--ink); }
+  .mm-tv .mm-rounds:not(.many) .mm-round { width: 1.8rem; height: 1.8rem; }
+  .mm-tv .mm-rounds:not(.many) .mm-round svg { width: 1.5rem; height: 1.5rem; }
+  .mm-tv .mm-board { width: 100%; gap: 2vh; }
+  .mm-tv .mm-paper { width: min(100%, 70vh); border: 1px solid var(--hairline); }
+  .mm-tv .mm-slots { --fs: var(--t-3xl); }
+  .mm-tv .mm-slots.size-m { --fs: var(--t-2xl); }
+  .mm-tv .mm-slots.size-s { --fs: var(--t-xl); }
+  .mm-tv .mm-slots.size-xs { --fs: var(--t-lg); }
+  .mm-tv .mm-count { font-size: var(--t-base); }
+  .mm-tv .mm-clock { font-size: var(--t-3xl); }
+  .mm-tv .mm-bar { height: 4px; margin-top: 1.5vh; }
+  .mm-tv .mm-note { font-size: var(--t-md); }
+  .mm-tv .mm-tries-title { font-size: var(--t-base); }
+  .mm-tv .mm-tries-list { gap: .5em; font-size: var(--t-md); }
+  .mm-tv .mm-try { padding: .25em .6em; }
+  .mm-try-by { font-weight: 700; margin-left: .35em; }
+  .mm-try-by::after { content: ':'; }
+  .mm-tv .mm-ready, .mm-tv .mm-wait { max-width: none; font-size: var(--t-md); }
+  .mm-tv .mm-ready > .status:first-child, .mm-tv .mm-wait .status { font-family: var(--font-display); font-weight: 800; font-size: var(--t-2xl); line-height: 1.1; }
+  .mm-tv .mm-reveal { grid-template-columns: minmax(0, min(42%, 52vh)) 1fr; gap: 4vw; }
+  .mm-tv .mm-reveal .mm-slots { --fs: var(--t-3xl); }
+  .mm-tv .mm-reveal-cap, .mm-tv .mm-reveal-res { font-size: var(--t-md); }
+  .mm-tv .mm-scribble { width: 10rem; height: auto; }
+  .mm-tv .mm-gallery-title { font-size: var(--t-2xl); margin-bottom: 3vh; }
+  .mm-tv .mm-tiles { grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr)); gap: 4vh 2.5vw; }
+  .mm-tv .mm-tile-word { font-size: var(--t-lg); }
+  .mm-tv .mm-tile-meta { font-size: var(--t-base); }
+  @media (min-width: 880px) and (orientation: landscape) {
+    .mm-tv .mm-board {
+      grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto auto 1fr;
+      grid-template-areas: "paper word" "paper bar" "paper note" "paper tries"; column-gap: 4vw; align-items: start;
+    }
+    .mm-tv .mm-paper { grid-area: paper; width: min(72vh, 52vw); }
+    .mm-tv .mm-wordline { grid-area: word; flex-direction: column-reverse; align-items: stretch; }
+    .mm-tv .mm-wordline > div:first-child { flex: none; }
+    .mm-tv .mm-clock { align-self: flex-start; }
+    .mm-tv .mm-bar { grid-area: bar; }
+    .mm-tv .mm-note { grid-area: note; }
+    .mm-tv .mm-tries { grid-area: tries; }
+  }
 
   @media (prefers-reduced-motion: reduce) {
     .mm *, .mm *::after { animation: none !important; transition: none !important; }

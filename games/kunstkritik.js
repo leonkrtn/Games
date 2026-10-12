@@ -16,6 +16,11 @@
 // Der Browser speichert höchstens alle zwei Sekunden (bis zu sechs Leute malen gleichzeitig im selben
 // Raum, und jede Speicherung schreibt den ganzen Zustand) und am Schluss den Rest mit „fertig“.
 //
+// Bildschirm (ein Gruppenmitglied, das nicht mitspielt, z.B. ein Fernseher): screen() zeigt nur, was alle
+// sehen dürfen, present() zeichnet groß. Beim Vorschlagen die Rückschau, beim Malen wer fertig ist (das Wort
+// erst, wenn alle auf Los getippt haben), beim Bewerten jedes Bild mit den Tafeln, am Ende eine Vorstellung
+// Bild für Bild, die alle Spieler mit Zurück und Weiter auf ihren Handys steuern (epilogue(), state.show).
+//
 // Motion: Vor dem Malen zählt die Malfläche drei, zwei, eins herunter, das Wort fällt Buchstabe für
 // Buchstabe ein. Ein fertiges Bild schrumpft in seinen Goldrahmen. Beim Bewerten gleitet Bild für Bild
 // herein, die Kritiker heben verdeckte Wertungstafeln, bei der Auflösung drehen sich die Tafeln
@@ -537,7 +542,7 @@ export function view(s, me) {
     // % SUGGESTIONS.length: Partien von vor dem Wechsel auf die eigene Liste haben noch Indizes bis 301.
     v.suggestions = Array.from({ length: SUGGEST_EACH }, (_, j) => SUGGESTIONS[deck[(deckPos + k * SUGGEST_EACH + j) % deck.length] % SUGGESTIONS.length]);
   } else if (s.phase === 'malen') {
-    v.word = s.draw[me].at ? s.word : null;
+    v.word = s.draw[me]?.at ? s.word : null;
     v.draw = Object.fromEntries(ids(s).map((id) => [id, id === me ? s.draw[id] : { ...s.draw[id], d: null }]));
   } else if (s.phase === 'bewerten') {
     v.blank = [];
@@ -553,6 +558,30 @@ export function view(s, me) {
     });
   }
   return v;
+}
+
+// Bildschirm: was alle sehen dürfen. Keine Vorschläge, das Wort erst, wenn alle auf Los getippt haben (sonst
+// hätte, wer noch nicht angefangen hat, mehr Zeit zum Nachdenken), beim Bewerten nur, wie viele Noten da sind.
+export function screen(s) {
+  const v = view(s, null);
+  if (s.result) return v;
+  if (s.phase === 'wort') {
+    v.words = {};
+    delete v.suggestions;
+  } else if (s.phase === 'malen') {
+    v.word = ids(s).every((id) => s.draw[id].at) ? s.word : null;
+  }
+  return v;
+}
+
+// Vorstellung am Ende auf dem Bildschirm: Endstand, dann jedes Bild (Runde für Runde, das beste zuletzt),
+// dann alle zusammen. Gesteuert von den Handys mit „zeige“ { i } (Nummer der Tafel, nicht „eins weiter“:
+// zwei gleichzeitige Tipps auf Weiter springen so nur einmal).
+const slideCount = (s) => 2 + s.past.reduce((n, r) => n + r.pics.length, 0);
+
+export function epilogue(s, { player, type, data }) {
+  if (type !== 'zeige' || !s.players.some((p) => p.id === player) || !Number.isInteger(data?.i)) return;
+  s.show = Math.max(0, Math.min(slideCount(s) - 1, data.i));
 }
 
 // ---------- Anzeige (nur im Browser) ----------
@@ -1121,6 +1150,11 @@ function viewKey(s, me) {
   return `${s.round}:bewerten`;
 }
 
+// Bildschirm: dieselbe Ansicht ohne Eingaben, groß (game.tv), mit der Vorstellung am Ende
+export function present(el, s, game) {
+  render(el, s, { ...game, tv: true });
+}
+
 export function render(el, s, game) {
   const u = local(el, game);
   u.s = s;
@@ -1128,13 +1162,13 @@ export function render(el, s, game) {
 
   let root = el.querySelector(':scope > .kk');
   if (!root) {
-    el.innerHTML = '<div class="kk"><div class="kk-head"></div><div class="kk-stage"></div></div>';
+    el.innerHTML = `<div class="kk ${game.tv ? 'kk-tv' : ''}"><div class="kk-head"></div><div class="kk-stage"></div></div>`;
     root = el.firstElementChild;
   }
   root.dataset.phase = s.result ? 'ende' : s.phase;
   renderHead(root.querySelector('.kk-head'), s, game, u);
 
-  const key = viewKey(s, game.me);
+  const key = game.tv ? (s.result ? 'ende' : `${s.round}:${s.phase}`) : viewKey(s, game.me);
   if (u.key !== key) {
     // Kommt die Ansicht von der Malfläche, schrumpft das Bild in seinen Rahmen.
     const from = u.board && !game.reducedMotion ? u.board.paper.getBoundingClientRect() : null;
@@ -1143,9 +1177,10 @@ export function render(el, s, game) {
     u.key = key;
     reset(u);
     const stage = root.querySelector('.kk-stage');
-    if (s.result) renderEnd(stage, s, game, u);
-    else if (s.phase === 'wort') renderWord(stage, s, game, u);
+    if (s.result) (game.tv ? renderShow : renderEnd)(stage, s, game, u);
+    else if (s.phase === 'wort') (game.tv ? renderWordTv : renderWord)(stage, s, game, u);
     else if (s.phase === 'bewerten') renderRate(stage, s, game, u);
+    else if (game.tv) renderPaintTv(stage, s, game, u);
     else {
       const e = s.draw[game.me];
       if (e.done) renderDone(stage, s, game, u, from);
@@ -1350,6 +1385,53 @@ function renderWord(stage, s, game, u) {
     },
     { signal },
   );
+}
+
+// Bildschirm: Rückschau auf die letzte Runde (bzw. die Regeln) und wer schon vorgeschlagen hat
+function renderWordTv(stage, s, game, u) {
+  stage.innerHTML = `<div class="kk-word-phase">
+      ${s.past.length ? recapHtml(s, game) : rulesHtml(s)}
+      <div class="kk-wait">
+        <div class="kk-easel">${EASEL}</div>
+        <div class="kk-wait-text"><p class="kk-big">Jeder schlägt auf seinem Handy ein Wort vor.</p></div>
+      </div>
+      <ul class="kk-chips" aria-label="Vorschläge"></ul>
+    </div>`;
+  if (s.past.length) paintWall(stage, ranked(s.past[s.past.length - 1].pics), u.stage.signal);
+  u.update = () => put(stage.querySelector('.kk-chips'), chipsHtml(u.s, game));
+}
+
+// Bildschirm beim Malen: das Wort (sobald alle angefangen haben) und wer fertig ist
+function renderPaintTv(stage, s, game, u) {
+  const signal = u.stage.signal;
+  stage.innerHTML = `<div class="kk-col"><div class="kk-intro">
+      <div class="kk-easel">${EASEL}</div>
+      <div class="kk-intro-text">
+        <div class="kk-wordbox kk-tv-word"></div>
+        <p class="status">Jeder malt auf seinem Handy. Ab dem Tipp auf Los ${s.players.length === 2 ? 'habt ihr beide' : 'hat jeder'} ${TIME_WORDS[s.zeit]}.</p>
+      </div>
+    </div>
+    <ul class="kk-chips" aria-label="Wie weit alle sind"></ul></div>`;
+  u.update = () => {
+    const st = u.s;
+    const letters = st.word ? [...st.word] : null;
+    put(
+      stage.querySelector('.kk-tv-word'),
+      letters
+        ? `<p class="kk-word" style="--n:${letters.length}" role="img" aria-label="Das Wort: ${game.esc(st.word)}">${letters
+            .map((ch, k) => (ch === ' ' ? '<span class="kk-gap"></span>' : `<span style="--k:${k}">${game.esc(ch)}</span>`))
+            .join('')}</p>`
+        : '<p class="kk-big">Das Wort steht fest.</p><p class="muted">Es erscheint hier, sobald alle auf Los getippt haben.</p>',
+    );
+    put(stage.querySelector('.kk-chips'), chipsHtml(st, game));
+  };
+  // Sind alle fertig oder ihre Zeit um, fragt auch der Bildschirm nach (tick schaltet dann zum Bewerten).
+  const timer = setInterval(() => {
+    const st = u.s;
+    const now = game.now();
+    if (st.phase === 'malen' && Object.values(st.draw).every((e) => e.done || (e.end && now >= e.end + GRACE + 300))) refreshSoon(u);
+  }, 500);
+  signal.addEventListener('abort', () => clearInterval(timer));
 }
 
 // --- Malen: erst „Los“, dann die Malfläche, danach warten ---
@@ -1934,6 +2016,7 @@ function renderRate(stage, s, game, u) {
   };
   u.update = () => updateRate(u);
   const signal = u.stage.signal;
+  if (game.tv) return;
   requestAnimationFrame(() => {
     if (signal.aborted) return;
     const top = el.getBoundingClientRect().top;
@@ -1992,7 +2075,7 @@ function updateRate(u) {
   });
   const n = s.players.length - 1;
   let text = '';
-  if (n > 1) {
+  if (n > 1 || game.tv) {
     text = count === 0 ? 'Noch keine Note.' : count === 1 ? `Eine von ${zahl(n)} Noten ist da.` : `${cap(zahl(count))} von ${zahl(n)} Noten sind da.`;
     if (mine && pic.by !== game.me) text += ' Ändern geht, bis alle bewertet haben.';
   }
@@ -2069,7 +2152,13 @@ function panelHtml(u, pic) {
   if (s.shown) {
     return `<div class="kk-result" style="--c:${game.color(pic.by)}">
       <p class="kk-sum"><b class="kk-sum-num">${pic.sum}</b> <span>${pic.sum === 1 ? 'Punkt' : 'Punkte'} für ${pic.by === game.me ? 'dich' : game.esc(game.name(pic.by))}</span></p>
-      <div class="kk-nextrow"><button type="button" class="btn primary kk-next">Weiter</button><span class="kk-auto" aria-hidden="true"><i></i></span></div>
+      <div class="kk-nextrow">${game.tv ? '' : '<button type="button" class="btn primary kk-next">Weiter</button>'}<span class="kk-auto" aria-hidden="true"><i></i></span></div>
+    </div>`;
+  }
+  if (game.tv) {
+    return `<div class="kk-ask-box">
+      <p class="kk-ask">Bewertet auf euren Handys.</p>
+      <p class="status muted kk-count-text"></p>
     </div>`;
   }
   if (pic.by === game.me) {
@@ -2113,8 +2202,7 @@ function bindPanel(u) {
   );
 
   const next = R.panel.querySelector('.kk-next');
-  if (!next) return;
-  next.addEventListener(
+  next?.addEventListener(
     'click',
     () => {
       next.disabled = true;
@@ -2125,9 +2213,10 @@ function bindPanel(u) {
   );
   // Nach REVEAL geht es von selbst weiter: Balken läuft ab, dann fragt der Browser nach.
   const s = u.s;
+  const bar = R.panel.querySelector('.kk-auto i');
+  if (!s.shown || !bar) return;
   const idx = s.index;
   const left = Math.max(0, s.shown + REVEAL - game.now());
-  const bar = R.panel.querySelector('.kk-auto i');
   bar.style.transform = `scaleX(${left / REVEAL})`;
   if (!game.reducedMotion) {
     requestAnimationFrame(() =>
@@ -2148,14 +2237,13 @@ function bindPanel(u) {
 
 // --- Ende: Plätze und die ganze Ausstellung ---
 
-function renderEnd(stage, s, game, u) {
-  const signal = u.stage.signal;
-  const play = !game.reducedMotion && !game.prev?.result;
+// Plätze, von unten nach oben einzublenden (--i), Sieger mit Rosette
+function rankHtml(s, game) {
   const t = s.totals;
   const order = [...s.players].sort((a, b) => t[b.id] - t[a.id]);
   const n = order.length;
   let place = 0;
-  const rows = order
+  return order
     .map((p, k) => {
       if (k === 0 || t[p.id] !== t[order[k - 1].id]) place = k + 1;
       const won = s.result.winners.includes(p.id);
@@ -2167,6 +2255,21 @@ function renderEnd(stage, s, game, u) {
       </li>`;
     })
     .join('');
+}
+
+// Endstand zählt hoch, Zeile für Zeile von unten
+function countRows(box, signal) {
+  box.querySelectorAll('.kk-row-num').forEach((num) => {
+    const i = Number(num.closest('.kk-row').style.getPropertyValue('--i'));
+    countUp(num, 0, Number(num.dataset.to), 250 + i * 140 + 200, signal);
+  });
+}
+
+function renderEnd(stage, s, game, u) {
+  const signal = u.stage.signal;
+  const play = !game.reducedMotion && !game.prev?.result;
+  const n = s.players.length;
+  const rows = rankHtml(s, game);
 
   let offset = 0;
   const walls = s.past
@@ -2183,7 +2286,18 @@ function renderEnd(stage, s, game, u) {
     .join('');
 
   const rowsEnd = 250 + n * 140 + 650;
+  // Gibt es einen Bildschirm, steuern alle von hier aus die Vorstellung der Bilder dort.
+  const remote = game.screen
+    ? `<section class="kk-remote" aria-label="Vorstellung auf dem Bildschirm">
+        <p class="kk-remote-text"><span class="kk-remote-label">Auf dem Bildschirm</span> <b class="kk-remote-now" aria-live="polite"></b></p>
+        <div class="kk-remote-btns">
+          <button type="button" class="btn kk-remote-go" data-d="-1">Zurück</button>
+          <button type="button" class="btn kk-remote-go" data-d="1">Weiter</button>
+        </div>
+      </section>`
+    : '';
   stage.innerHTML = `<div class="kk-end ${play ? 'play' : ''}" style="--rosette-delay:${rowsEnd}ms;--wall-delay:${rowsEnd + 300}ms;--step:${Math.min(90, Math.round(1200 / Math.max(1, offset)))}ms">
+      ${remote}
       <section class="kk-final" aria-label="Endstand">
         <h3 class="kk-h">Endstand</h3>
         <ol class="kk-rank">${rows}</ol>
@@ -2194,12 +2308,7 @@ function renderEnd(stage, s, game, u) {
       </section>
     </div>`;
 
-  if (play) {
-    stage.querySelectorAll('.kk-row-num').forEach((num) => {
-      const i = Number(num.closest('.kk-row').style.getPropertyValue('--i'));
-      countUp(num, 0, Number(num.dataset.to), 250 + i * 140 + 200, signal);
-    });
-  }
+  if (play) countRows(stage, signal);
   // Alle Bilder nacheinander malen; antippen zeigt eins groß
   const all = s.past.flatMap((r) => ranked(r.pics));
   paintWall(stage.querySelector('.kk-gallery'), all, signal);
@@ -2211,6 +2320,188 @@ function renderEnd(stage, s, game, u) {
     },
     { signal },
   );
+  if (game.screen) bindRemote(stage, game, u);
+}
+
+// --- Vorstellung am Ende: Tafeln für den Bildschirm ---
+
+// [{ kind: 'stand' }, { kind: 'pic', round, pic, best }, …, { kind: 'wall' }]; Bilder Runde für Runde, das beste zuletzt
+function slidesOf(s) {
+  const list = [{ kind: 'stand' }];
+  s.past.forEach((r, round) => {
+    const best = r.pics.length > 1 ? Math.max(...r.pics.map((p) => p.sum)) : null;
+    for (const pic of [...ranked(r.pics)].reverse()) list.push({ kind: 'pic', round, pic, best: pic.sum === best });
+  });
+  list.push({ kind: 'wall' });
+  return list;
+}
+
+function slideLabel(s, i) {
+  const slides = slidesOf(s);
+  const slide = slides[i] ?? slides[0];
+  if (slide.kind === 'stand') return 'Endstand';
+  if (slide.kind === 'wall') return 'Alle Bilder';
+  return `Bild ${zahl(i)} von ${zahl(slides.length - 2)}`;
+}
+
+// Handy: Zurück und Weiter schicken die gewünschte Tafel. Der eigene Tipp steht sofort da (want),
+// mehrere Tipps hintereinander gehen nacheinander an den Server.
+function bindRemote(stage, game, u) {
+  const signal = u.stage.signal;
+  const box = stage.querySelector('.kk-remote');
+  const keys = (st) => st.past.flatMap((r, ri) => ranked(r.pics).map((p) => `${ri}:${p.by}`));
+  u.want = null;
+  u.queue = Promise.resolve();
+  u.update = () => {
+    const st = u.s;
+    if (u.want !== null && st.show === u.want) u.want = null;
+    const i = u.want ?? st.show ?? 0;
+    const n = slideCount(st);
+    setText(box.querySelector('.kk-remote-now'), slideLabel(st, i));
+    box.querySelector('[data-d="-1"]').disabled = i <= 0;
+    box.querySelector('[data-d="1"]').disabled = i >= n - 1;
+    // Das Bild, das gerade groß zu sehen ist, ist auch hier an der Wand markiert.
+    const slide = slidesOf(st)[i];
+    const at = slide?.kind === 'pic' ? keys(st).indexOf(`${slide.round}:${slide.pic.by}`) : -1;
+    stage.querySelectorAll('.kk-gallery .kk-small').forEach((li, k) => li.classList.toggle('on-tv', k === at));
+  };
+  box.addEventListener(
+    'click',
+    (e) => {
+      const b = e.target.closest('.kk-remote-go');
+      if (!b || b.disabled) return;
+      const cur = u.want ?? u.s.show ?? 0;
+      const to = Math.max(0, Math.min(slideCount(u.s) - 1, cur + Number(b.dataset.d)));
+      if (to === cur) return;
+      u.want = to;
+      u.update();
+      u.queue = u.queue
+        .then(() => game.send('zeige', { i: to }))
+        .then((ok) => {
+          if (!ok && !signal.aborted && u.want === to) {
+            u.want = null;
+            u.update();
+          }
+        });
+    },
+    { signal },
+  );
+}
+
+// Bildschirm: eine Tafel nach der anderen, die neue gleitet von der Seite herein
+function renderShow(stage, s, game, u) {
+  stage.innerHTML = `<div class="kk-show">
+      <div class="kk-show-top"><span class="kk-show-step" aria-live="polite"></span><ol class="kk-dots" aria-hidden="true"></ol></div>
+      <div class="kk-show-stage"></div>
+    </div>`;
+  const box = stage.querySelector('.kk-show-stage');
+  u.slide = null;
+  u.update = () => {
+    const st = u.s;
+    const slides = slidesOf(st);
+    const i = Math.min(slides.length - 1, Math.max(0, st.show ?? 0));
+    setText(stage.querySelector('.kk-show-step'), slides[i].kind === 'pic' ? slideLabel(st, i) : ''); // sonst steht es als Überschrift da
+    put(
+      stage.querySelector('.kk-dots'),
+      slides
+        .map((sl, k) => `<li class="${k < i ? 'done' : k === i ? 'now' : ''}" style="--c:${sl.kind === 'pic' ? game.color(sl.pic.by) : 'var(--ink)'}"></li>`)
+        .join(''),
+    );
+    if (u.slide?.i === i) return;
+    const old = u.slide;
+    const el = slideEl(st, game, slides[i], u);
+    box.append(el);
+    u.slide = { i, el };
+    playSlide(el, slides[i], game, u, !old);
+    if (!old) return;
+    if (game.reducedMotion) {
+      old.el.remove();
+      return;
+    }
+    const forward = i > old.i;
+    el.classList.add(forward ? 'from-right' : 'from-left');
+    old.el.classList.add(forward ? 'to-left' : 'to-right');
+    const drop = () => old.el.remove();
+    old.el.addEventListener('animationend', drop, { once: true });
+    setTimeout(drop, 900);
+  };
+}
+
+function slideEl(s, game, slide, u) {
+  const el = document.createElement('section');
+  el.className = `kk-slide kk-slide-${slide.kind}`;
+  if (slide.kind === 'stand') {
+    el.innerHTML = `<div class="kk-end play" style="--rosette-delay:${250 + s.players.length * 140 + 650}ms"><section class="kk-final" aria-label="Endstand">
+        <h3 class="kk-h">Endstand</h3>
+        <ol class="kk-rank">${rankHtml(s, game)}</ol>
+      </section>
+      <p class="muted kk-show-hint">Mit Weiter auf euren Handys kommt Bild für Bild.</p></div>`;
+  } else if (slide.kind === 'wall') {
+    let offset = 0;
+    el.innerHTML = `<div class="kk-end play" style="--wall-delay:150ms;--step:${Math.min(90, Math.round(1200 / Math.max(1, slideCount(s) - 2)))}ms">
+      <h3 class="kk-h">Die Ausstellung</h3>
+      <div class="kk-walls">${s.past
+        .map((r, ri) => {
+          const pics = ranked(r.pics);
+          const html = `<section class="kk-round-wall">
+            <h4 class="kk-h4">„${game.esc(r.word)}“ <small>Runde ${zahl(ri + 1)}</small></h4>
+            ${pics.length ? wallHtml(pics, game, offset) : `<p class="muted kk-blank">${blankText(game, r.blank)}</p>`}
+          </section>`;
+          offset += pics.length;
+          return html;
+        })
+        .join('')}</div></div>`;
+    paintWall(el, s.past.flatMap((r) => ranked(r.pics)), u.stage.signal);
+  } else {
+    const { pic, round, best } = slide;
+    const raters = ratersOf(s, pic);
+    el.style.setProperty('--c', game.color(pic.by));
+    el.innerHTML = `<figure class="kk-piece kk-show-piece">
+        <div class="kk-frame"><canvas width="${S}" height="${S}" role="img" aria-label="Bild von ${game.esc(game.name(pic.by))} zu ${game.esc(s.past[round].word)}"></canvas>${FRAME}
+          ${best ? `<span class="kk-rosette">${rosette(game.color(pic.by))}</span>` : ''}</div>
+      </figure>
+      <div class="kk-show-info">
+        <p class="kk-show-round">Runde ${zahl(round + 1)}${s.past.length > 1 ? ` von ${zahl(s.past.length)}` : ''}</p>
+        <p class="kk-show-word">„${game.esc(s.past[round].word)}“</p>
+        <p class="kk-show-by">${marker(game, pic.by)}<span>${game.esc(game.name(pic.by))}</span></p>
+        <p class="kk-sum"><b class="kk-sum-num" data-to="${pic.sum}">${pic.sum}</b> <span>${pic.sum === 1 ? 'Punkt' : 'Punkte'}</span></p>
+        <div class="kk-judges" role="img" aria-label="Noten: ${game.esc(raters.map((id) => `${game.name(id)} ${zahl(pic.votes[id])}`).join(', '))}">${raters
+          .map((id, k) =>
+            judgeHtml(k, `<div class="kk-front-in" style="--c:${game.color(id)}">${CARD_FRONT}<b>${pic.votes[id]}</b></div>`, game.esc(game.name(id))),
+          )
+          .join('')}</div>
+      </div>`;
+    drawPicture(el.querySelector('canvas'), pic.ops);
+  }
+  return el;
+}
+
+// Auftritt einer Tafel: Endstand zählt hoch, beim Bild drehen sich die Tafeln um und die Summe zählt hoch
+function playSlide(el, slide, game, u, first) {
+  const signal = u.stage.signal;
+  const still = game.reducedMotion;
+  if (slide.kind === 'stand') {
+    if (still) el.querySelector('.kk-end').classList.remove('play');
+    else countRows(el, signal);
+    return;
+  }
+  if (slide.kind === 'wall') {
+    if (still) el.querySelector('.kk-end').classList.remove('play');
+    return;
+  }
+  const judges = [...el.querySelectorAll('.kk-judge')];
+  judges.forEach((j) => j.classList.add('up'));
+  const at = (first ? 200 : 420) + sumAt(Math.max(1, judges.length));
+  el.style.setProperty('--sum-delay', `${still ? 0 : at}ms`);
+  el.style.setProperty('--flip-start', `${still ? 0 : first ? 200 : 420}ms`);
+  if (still) {
+    judges.forEach((j) => j.classList.add('open', 'instant'));
+    return;
+  }
+  void el.offsetWidth; // erst zugedeckt zeichnen, dann umdrehen
+  judges.forEach((j) => j.classList.add('open'));
+  const num = el.querySelector('.kk-sum-num');
+  countUp(num, 0, Number(num.dataset.to), at, signal);
 }
 
 // --- Großansicht eines Bildes (am Ende) ---
@@ -2600,6 +2891,102 @@ export const style = `
 
   @media (min-width: 700px) {
     .kk-easel { width: 140px; }
+  }
+
+  /* Handy: Zurück und Weiter für die Vorstellung auf dem Bildschirm */
+  .kk-remote {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px;
+    padding: 12px 0; border-top: 2px solid var(--line); border-bottom: 1px solid var(--hairline);
+  }
+  .kk-remote-text { flex: 1 1 11em; min-width: 0; display: grid; }
+  .kk-remote-label { font-size: var(--t-sm); color: var(--muted); }
+  .kk-remote-now { font-family: var(--font-display); font-weight: 800; font-size: var(--t-lg); line-height: 1.1; }
+  .kk-remote-btns { display: flex; gap: 8px; }
+  .kk-remote-go:active:not(:disabled) { transform: scale(.96); }
+  .kk-small.on-tv .kk-frame { outline: 3px solid var(--c); outline-offset: 5px; }
+
+  /* Bildschirm (present): groß, am Fernseher quer */
+  .kk-tv { gap: 2.5vh; }
+  .kk-tv[data-phase="malen"] .kk-pts { display: grid; }
+  .kk-tv .kk-rounds li { width: 1rem; height: 1rem; }
+  .kk-tv .kk-pts.many { grid-template-columns: repeat(auto-fill, minmax(10em, 1fr)); }
+  .kk-tv .kk-easel { width: 9rem; }
+  .kk-tv .kk-chips { font-size: var(--t-md); gap: .4em 1.4em; }
+  .kk-tv .kk-chip-name { max-width: 14em; }
+  .kk-tv .kk-check { width: 1.1em; height: 1.1em; }
+  .kk-tv .kk-wall { grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 1.6rem; }
+  .kk-tv .kk-rules { font-size: var(--t-md); max-width: 60ch; }
+  .kk-tv .kk-intro-text { flex-basis: 20em; }
+  .kk-tv .kk-tv-word { width: 100%; }
+  .kk-tv .kk-word { font-size: min(var(--t-4xl), calc(100cqw / (var(--n) * .6 + .2))); }
+  .kk-tv .kk-rate:not(.is-shown):not(.is-mine) .kk-judges { display: flex; }
+  .kk-tv .kk-judge { flex-basis: 6rem; }
+  .kk-tv .kk-card, .kk-tv .kk-stick { width: min(100%, 4.5rem); }
+  .kk-tv .kk-front-in b { font-size: 2.2rem; }
+  .kk-tv .kk-judge-name { font-size: var(--t-base); }
+  .kk-tv .kk-main { width: min(100%, 60vh); }
+  .kk-tv .kk-plaque-word { font-size: var(--t-lg); }
+  .kk-tv .kk-plaque-by { font-size: var(--t-base); }
+  .kk-tv .kk-progress { font-size: var(--t-md); }
+  .kk-tv .kk-dots li { width: .7rem; height: .7rem; }
+  .kk-tv .kk-ask { font-size: var(--t-xl); }
+  .kk-tv .kk-count-text { font-size: var(--t-md); }
+  .kk-tv .kk-sum-num { font-size: var(--t-4xl); }
+  .kk-tv .kk-sum span { font-size: var(--t-lg); }
+  .kk-tv .kk-auto { width: 6rem; }
+  .kk-tv .kk-row { padding: 1.2vh .4em; }
+  .kk-tv .kk-place { font-size: var(--t-xl); }
+  .kk-tv .kk-row-name { font-size: var(--t-xl); }
+  .kk-tv .kk-row-num { font-size: var(--t-2xl); }
+  .kk-tv .kk-row-rosette { width: 2.6rem; }
+  @media (min-width: 880px) and (orientation: landscape) {
+    .kk-tv .kk-rate {
+      grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "hang progress" "hang judges" "hang panel";
+      align-content: center; column-gap: 5vw; row-gap: 4vh;
+    }
+    .kk-tv .kk-rate > .kk-progress { grid-area: progress; align-self: end; }
+    .kk-tv .kk-rate > .kk-hang { grid-area: hang; }
+    .kk-tv .kk-rate > .kk-judges { grid-area: judges; }
+    .kk-tv .kk-rate > .kk-panel { grid-area: panel; align-self: start; }
+    .kk-tv .kk-main { width: min(60vh, 46vw); }
+  }
+
+  /* Vorstellung auf dem Bildschirm: eine Tafel nach der anderen */
+  .kk-show { display: grid; gap: 2.5vh; min-width: 0; }
+  .kk-show-top { display: flex; align-items: center; justify-content: space-between; gap: 1em; font-size: var(--t-md); color: var(--muted); }
+  .kk-show-top .kk-dots { flex-wrap: wrap; justify-content: flex-end; }
+  .kk-show-stage { display: grid; min-width: 0; }
+  .kk-show-stage > * { grid-area: 1 / 1; min-width: 0; }
+  .kk-slide.from-right { animation: kk-in-r 520ms cubic-bezier(.2,.8,.2,1) 160ms backwards; }
+  .kk-slide.from-left { animation: kk-in-l 520ms cubic-bezier(.2,.8,.2,1) 160ms backwards; }
+  .kk-slide.to-left { animation: kk-out-l 380ms cubic-bezier(.6,0,.2,1) forwards; pointer-events: none; }
+  .kk-slide.to-right { animation: kk-out-r 380ms cubic-bezier(.6,0,.2,1) forwards; pointer-events: none; }
+  @keyframes kk-in-r { from { opacity: 0; transform: translateX(6vw); } }
+  @keyframes kk-in-l { from { opacity: 0; transform: translateX(-6vw); } }
+  @keyframes kk-out-l { to { opacity: 0; transform: translateX(-6vw) rotate(-1deg); } }
+  @keyframes kk-out-r { to { opacity: 0; transform: translateX(6vw) rotate(1deg); } }
+  .kk-slide-pic { display: grid; gap: 3vh 5vw; justify-items: center; align-items: center; }
+  .kk-show-piece { width: min(100%, 64vh); }
+  .kk-show-info { display: grid; gap: 1.2vh; justify-items: center; text-align: center; min-width: 0; max-width: 100%; }
+  .kk-show-round { font-size: var(--t-md); color: var(--muted); }
+  .kk-show-word { font-family: var(--font-display); font-weight: 800; font-size: var(--t-3xl); line-height: 1; overflow-wrap: anywhere; }
+  .kk-show-by { display: flex; align-items: center; gap: .4em; min-width: 0; max-width: 100%; font-family: var(--font-display); font-weight: 800; font-size: var(--t-2xl); line-height: 1.1; color: var(--c); }
+  .kk-show-by span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kk-slide-pic .kk-judges { margin-top: 2vh; flex-wrap: wrap; row-gap: 1.5vh; }
+  .kk-slide .kk-card-in { transition-delay: calc(var(--flip-start, 0ms) + ${FLIP_AT}ms + var(--i) * ${FLIP_STEP}ms); }
+  .kk-slide .kk-judge-name { transition-delay: calc(var(--flip-start, 0ms) + ${FLIP_AT + FLIP_TIME}ms + var(--i) * ${FLIP_STEP}ms); }
+  .kk-slide-stand .kk-final { max-width: 40em; }
+  .kk-show-hint { margin-top: 2.5vh; font-size: var(--t-md); }
+  .kk-slide-wall .kk-h { margin-bottom: 2vh; }
+  /* Alle Bilder auf einen Blick: Runden nebeneinander, kleinere Rahmen */
+  .kk-walls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr)); gap: 3vh 4vw; }
+  .kk-walls .kk-round-wall + .kk-round-wall { margin-top: 0; }
+  .kk-walls .kk-wall { grid-template-columns: repeat(auto-fill, minmax(clamp(5rem, 13vh, 9rem), 1fr)); gap: 1rem 1.2rem; }
+  @media (min-width: 880px) and (orientation: landscape) {
+    .kk-slide-pic { grid-template-columns: auto minmax(0, 1fr); justify-items: start; }
+    .kk-show-piece { width: min(64vh, 46vw); }
+    .kk-show-info { justify-items: start; text-align: left; }
+    .kk-slide-pic .kk-judges { justify-content: flex-start; }
   }
 
   @media (prefers-reduced-motion: reduce) {

@@ -78,12 +78,25 @@ export function waitingFor(state) {
 //   return [{ to: playerId, text: 'Die Zeit ist um.' }];
 // }
 
+// 4e) Optional: Bildschirm. In einer Gruppe kann ein Mitglied der Bildschirm sein (z.B. ein Fernseher mit
+//     eigenem Konto, gewählt in der Lobby). Er spielt nicht mit und zeigt alles groß.
+//     points(state) → { [id]: Zahl }: Punkte der laufenden Partie für die Tafel des Bildschirms (öffentlich!).
+//     screen(state) → was der Bildschirm sehen darf (wie view() für jemanden, der nicht mitspielt), und
+//     present(el, screenView, game) zeichnet es (meist render() mit { ...game, tv: true }, ohne Eingaben).
+//     Ohne present() zeigt die Plattform eine Tafel: wer dran ist, points() und die gewonnenen Spiele.
+//     epilogue(state, { player, type, data }): Züge nach dem Spielende, die nur die Anzeige ändern (Ergebnis
+//     und Punkte bleiben). Beispiele: kunstkritik.js (Vorstellung der Bilder), montagsmaler.js
+// export function points(state) {
+//   return Object.fromEntries(state.players.map((p) => [p.id, state.count]));
+// }
+
 // 5) Anzeige. Läuft im Browser und wird bei jeder Änderung neu aufgerufen.
 //    game.me = eigene id, game.players, game.name(id), game.color(id) (Spielerfarbe),
 //    game.send(type, data), game.esc(text) (für Texte von Spielern!), game.result
 //    Für Animationen: game.prev (Stand vor der Änderung), game.first, game.signal, game.reducedMotion.
 //    Bilder: await game.upload(datei oder canvas) → { id, width, height }, anzeigen mit game.imageUrl(id).
 //    Zeit: game.now() (Serverzeit in ms), game.refresh() (Stand neu laden).
+//    game.screen = { id, name } des Bildschirms im Raum oder null (z.B. für Knöpfe, die ihn steuern).
 //    Live: game.live.send(data) / game.live.on((data, von) => …) für schnelle Vorschauen ohne Speichern
 //    (z.B. Striche beim Zeichnen). Beispiel: montagsmaler.js
 //    Jedes Spiel soll hochwertige Animationen haben, siehe CLAUDE.md, Abschnitt „Motion und Optik“.

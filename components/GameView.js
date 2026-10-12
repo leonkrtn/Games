@@ -25,8 +25,10 @@ const parseValue = (v) => {
  * Zeigt ein Spiel an, indem es die render()-Funktion aus der Spieldatei aufruft.
  * Die Spieldateien arbeiten direkt mit HTML (nicht mit React), damit sie einfach
  * zu schreiben sind und auf Server und im Browser laufen.
+ * present: Dieses Gerät ist der Bildschirm, gezeichnet wird mit present() statt render() (ohne Eingaben).
+ * screen: der Bildschirm des Raums ({ id, name } oder null), damit Spiele ihn ansprechen können.
  */
-export default function GameView({ game, players, me, room, now, onAction, onRefresh, live }) {
+export default function GameView({ game, players, me, room, now, onAction, onRefresh, live, present = false, screen = null }) {
   const ref = useRef(null);
   const [failure, setFailure] = useState(null); // { key, message }
   const entry = games.get(game.id);
@@ -44,7 +46,7 @@ export default function GameView({ game, players, me, room, now, onAction, onRef
 
   // Nur neu zeichnen, wenn sich wirklich etwas geändert hat (sonst gehen z.B. Eingaben verloren).
   const instance = `${game.id}:${game.started ?? 0}`; // eine Partie; „Nochmal“ ergibt eine neue
-  const key = JSON.stringify([instance, game.view, game.result, players]);
+  const key = JSON.stringify([instance, game.view, game.result, players, screen?.id ?? null]);
   const partie = useRef(null); // { instance, controller, prev }
 
   // Beim Verlassen laufende Animationen und Timer des Spiels beenden.
@@ -64,9 +66,10 @@ export default function GameView({ game, players, me, room, now, onAction, onRef
       players,
       name: (id) => players.find((p) => p.id === id)?.name ?? '?',
       color: (id) => playerColor(players, id),
-      send: (type, data) => onAction(type, data),
+      send: (type, data) => (present ? Promise.resolve(false) : onAction(type, data)),
       esc,
       result: game.result,
+      screen: screen ? { id: screen.id, name: screen.name } : null, // Bildschirm des Raums (spielt nicht mit)
       // Bilder: hochladen (Datei, Blob oder Canvas) → { id, width, height }; anzeigen über imageUrl(id)
       upload: (source) => uploadImage(room, source),
       imageUrl: (id) => `/api/image?id=${encodeURIComponent(id)}`,
@@ -94,7 +97,7 @@ export default function GameView({ game, players, me, room, now, onAction, onRef
       reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     };
     try {
-      entry.mod.render(ref.current, game.view, api);
+      (present ? entry.mod.present : entry.mod.render)(ref.current, game.view, api);
     } catch (err) {
       console.error(err);
       setFailure({ key, message: `Fehler beim Anzeigen von „${game.name}“:\n${err.message}` });
@@ -108,6 +111,7 @@ export default function GameView({ game, players, me, room, now, onAction, onRef
     game.error ?? (!entry ? 'Dieses Spiel gibt es nicht (mehr).' : failure?.key === key ? failure.message : null);
 
   const onClick = (e) => {
+    if (present) return;
     const el = e.target.closest('[data-action]');
     if (!el || el.tagName === 'FORM' || !ref.current.contains(el)) return;
     e.preventDefault();
@@ -115,6 +119,7 @@ export default function GameView({ game, players, me, room, now, onAction, onRef
   };
 
   const onSubmit = (e) => {
+    if (present) return;
     const form = e.target.closest('form[data-action]');
     if (!form) return;
     e.preventDefault();

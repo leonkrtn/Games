@@ -129,6 +129,11 @@ export function view(s) {
   return { ...rest, deck: deck.length, discard: discard.length, top: discard.at(-1) ?? null };
 }
 
+// Bildschirm: Punkte aus den beendeten Runden
+export function points(s) {
+  return s.totals;
+}
+
 export function waitingFor(s) {
   if (s.phase === 'zug') return [s.turn];
   if (s.phase === 'ziel') return [s.choice.by];
