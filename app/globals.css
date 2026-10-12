@@ -1401,6 +1401,85 @@ html.tv-mode .shell {
   white-space: nowrap;
 }
 
+/* Spielbeginn: Startkarte, danach baut sich das Spielfeld auf */
+.tv-start {
+  display: grid;
+  gap: 2vh;
+  align-content: center;
+  min-height: 70vh;
+}
+.tv-start-kicker {
+  font-size: var(--t-md);
+  color: var(--muted);
+  animation: tv-rise 420ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+.tv-start-name {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(var(--t-4xl), 9vw, 9rem);
+  line-height: 0.9;
+  overflow-wrap: break-word;
+  animation: tv-rise 520ms cubic-bezier(0.2, 0.8, 0.2, 1) 80ms backwards;
+}
+.tv-start-desc {
+  max-width: 40ch;
+  font-size: var(--t-lg);
+  line-height: 1.35;
+  animation: tv-rise 460ms cubic-bezier(0.2, 0.8, 0.2, 1) 220ms backwards;
+}
+.tv-start-players {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em 1.6em;
+  margin-top: 2vh;
+  padding-top: 2vh;
+  border-top: 2px solid var(--line);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--t-xl);
+}
+.tv-start-players li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  animation: tv-rise 360ms cubic-bezier(0.2, 0.8, 0.2, 1) calc(360ms + var(--i) * 90ms) backwards;
+}
+.tv-start-players .marker {
+  color: var(--c);
+}
+@keyframes tv-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tv-start * {
+    animation: none !important;
+  }
+}
+/* Ergebnis über dem Spielfeld */
+.tv-result {
+  margin-bottom: 2.5vh;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--t-3xl);
+  line-height: 1;
+  overflow-wrap: break-word;
+}
+.tv-away {
+  flex: none;
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: var(--t-sm);
+  color: var(--muted);
+}
+.screen-mode {
+  margin: 14px 0 0;
+  padding: 0;
+  border: 0;
+}
+
 /* Ohne Spiel: gewonnene Spiele und Verlauf */
 .tv-lobby {
   display: grid;

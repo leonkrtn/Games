@@ -158,7 +158,8 @@ inspect: () => [...document.querySelectorAll('#game *')].flatMap((el) => {
 ```
 
 **Bildschirm im Prüfstand:** `present: true` zeichnet mit `screen()` und `present()` und großer Schrift wie am
-Fernseher, dazu `width: 1280, height: 720`. Ein Zustand mit z.B. `state.show = 3` zeigt eine bestimmte Tafel der
+Fernseher, dazu `width: 1280, height: 720`. Ob alles ohne Scrollen passt: `inspect: () => [document.documentElement.scrollHeight, innerHeight]`
+(gleich = passt), mit der größten Spielerzahl. Eingebettete Instagram-Beiträge auch hier mit `before: (page) => routeInstagram(page, 'S')` umleiten. Ein Zustand mit z.B. `state.show = 3` zeigt eine bestimmte Tafel der
 Vorstellung. `screen: { id: 'tv', name: 'Fernseher' }` gibt `render()` einen Bildschirm im Raum (`game.screen`),
 z.B. für die Fernbedienung auf dem Handy. Fehlt etwas auf dem Foto, Breiten per `inspect` messen: Ein Bild,
 das null breit ist, steckt meist mit Prozentbreite in einer Grid-Spalte `auto`.

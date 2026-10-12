@@ -219,6 +219,23 @@ function sea(s, shooter, owner, reveal) {
   };
 }
 
+// Bildschirm: beide Meere mit den Schüssen des anderen, Treffern und versenkten Schiffen. Wo die übrigen
+// Schiffe liegen, sieht er erst am Ende (sonst sähe jeder am Fernseher die Flotte des anderen).
+export function screen(s) {
+  const [a, b] = s.players.map((p) => p.id);
+  const reveal = Boolean(s.result);
+  return {
+    players: s.players,
+    phase: s.phase,
+    turn: s.turn,
+    seq: s.seq,
+    last: s.last,
+    result: s.result,
+    ready: s.ready,
+    seas: { [a]: sea(s, b, a, reveal), [b]: sea(s, a, b, reveal) },
+  };
+}
+
 export function waitingFor(s) {
   if (s.phase === 'aufstellen') return s.players.filter((p) => !s.ready[p.id]).map((p) => p.id);
   if (s.phase === 'schiessen') return [s.turn];
@@ -359,6 +376,66 @@ function local(el, game) {
     game.signal.addEventListener('abort', () => u.ctrl?.abort());
   }
   return u;
+}
+
+// Bildschirm: beide Meere gleich groß nebeneinander, wie bei einer Übertragung
+export function present(el, s, game) {
+  const u = local(el, game);
+  u.ctrl?.abort();
+  u.ctrl = new AbortController();
+  const ids = s.players.map((p) => p.id);
+  const other = (id) => ids.find((x) => x !== id);
+  const name = (id) => game.esc(game.name(id));
+  let root = el.querySelector(':scope > .sv');
+  if (!root) {
+    el.innerHTML = `<div class="sv sv-tv">
+      <p class="status sv-status"></p>
+      <div class="sv-stage">${ids.map((id) => boardShell(id)).join('')}</div>
+      <p class="sv-log"></p>
+    </div>`;
+    root = el.firstElementChild;
+  }
+  const board = (id) => root.querySelector(`[data-board="${CSS.escape(id)}"]`);
+  const fresh = game.prev && s.last && s.last.n !== game.prev.last?.n ? s.last : null;
+  const placing = s.phase === 'aufstellen';
+  const target = s.phase === 'schiessen' && !s.result ? other(s.turn) : null; // wird gerade beschossen
+
+  for (const id of ids) {
+    const b = board(id);
+    b.querySelector('.sv-title').innerHTML = `${marker(game, id)} Flotte von ${name(id)}`;
+    b.style.setProperty('--sc', game.color(other(id))); // Schüsse des anderen
+    b.style.setProperty('--pc', game.color(other(id)));
+    b.classList.toggle('target', target === id);
+    drawSea(b, s, game, s.seas[id], { fresh: fresh && fresh.by !== id ? fresh : null });
+    fleetStatus(b, s.seas[id].sunk, !placing, game);
+  }
+
+  let status = '';
+  if (placing) {
+    const open = ids.filter((id) => !s.ready[id]);
+    status = open.length === 2 ? `${name(ids[0])} und ${name(ids[1])} stellen ihre Flotten auf.` : `${name(ids.find((id) => s.ready[id]))} ist bereit. ${name(open[0])} stellt noch auf.`;
+  } else if (!s.result) {
+    const l = s.last;
+    status = l?.by === s.turn && l.hit
+      ? `${marker(game, s.turn)} ${name(s.turn)} hat getroffen und schießt nochmal.`
+      : `${marker(game, s.turn)} ${name(s.turn)} schießt auf die Flotte von ${name(other(s.turn))}.`;
+  }
+  root.querySelector('.sv-status').innerHTML = status;
+
+  const l = s.last;
+  const logText = !l || placing ? '' : `${marker(game, l.by)} ${name(l.by)} schießt auf ${num(coord(l.i))}: ${!l.hit ? 'Wasser' : l.sunk ? `${SHIP[l.sunk].name} versenkt` : 'Treffer'}.`;
+  const log = root.querySelector('.sv-log');
+  if (log.innerHTML !== logText) {
+    log.innerHTML = logText;
+    if (!game.first && !game.reducedMotion) log.animate([{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], { duration: 260, delay: fresh ? 700 : 0, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' });
+  }
+  if (!game.reducedMotion) {
+    if (game.first) intro(root);
+    else if (game.prev?.phase === 'aufstellen' && !placing) intro(root);
+    if (fresh) shotFx(root, s, game, fresh, board(other(fresh.by)));
+    if (s.result && game.prev && !game.prev.result) finale(root, board(other(s.result.winners[0])));
+  }
+  root.classList.toggle('over', Boolean(s.result));
 }
 
 export function render(el, s, game) {
@@ -914,8 +991,8 @@ function intro(root, only) {
 }
 
 // Ein Schuss: Fadenkreuz, die Granate fällt, dann Spritzer oder Explosion.
-function shotFx(root, s, game, shot) {
-  const board = root.querySelector(`[data-board="${shot.by === game.me ? 'attack' : 'defense'}"]`);
+function shotFx(root, s, game, shot, target = null) {
+  const board = target ?? root.querySelector(`[data-board="${shot.by === game.me ? 'attack' : 'defense'}"]`);
   const layer = board.querySelector('.sv-fx');
   const pos = `--x:${shot.i % N};--y:${Math.floor(shot.i / N)}`;
   const pending = layer.querySelector('.sv-cross.pending');
@@ -936,8 +1013,8 @@ function shotFx(root, s, game, shot) {
 
 // Spielende: Nach dem letzten Einschlag läuft eine Welle über alle Treffer im Meer des anderen,
 // seine übrige Flotte taucht auf (drawSea), das eigene Meer tritt zurück (CSS .over).
-function finale(root) {
-  const marks = [...root.querySelectorAll('[data-board="attack"] .sv-mark.hit')];
+function finale(root, board = root.querySelector('[data-board="attack"]')) {
+  const marks = [...(board?.querySelectorAll('.sv-mark.hit') ?? [])];
   const at = (m) => Number(m.style.getPropertyValue('--x')) + Number(m.style.getPropertyValue('--y'));
   marks
     .sort((a, b) => at(a) - at(b))
@@ -964,6 +1041,14 @@ const RULES = `<details class="sv-rules">
 export const style = `
   .sv { --line-sea: color-mix(in srgb, ${C.water} 22%, white); container-type: inline-size; display: grid; gap: 14px; width: 100%; max-width: 720px; }
   .sv-stage { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 18px 24px; }
+  /* Bildschirm: beide Meere gleich groß; das Meer, auf das gerade geschossen wird, ist umrandet */
+  .sv-tv { max-width: none; gap: 3vh; }
+  .sv-tv .sv-stage { justify-content: center; gap: 3vh 5vw; }
+  .sv-tv .sv-board, .sv-tv .sv-board.big { --cell: min(5.6vh, calc((50cqw - 4rem) / 11)); order: 0; padding: 1vh 1vw; border-top: 3px solid transparent; transition: border-color 300ms ease-out; }
+  .sv-tv .sv-board.target { border-top-color: var(--pc); }
+  .sv-tv .sv-board:not(.big) .sv-title, .sv-tv .sv-title { font-size: var(--t-lg); }
+  .sv-tv .sv-status { font-size: var(--t-lg); }
+  .sv-tv .sv-log { font-size: var(--t-md); }
 
   /* ---------- Meere ---------- */
   .sv-board { --cell: min(20px, calc(56cqw / 11)); order: 2; display: grid; gap: 6px; }

@@ -12,6 +12,9 @@
 //
 // Geheim: die Reihenfolge des Stapels (view verrät nur, wie viele Karten noch drin sind).
 //
+// Bildschirm (present): alle Plätze nebeneinander mit großen Karten, links Gesamtpunkte, Stapel und
+// was zuletzt passiert ist. Hier ist nichts geheim außer dem Stapel.
+//
 // Motion: Jede Karte kommt verdeckt vom Stapel und dreht sich an ihrem Platz um, die übrigen Karten
 // rücken zur Seite. Ereignisse eines Zuges (z.B. drei Karten) laufen nacheinander ab. Eine doppelte Zahl
 // wird rot durchgestrichen, bei Flip 7 heben sich die sieben Zahlen nacheinander, am Rundenende fliegen
@@ -525,7 +528,17 @@ function local(el, game) {
   return u;
 }
 
+// Bildschirm: dasselbe wie für jeden Spieler (der Stapel bleibt geheim)
+export function screen(s) {
+  return view(s);
+}
+
+export function present(el, s, game) {
+  render(el, s, { ...game, tv: true });
+}
+
 export function render(el, s, game) {
+  const tv = Boolean(game.tv);
   const u = local(el, game);
   u.ctrl?.abort();
   u.ctrl = new AbortController();
@@ -533,7 +546,7 @@ export function render(el, s, game) {
 
   let root = el.querySelector(':scope > .f7');
   if (!root) {
-    el.innerHTML = `<div class="f7">
+    el.innerHTML = `<div class="f7 ${tv ? 'f7-tv' : ''}">
       <div class="f7-board"></div>
       <p class="status f7-status"></p>
       <div class="f7-others"></div>
@@ -546,7 +559,7 @@ export function render(el, s, game) {
   }
   const q = (sel) => root.querySelector(sel);
   const me = game.me;
-  const others = around(s, me).slice(1); // die anderen in Spielreihenfolge nach mir
+  const others = tv ? ids(s) : around(s, me).slice(1); // die anderen in Spielreihenfolge nach mir (Bildschirm: alle)
 
   // Wo lagen die Karten bisher? (für das Nachrücken und das Abräumen)
   const rootBefore = root.getBoundingClientRect();
@@ -567,10 +580,12 @@ export function render(el, s, game) {
   q('.f7-status').innerHTML = statusHTML(s, game);
   const othersBox = q('.f7-others');
   othersBox.classList.toggle('many', others.length > 2);
+  othersBox.style.setProperty('--seats', others.length);
   if (othersBox.children.length !== others.length) {
     othersBox.innerHTML = others.map(() => '<section class="f7-seat f7-them"></section>').join('');
   }
-  const seats = [...others.map((id, k) => [othersBox.children[k], id]), [q('.f7-me'), me]];
+  const seats = [...others.map((id, k) => [othersBox.children[k], id]), ...(tv ? [] : [[q('.f7-me'), me]])];
+  q('.f7-me').hidden = tv;
   for (const [seat, id] of seats) {
     seat.className = `f7-seat ${id === me ? 'f7-me' : 'f7-them'} is-${s.hands[id].state}`;
     seat.style.setProperty('--pc', game.color(id));
@@ -580,7 +595,7 @@ export function render(el, s, game) {
   }
   q('.f7-table').innerHTML = tableHTML(s, game);
   const logText = q('.f7-log').innerHTML;
-  q('.f7-bar').innerHTML = barHTML(s, game);
+  q('.f7-bar').innerHTML = tv ? '' : barHTML(s, game);
 
   if (!motion) return;
   if (game.first) return intro(root);
@@ -915,6 +930,32 @@ function countUp(node, from, to, delay, duration, signal) {
 
 export const style = `
   .f7 { position: relative; display: grid; gap: 14px; width: 100%; max-width: 560px; }
+
+  /* ---------- Bildschirm: links Punkte, Stapel und Verlauf, rechts alle Plätze mit großen Karten ---------- */
+  .f7-tv { max-width: none; gap: 2.5vh 4vw; }
+  .f7-tv .f7-rules, .f7-tv .f7-bar { display: none; }
+  .f7-tv .f7-others, .f7-tv .f7-others.many { grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 3vh 2.5vw; }
+  .f7-tv .f7-them, .f7-tv .f7-others.many .f7-them { --w: 3.4rem; --h: 4.9rem; padding: 1vh .8vw 1.4vh; border-top: 2px solid var(--hairline); transition: background-color 300ms ease-out, border-color 300ms ease-out; }
+  .f7-tv .f7-them.is-turn { background: color-mix(in srgb, var(--pc) 10%, white); border-top-color: var(--pc); }
+  .f7-tv .f7-others.many .f7-who, .f7-tv .f7-who { font: 800 var(--t-lg) / 1.1 var(--font-display); }
+  .f7-tv .f7-others.many .f7-pts, .f7-tv .f7-pts { font-size: var(--t-2xl); }
+  .f7-tv .f7-others.many .f7-badge, .f7-tv .f7-badge { font-size: var(--t-sm); padding: 2px 8px 1px; }
+  .f7-tv .f7-others.many .f7-corner { left: 5px; top: 4px; }
+  .f7-tv .f7-status { font-size: var(--t-lg); }
+  .f7-tv .f7-total { font-size: var(--t-2xl); }
+  .f7-tv .f7-board { gap: 1.2vh; }
+  .f7-tv .f7-name { font-size: var(--t-md); }
+  .f7-tv .f7-goal { font-size: var(--t-base); }
+  .f7-tv .f7-log { font-size: var(--t-md); grid-column: 1 / -1; }
+  .f7-tv .f7-stack { --w: 3.4rem; --h: 4.9rem; width: var(--w); height: var(--h); }
+  .f7-tv .f7-count { font-size: var(--t-base); }
+  @media (min-width: 880px) and (orientation: landscape) {
+    .f7-tv { grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr); grid-template-areas: "board others" "status others" "table others"; align-content: start; }
+    .f7-tv .f7-board { grid-area: board; }
+    .f7-tv .f7-status { grid-area: status; }
+    .f7-tv .f7-table { grid-area: table; align-self: start; }
+    .f7-tv .f7-others { grid-area: others; align-self: start; }
+  }
 
   /* ---------- Gesamtpunkte auf dem Weg zum Ziel ---------- */
   .f7-board { display: grid; gap: 10px; padding-top: 12px; border-top: 2px solid var(--line); }

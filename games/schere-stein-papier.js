@@ -2,6 +2,9 @@
 // Die Funktion view() sorgt dafür, dass man die Wahl der anderen erst sieht,
 // wenn alle gewählt haben.
 //
+// Bildschirm (present): Punkte groß, für jeden eine Karte, die sich verdeckt hinlegt, sobald er gewählt
+// hat, und das Aufdecken in großen Zeichen.
+//
 // Zu mehreren: Liegen genau zwei verschiedene Zeichen auf dem Tisch, bekommt jeder mit dem
 // stärkeren einen Punkt. Sind alle drei dabei oder haben alle dasselbe, gibt es keinen.
 
@@ -86,11 +89,22 @@ export function view(state, me) {
   };
 }
 
+// Bildschirm: wie für jemanden, der nicht mitspielt (nur wer schon gewählt hat)
+export function screen(state) {
+  return view(state, null);
+}
+
+export function present(el, s, game) {
+  render(el, s, { ...game, tv: true });
+}
+
 export function render(el, s, game) {
   const e = game.esc;
   const me = game.me;
+  const tv = Boolean(game.tv);
   const ids = s.players.map((p) => p.id);
   const others = ids.filter((id) => id !== me);
+  const order = tv ? ids : [me, ...others];
   const who = (id) => (id === me ? 'dich' : e(game.name(id)));
   const last = s.rounds.at(-1);
   const fresh = last && game.prev && game.prev.rounds.length < s.rounds.length; // gerade aufgedeckt
@@ -125,16 +139,34 @@ export function render(el, s, game) {
 
   const missing = ids.filter((id) => !s.picked.includes(id) && id !== me).map((id) => e(game.name(id)));
   let status = '';
-  if (!game.result) {
+  if (tv && !game.result) {
+    const done = s.picked.map((id) => e(game.name(id)));
+    status = done.length ? `${list(done)} ${done.length > 1 ? 'haben' : 'hat'} gewählt. Warte auf ${list(missing)}.` : 'Alle wählen geheim auf ihren Handys.';
+  } else if (!game.result) {
     if (s.myPick) status = `Du hast ${MOVES[s.myPick]} gewählt. Warte auf ${list(missing)}.`;
     else if (s.picked.length) status = `${list(s.picked.map((id) => e(game.name(id))))} ${s.picked.length > 1 ? 'haben' : 'hat'} schon gewählt. Jetzt du.`;
     else if (!last) status = 'Wähle geheim. Aufgedeckt wird, sobald alle gewählt haben.';
     else status = 'Nächste Runde. Wähle geheim.';
   }
 
-  el.innerHTML = `
+  // Bildschirm: eine Karte pro Spieler, verdeckt, sobald gewählt ist
+  const before = game.prev?.picked ?? [];
+  const hands = tv && !game.result
+    ? `<ul class="ssp-hands" aria-label="Wer gewählt hat">${ids
+        .map((id, k) => {
+          const done = s.picked.includes(id);
+          return `<li class="ssp-hand ${done ? 'done' : ''} ${done && !before.includes(id) ? 'enter' : ''}" style="--c:${game.color(id)};--k:${k}">
+            <span class="ssp-card" aria-hidden="true"></span>
+            <span class="ssp-hand-name"><span class="marker" style="color:var(--c)"></span>${e(game.name(id))}</span>
+            <span class="ssp-sr">${done ? 'hat gewählt' : 'wählt noch'}</span>
+          </li>`;
+        })
+        .join('')}</ul>`
+    : '';
+
+  el.innerHTML = `<div class="ssp ${tv ? 'ssp-tv' : ''}">
     <div class="ssp-score ${game.first ? 'intro' : ''}">
-      ${[me, ...others]
+      ${order
         .map(
           (id, k) => `
         <span class="ssp-team" style="--k:${k}">
@@ -145,16 +177,18 @@ export function render(el, s, game) {
         .join('')}
       <span class="muted ssp-goal">Wer zuerst drei Runden hat, gewinnt.</span>
     </div>
+    ${tv ? hands : ''}
     ${lastRound}
     ${status ? `<p class="status">${status}</p>` : ''}
-    ${game.result ? '' : `
+    ${game.result || tv ? '' : `
       <div class="ssp-moves ${game.first ? 'intro' : ''}">
         ${Object.entries(MOVES)
           .map(([move, label], k) => `
             <button class="btn ssp-move ${s.myPick === move ? 'chosen' : ''}" style="--k:${k}" data-action="waehlen" data-value="${move}"
                     ${s.myPick ? 'disabled' : ''} aria-pressed="${s.myPick === move}">${label}</button>`)
           .join('')}
-      </div>`}`;
+      </div>`}
+    </div>`;
 }
 
 export const style = `
@@ -191,7 +225,36 @@ export const style = `
   @keyframes ssp-flip { from { opacity: 0; transform: perspective(300px) rotateX(-80deg); } }
   @keyframes ssp-recede { from { opacity: 1; } }
 
+  /* Bildschirm: groß, Karten der Spieler in einer Reihe, das Aufdecken über die ganze Breite */
+  .ssp { display: grid; gap: 20px; min-width: 0; } /* wie #game, damit am Handy alles bleibt */
+  .ssp-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .ssp-tv { gap: 4vh; }
+  .ssp-tv .ssp-score { gap: .3em 2.2em; font-size: var(--t-lg); }
+  .ssp-tv .ssp-num { font-size: var(--t-4xl); }
+  .ssp-tv .ssp-goal { font-size: var(--t-base); }
+  .ssp-tv .ssp-status, .ssp-tv .status { font-size: var(--t-lg); }
+  .ssp-hands { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr)); gap: 3vh 2vw; }
+  .ssp-hand { position: relative; display: grid; justify-items: center; gap: 1vh; min-width: 0; }
+  .ssp-card {
+    width: min(100%, 7rem); aspect-ratio: 2 / 3; border: 2px dashed var(--hairline); border-radius: var(--radius-m);
+    transition: background-color 240ms ease-out, border-color 240ms ease-out;
+  }
+  .ssp-hand.done .ssp-card {
+    border: 2px solid var(--ink); background: color-mix(in srgb, var(--c) 14%, white);
+    background-image: repeating-linear-gradient(45deg, transparent 0 7px, color-mix(in srgb, var(--c) 35%, white) 7px 9px);
+  }
+  .ssp-hand.enter .ssp-card { animation: ssp-lay 360ms cubic-bezier(.2,.8,.2,1) both; }
+  @keyframes ssp-lay { from { opacity: 0; transform: translateY(-18px) rotate(-6deg); } }
+  .ssp-hand-name { display: flex; align-items: center; gap: .4em; max-width: 100%; font: 800 var(--t-lg) / 1.1 var(--font-display); }
+  .ssp-hand-name .marker { flex: none; }
+  .ssp-tv .ssp-last { padding-top: 3vh; }
+  .ssp-tv .ssp-last .muted { font-size: var(--t-md); }
+  .ssp-tv .ssp-picks { gap: 2vh 4vw; margin: 2vh 0; }
+  .ssp-tv .ssp-who { font-size: var(--t-md); }
+  .ssp-tv .ssp-sign, .ssp-tv .ssp-picks.many .ssp-sign { font-size: clamp(var(--t-3xl), 5.5vw, 6rem); }
+  .ssp-tv .ssp-verdict { font-size: var(--t-xl); font-weight: 700; }
+
   @media (prefers-reduced-motion: reduce) {
-    .ssp-score *, .ssp-last *, .ssp-moves * { animation: none !important; transition: none !important; }
+    .ssp-score *, .ssp-last *, .ssp-moves *, .ssp-hands * { animation: none !important; transition: none !important; }
   }
 `;

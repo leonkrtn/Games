@@ -401,6 +401,16 @@ function local(el, game) {
 
 const NONE = { prev: null, locks: new Set(), totals: null, rolled: false, ended: false };
 
+// Bildschirm: Hier ist nichts geheim.
+export function screen(s) {
+  return s;
+}
+
+// Bildschirm: links die Würfel groß, rechts alle Zettel zugleich, darüber wer gerade was angekreuzt hat
+export function present(el, s, game) {
+  render(el, s, { ...game, tv: true });
+}
+
 export function render(el, s, game) {
   const u = local(el, game);
   u.ctrl?.abort();
@@ -409,7 +419,7 @@ export function render(el, s, game) {
 
   let root = el.querySelector(':scope > .qx');
   if (!root) {
-    el.innerHTML = `<div class="qx"><div class="qx-tray"></div><div class="qx-main"></div>${rulesHTML(s)}</div>`;
+    el.innerHTML = `<div class="qx ${game.tv ? 'qx-tv' : ''}"><div class="qx-tray"></div><div class="qx-main"></div>${game.tv ? '' : rulesHTML(s)}</div>`;
     root = el.firstElementChild;
   }
   const tray = root.querySelector('.qx-tray');
@@ -612,6 +622,7 @@ function paintMain(main, s, game, u, fx) {
   const freshOpts = decision && u.optKey !== u.pickKey;
   if (decision) u.optKey = u.pickKey;
 
+  if (game.tv) return paintScreen(main, s, game, u, fx);
   main.innerHTML = `
     ${timerHTML(s, game)}
     ${statusHTML(s, game, decision)}
@@ -652,6 +663,42 @@ function paintMain(main, s, game, u, fx) {
     main.querySelectorAll('.qx-final td[data-to]').forEach((n) => {
       countUp(n, 0, Number(n.dataset.to), Number(n.dataset.delay), u.ctrl.signal);
     });
+  }
+}
+
+// Bildschirm: alle Zettel nebeneinander, jeder mit Name und Punkten; Punkte zählen hoch
+function paintScreen(main, s, game, u, fx) {
+  const sheets = ids(s)
+    .map((id, k) => {
+      const turn = !s.result && s.active === id;
+      return `<section class="qx-tvsheet ${turn ? 'is-turn' : ''}" data-sheet="${id}" style="--pc:${game.color(id)};--k:${k}">
+        <header class="qx-tvhead">${marker(game, id)}<span class="qx-tvname">${game.esc(game.name(id))}</span>
+          ${turn ? '<span class="qx-tvturn">würfelt</span>' : ''}<b class="qx-tvpts num">${minus(scoreOf(s, id).total)}</b></header>
+        ${sheetHTML(s, game, u, id, fx, false)}
+      </section>`;
+    })
+    .join('');
+  // Links unter den Würfeln: wer dran ist und was im letzten Wurf passiert ist; rechts alle Zettel,
+  // am Ende statt der Zettel die Wertung
+  main.innerHTML = `
+    <div class="qx-tvinfo">
+      ${timerHTML(s, game)}
+      ${statusHTML(s, game, null)}
+      ${s.round && !s.result ? roundHTML(s, game, u) : ''}
+    </div>
+    ${s.result ? finalHTML(s, game, fx) : `<div class="qx-tvsheets">${sheets}</div>`}`;
+
+  if (fx.totals && !game.reducedMotion) {
+    for (const p of s.players) {
+      const box = main.querySelector(`[data-sheet="${CSS.escape(p.id)}"]`);
+      const before = fx.totals[p.id];
+      const now = scoreOf(s, p.id);
+      countUp(box.querySelector('.qx-tvpts'), before.total, now.total, 250, u.ctrl.signal);
+      box.querySelectorAll('.qx-pt[data-row]').forEach((n) => countUp(n, before.rows[n.dataset.row], now.rows[n.dataset.row], 250, u.ctrl.signal));
+    }
+  }
+  if (fx.ended && !game.reducedMotion) {
+    main.querySelectorAll('.qx-final td[data-to]').forEach((n) => countUp(n, 0, Number(n.dataset.to), Number(n.dataset.delay), u.ctrl.signal));
   }
 }
 
@@ -977,6 +1024,37 @@ export const style = `
     max-width: 560px;
   }
   .qx-main { display: grid; gap: 14px; }
+
+  /* ---------- Bildschirm: Würfel links groß, alle Zettel rechts ---------- */
+  .qx-tv { max-width: none; gap: 3vh 4vw; }
+  .qx-tv .qx-die { --s: 3.6rem; }
+  .qx-tv .qx-dice { gap: 1.6rem; flex-wrap: wrap; }
+  .qx-tv .qx-colors { gap: .8rem; flex-wrap: wrap; justify-content: center; }
+  .qx-tv .qx-sum { font-size: var(--t-2xl); }
+  .qx-tv .qx-status { font-size: var(--t-lg); }
+  .qx-tv .qx-round { font-size: var(--t-md); }
+  .qx-tv .qx-timer-num { font-size: var(--t-xl); }
+  .qx-tvinfo { display: grid; gap: 1.5vh; align-content: start; }
+  .qx-tvsheets { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: 2.5vh 2vw; }
+  .qx-tv .qx-cell { height: 4.4vh; font-size: min(var(--t-md), 1.55vw); }
+  .qx-tv .qx-lock { height: 4.4vh; }
+  .qx-tv .qx-lock svg { max-height: 3.4vh; }
+  .qx-tv .qx-sheet { gap: 3px; }
+  .qx-tv .qx-tvhead { min-height: 0; }
+  .qx-tvsheet { display: grid; gap: 6px; min-width: 0; padding-top: 6px; border-top: 3px solid var(--hairline); transition: border-color 300ms ease-out; }
+  .qx-tvsheet.is-turn { border-top-color: var(--pc); }
+  .qx-tvhead { display: flex; align-items: center; gap: .5em; min-width: 0; }
+  .qx-tvname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 var(--t-lg) / 1.1 var(--font-display); }
+  .qx-tvturn { flex: none; padding: 0 .4em; border: 2px solid var(--pc); border-radius: var(--radius); color: var(--pc); font-size: var(--t-sm); font-weight: 700; }
+  .qx-tvpts { margin-left: auto; color: var(--pc); font-size: var(--t-2xl); line-height: 1; }
+  .qx-tv .qx-final { font-size: var(--t-md); }
+  @media (min-width: 880px) and (orientation: landscape) {
+    .qx-tv { grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr); grid-template-areas: "tray sheets" "info sheets"; grid-template-rows: auto 1fr; align-items: start; }
+    .qx-tv .qx-main { display: contents; }
+    .qx-tv .qx-tray { grid-area: tray; }
+    .qx-tv .qx-tvinfo { grid-area: info; }
+    .qx-tv .qx-tvsheets, .qx-tv .qx-final { grid-area: sheets; }
+  }
 
   /* ---------- Würfeltisch ---------- */
   .qx-tray { padding: 16px 0 6px; border-top: 2px solid var(--line); border-bottom: 1px solid var(--hairline); }

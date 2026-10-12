@@ -2,6 +2,9 @@
 // Reihum denkt sich einer eine Frage über sich aus (mit geheimer Antwort), alle anderen raten
 // gleichzeitig (geheim, bis alle geraten haben), und der Fragende entscheidet bei jeder Vermutung,
 // ob sie stimmt. Jede richtige Vermutung ist ein Punkt.
+//
+// Bildschirm (present): die Frage groß, wer schon geraten hat, danach Antwort und Vermutungen mit den
+// Urteilen. Antwort und Vermutungen erscheinen dort erst, wenn alle geraten haben.
 
 export const meta = {
   name: 'Wie gut kennst du mich?',
@@ -269,9 +272,19 @@ export function view(state, me) {
   };
 }
 
+// Bildschirm: wie für jemanden, der nicht mitspielt
+export function screen(state) {
+  return view(state, null);
+}
+
+export function present(el, s, game) {
+  render(el, s, { ...game, tv: true });
+}
+
 export function render(el, s, game) {
   const e = game.esc;
   const me = game.me;
+  const tv = Boolean(game.tv);
   const isSubject = s.subject === me;
   const guessers = guessersOf(s);
   const subjectName = e(game.name(s.subject));
@@ -283,7 +296,7 @@ export function render(el, s, game) {
   const header = `
     <div class="kdm-head ${game.first ? 'intro' : ''}">
       <span class="muted">Runde <span class="num">${Math.min(s.round, s.rounds)}</span> von <span class="num">${s.rounds}</span></span>
-      <span class="kdm-points">${[me, ...ids(s).filter((id) => id !== me)]
+      <span class="kdm-points">${(tv ? ids(s) : [me, ...ids(s).filter((id) => id !== me)])
         .map((id, k) => `<span class="kdm-team" style="--k:${k}">${who(id)} <b class="num kdm-num" style="color:${game.color(id)}">${s.score[id]}</b></span>`)
         .join('')}</span>
     </div>`;
@@ -317,7 +330,16 @@ export function render(el, s, game) {
     case 'raten': {
       const open = guessers.filter((id) => !s.guessed.includes(id));
       const mine = s.guesses[me];
-      if (isSubject) body = `${question}<p class="status">${names(open)} ${open.length === 1 ? 'rät' : 'raten'} gerade.</p>`;
+      if (tv) {
+        // Bildschirm: Wer schon geraten hat, bekommt einen Haken
+        const was = game.prev?.phase === 'raten' ? (game.prev.guessed ?? []) : [];
+        body = `${question}<ul class="kdm-tvguessers">${guessers
+          .map((id, k) => {
+            const done = s.guessed.includes(id);
+            return `<li class="${done ? 'done' : ''} ${done && !was.includes(id) ? 'enter' : ''}" style="--k:${k}">${who(id)}<span class="kdm-tvstate">${done ? 'hat geraten' : 'überlegt'}</span></li>`;
+          })
+          .join('')}</ul>`;
+      } else if (isSubject) body = `${question}<p class="status">${names(open)} ${open.length === 1 ? 'rät' : 'raten'} gerade.</p>`;
       else if (mine) {
         const rest = open.filter((id) => id !== me);
         body = `${question}
@@ -368,12 +390,12 @@ export function render(el, s, game) {
         <div class="kdm-answer ${fresh('pruefen') ? 'enter' : ''}"><p class="muted kdm-asker">${isSubject ? 'Deine Antwort' : `Antwort von ${subjectName}`}</p><p class="kdm-answer-text">${e(s.answer)}</p></div>
         <ul class="kdm-guesses">${rows}</ul>
         <p class="${done ? 'big' : 'status'} ${done && right.length ? 'ok' : ''}">${status}</p>
-        ${done && !game.result ? '<div><button class="btn primary" data-action="weiter">Nächste Runde</button></div>' : ''}`;
+        ${done && !game.result && !tv ? '<div><button class="btn primary" data-action="weiter">Nächste Runde</button></div>' : ''}`;
       break;
     }
   }
 
-  el.innerHTML = header + body;
+  el.innerHTML = `<div class="kdm ${tv ? 'kdm-tv' : ''}">${header}${body}</div>`;
 
   // Kleiner Helfer, der nur im eigenen Browser passiert (kein Spielzug).
   el.querySelector('#kdm-idea')?.addEventListener('click', () => {
@@ -430,7 +452,29 @@ export const style = `
   .kdm-verdict.enter { animation: kdm-stamp 300ms cubic-bezier(.2,.8,.2,1) both; }
   @keyframes kdm-rise { from { opacity: 0; transform: translateY(6px); } }
   @keyframes kdm-stamp { from { opacity: 0; transform: rotate(-4deg) scale(1.6); } }
+  .kdm { display: flex; flex-direction: column; gap: 20px; min-width: 0; } /* wie #game, damit am Handy alles bleibt */
+
+  /* Bildschirm: Frage und Antwort groß, Vermutungen in Spalten, wer geraten hat mit Haken */
+  .kdm-tv { gap: 3.5vh; }
+  .kdm-tv .kdm-head { font-size: var(--t-md); }
+  .kdm-tv .kdm-num { font-size: var(--t-xl); }
+  .kdm-tv .kdm-asker { font-size: var(--t-md); }
+  .kdm-tv .kdm-question { font: 800 clamp(var(--t-2xl), 4vw, 4.5rem) / 1.05 var(--font-display); max-width: 26ch; }
+  .kdm-tv .status { font-size: var(--t-lg); }
+  .kdm-tv .big { font-size: var(--t-xl); }
+  .kdm-tv .kdm-answer-text { font-size: var(--t-3xl); }
+  .kdm-tv .kdm-guesses { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); column-gap: 3vw; }
+  .kdm-tv .kdm-guess { align-items: start; align-content: start; }
+  .kdm-tv .kdm-guess-who { font-size: var(--t-base); }
+  .kdm-tv .kdm-guess-text { font-size: var(--t-xl); }
+  .kdm-tv .kdm-verdict { font-size: var(--t-lg); }
+  .kdm-tvguessers { display: flex; flex-wrap: wrap; gap: 1.5vh 3vw; font-size: var(--t-lg); }
+  .kdm-tvguessers li { display: grid; gap: 2px; padding-left: .2em; }
+  .kdm-tvstate { font-size: var(--t-base); color: var(--muted); }
+  .kdm-tvguessers li.done .kdm-tvstate { color: var(--ok); font-weight: 700; }
+  .kdm-tvguessers li.enter .kdm-tvstate { animation: kdm-stamp 300ms cubic-bezier(.2,.8,.2,1) both; }
+
   @media (prefers-reduced-motion: reduce) {
-    .kdm-head *, .kdm-q, .kdm-answer, .kdm-guess, .kdm-verdict { animation: none !important; }
+    .kdm-head *, .kdm-q, .kdm-answer, .kdm-guess, .kdm-verdict, .kdm-tvguessers * { animation: none !important; }
   }
 `;

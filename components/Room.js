@@ -162,7 +162,7 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
   if (snap.role === 'screen') {
     return (
       <>
-        <Screen snap={snap} code={code} now={now} refresh={refresh} live={live} reactions={reactions} send={send} goHome={goHome} />
+        <Screen snap={snap} code={code} now={now} refresh={refresh} live={live} reactions={reactions} send={send} goHome={goHome} online={online} />
         <ConnectionNote show={!connected} />
       </>
     );
@@ -206,7 +206,7 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
                 onAction={onAction}
                 onRefresh={refresh}
                 live={live}
-                screen={snap.screen}
+                screen={snap.screen?.mode === 'spiel' ? snap.screen : null}
               />
             </div>
           ) : (
@@ -370,6 +370,33 @@ function ScreenPick({ snap, send }) {
             ? 'Zu siebt ist einer der Bildschirm: Er spielt nicht mit und zeigt alles groß, zum Beispiel auf dem Fernseher.'
             : 'Ein Mitglied, das nicht mitspielt und alles groß zeigt, zum Beispiel ein Fernseher mit eigenem Konto.'}
       </p>
+      {snap.screen && (
+        <fieldset className="screen-mode">
+          <legend className="label">Der Bildschirm zeigt im Spiel</legend>
+          <div className="choices">
+            {[
+              ['spiel', 'Das Spielfeld groß, wo es eins gibt'],
+              ['tafel', 'Nur die Punktetafel'],
+            ].map(([mode, label]) => (
+              <label key={mode} className="choice">
+                <input
+                  type="radio"
+                  name="screen-mode"
+                  value={mode}
+                  checked={snap.screen.mode === mode}
+                  disabled={busy}
+                  onChange={async () => {
+                    setBusy(true);
+                    await send({ t: 'screen-mode', mode });
+                    setBusy(false);
+                  }}
+                />
+                <span>{label}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
     </div>
   );
 }

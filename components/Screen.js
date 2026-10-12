@@ -7,19 +7,23 @@ import { playerColor } from '@/lib/colors';
 /*
   Der Bildschirm einer Gruppe: ein Mitglied, das nicht mitspielt und alles groß zeigt, z.B. ein Fernseher
   oder Laptop mit eigenem Konto (gewählt in der Lobby, lib/room.js: data.screen).
-  Ohne Spiel stehen die gewonnenen Spiele und der Verlauf da. Im Spiel zeichnet present() des Spiels
-  (Kunstkritik, Montagsmaler); Spiele ohne present() bekommen eine Tafel: wer dran ist, die Punkte der
-  Partie (points() des Spiels) und die gewonnenen Spiele. Reaktionen der Spieler steigen groß auf.
+  Ohne Spiel stehen die gewonnenen Spiele, wer gerade da ist, und der Verlauf da. Beim Spielbeginn kommt
+  kurz eine Startkarte (Name, Beschreibung, wer mitspielt), dann zeichnet present() des Spiels; Spiele
+  ohne present() (oder wenn in der Lobby „Nur die Punktetafel“ gewählt ist) bekommen eine Tafel: wer dran
+  ist, die Punkte der Partie (points() des Spiels) und die gewonnenen Spiele. Am Ende steht das Ergebnis
+  groß über dem Spielfeld. Reaktionen der Spieler steigen groß auf.
   Eingaben gibt es keine: Gespielt und gestartet wird auf den Handys.
 */
-export default function Screen({ snap, code, now, refresh, live, reactions, send, goHome }) {
+export default function Screen({ snap, code, now, refresh, live, reactions, send, goHome, online }) {
   useTvMode();
   useWakeLock();
   const awake = useAwake();
   const players = snap.players.map(({ id, name }) => ({ id, name }));
   const game = snap.game;
+  const intro = useStartCard(game, snap.now);
   const board = game && !(game.present && !game.error); // die Tafel nennt das Spiel selbst groß
-  const title = [snap.group?.name, board ? null : game?.name].filter(Boolean).join(', ');
+  const title = [snap.group?.name, board || intro ? null : game?.name].filter(Boolean).join(', ');
+  const winners = game?.result?.winners ?? [];
 
   return (
     <div className={`tv ${awake ? 'awake' : ''}`} id="tv">
@@ -34,9 +38,16 @@ export default function Screen({ snap, code, now, refresh, live, reactions, send
       </header>
 
       {!game ? (
-        <TvLobby snap={snap} send={send} />
+        <TvLobby snap={snap} send={send} online={online} />
+      ) : intro ? (
+        <StartCard snap={snap} />
       ) : !board ? (
         <div className="tv-stage">
+          {game.result && (
+            <p className="tv-result" style={{ color: winners.length === 1 ? playerColor(players, winners[0]) : undefined }}>
+              {game.result.text ?? 'Spiel vorbei.'}
+            </p>
+          )}
           <GameView
             game={game}
             players={players}
@@ -61,9 +72,50 @@ export default function Screen({ snap, code, now, refresh, live, reactions, send
   );
 }
 
+// --- Spielbeginn: Name und kurze Beschreibung, danach baut sich das Spielfeld auf ---
+
+const START_CARD = 3200; // ms
+
+// Läuft eine Partie erst seit wenigen Sekunden, steht zuerst die Startkarte da (einmal pro Partie).
+function useStartCard(game, serverNow) {
+  const [showing, setShowing] = useState(null); // started der Partie, deren Karte gerade steht
+  const seen = useRef(new Set());
+  const started = game?.started ?? 0;
+  useEffect(() => {
+    if (!started || seen.current.has(started)) return;
+    seen.current.add(started);
+    if (game.result || serverNow - started > 8000) return; // schon länger im Gange: gleich das Spielfeld
+    setShowing(started);
+    const timer = setTimeout(() => setShowing((s) => (s === started ? null : s)), START_CARD);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [started]);
+  return showing !== null && showing === started;
+}
+
+function StartCard({ snap }) {
+  const info = snap.games.find((g) => g.id === snap.game.id);
+  const { players } = snap;
+  return (
+    <section className="tv-start" aria-live="polite">
+      <p className="tv-start-kicker">Neues Spiel</p>
+      <h1 className="tv-start-name">{snap.game.name}</h1>
+      {info?.description && <p className="tv-start-desc">{info.description}</p>}
+      <ul className="tv-start-players" aria-label="Es spielen">
+        {players.map((p, i) => (
+          <li key={p.id} style={{ '--c': playerColor(players, p.id), '--i': i }}>
+            <span className="marker" aria-hidden="true" />
+            {p.name}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 // --- Ohne Spiel: gewonnene Spiele und Verlauf ---
 
-function TvLobby({ snap, send }) {
+function TvLobby({ snap, send, online }) {
   const { players } = snap;
   return (
     <div className="tv-lobby">
@@ -75,6 +127,7 @@ function TvLobby({ snap, send }) {
               <span className="tv-who">
                 <span className="marker" aria-hidden="true" />
                 <span className="tv-name">{p.name}</span>
+                {online && !online.has(p.id) && <small className="tv-away">gerade nicht da</small>}
               </span>
               <CountUp className="tv-wins-num" value={p.score} />
             </li>

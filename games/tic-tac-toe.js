@@ -3,6 +3,8 @@
 // Motion: Das Spielfeld zeichnet sich zu Beginn wie mit dem Stift, jedes neue X oder O wird
 // Strich für Strich gezogen, und die Gewinnreihe wird am Ende durchgestrichen. Welche Elemente
 // neu sind, ergibt sich aus dem Vergleich mit game.prev (dem Stand vor dem letzten Zug).
+//
+// Bildschirm (present): Wer gegen wen spielt, wer dran ist, und das Spielfeld so groß wie möglich.
 
 export const meta = {
   name: 'Tic-Tac-Toe',
@@ -61,10 +63,22 @@ const MARK = {
 // Mittelpunkte der Felder im 300×300-Raster, für die Gewinnlinie
 const center = (i) => [50 + (i % 3) * 100, 50 + Math.floor(i / 3) * 100];
 
+// Bildschirm: Hier ist nichts geheim.
+export function screen(state) {
+  return state;
+}
+
+export function present(el, s, game) {
+  render(el, s, { ...game, tv: true });
+}
+
 export function render(el, s, game) {
+  const tv = Boolean(game.tv);
   const myTurn = s.turn === game.me && !game.result;
   const before = game.prev?.board ?? [];
-  const status = myTurn ? `Du bist dran. Du setzt ${s.marks[game.me]}.` : `${game.esc(game.name(s.turn))} ist dran.`;
+  const status = myTurn
+    ? `Du bist dran. Du setzt ${s.marks[game.me]}.`
+    : `${game.esc(game.name(s.turn))} ist dran${tv ? ` und setzt ${s.marks[s.turn]}` : ''}.`;
 
   const cells = s.board
     .map((owner, i) => {
@@ -93,9 +107,20 @@ export function render(el, s, game) {
     </svg>`;
   }
 
+  // Bildschirm: die beiden Spieler mit ihren Zeichen, wer dran ist, ist hervorgehoben
+  const duel = tv
+    ? `<ul class="ttt-duel ${game.first ? 'intro' : ''}">${s.players
+        .map(
+          (p, k) => `<li class="${s.turn === p.id && !game.result ? 'is-turn' : ''} ${s.line && s.board[s.line[0]] === p.id ? 'won' : ''}" style="--c:${game.color(p.id)};--k:${k}">
+            <span class="ttt-duel-mark">${MARK[s.marks[p.id]]}</span><span class="ttt-duel-name">${game.esc(p.name)}</span></li>`,
+        )
+        .join('<li class="ttt-vs" aria-hidden="true">gegen</li>')}</ul>`
+    : '';
+
   el.innerHTML = `
+    ${duel}
     ${game.result ? '' : `<p class="status ttt-status" ${game.prev?.turn !== s.turn ? 'data-new' : ''}><span class="marker" style="color:${game.color(s.turn)}"></span> ${status}</p>`}
-    <div class="ttt">
+    <div class="ttt ${tv ? 'ttt-tv' : ''}">
       <svg class="ttt-grid ${game.first ? 'draw' : ''}" viewBox="0 0 300 300" aria-hidden="true">
         <line pathLength="1" x1="100" y1="6" x2="100" y2="294"/>
         <line pathLength="1" x1="200" y1="6" x2="200" y2="294"/>
@@ -176,7 +201,21 @@ export const style = `
   .ttt-status[data-new] { animation: ttt-status 260ms cubic-bezier(.2,.8,.2,1); }
   @keyframes ttt-status { from { opacity: 0; transform: translateY(4px); } }
 
+  /* Bildschirm: Spielfeld so groß wie möglich, darüber das Duell */
+  .ttt-tv { width: min(100%, 64vh); }
+  .ttt-duel { display: flex; flex-wrap: wrap; align-items: center; gap: 1vh 2vw; }
+  .ttt-duel li { display: flex; align-items: center; gap: .5em; color: var(--c); transition: opacity 250ms ease-out; }
+  .ttt-duel .ttt-vs { color: var(--muted); font-size: var(--t-md); }
+  .ttt-duel-mark { width: 2.4em; height: 2.4em; display: block; }
+  .ttt-duel-mark svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .ttt-duel-mark path, .ttt-duel-mark circle { fill: none; stroke: currentColor; stroke-width: 11; }
+  .ttt-duel-name { font: 800 var(--t-2xl) / 1 var(--font-display); color: var(--ink); }
+  .ttt-duel li.is-turn .ttt-duel-name { text-decoration: underline; text-decoration-thickness: 4px; text-underline-offset: 8px; text-decoration-color: var(--c); }
+  .ttt-duel:has(.won) li:not(.won):not(.ttt-vs) { opacity: .35; }
+  .ttt-duel.intro li { animation: ttt-status 360ms cubic-bezier(.2,.8,.2,1) calc(var(--k, 1) * 100ms) backwards; }
+  #game:has(.ttt-tv) .ttt-status { font-size: var(--t-lg); }
+
   @media (prefers-reduced-motion: reduce) {
-    .ttt *, .ttt-status { animation: none !important; transition: none !important; stroke-dashoffset: 0 !important; }
+    .ttt *, .ttt-status, .ttt-duel * { animation: none !important; transition: none !important; stroke-dashoffset: 0 !important; }
   }
 `;

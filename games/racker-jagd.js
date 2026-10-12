@@ -13,6 +13,10 @@
 //
 // Plattform-Funktionen: tick() und game.now() für das Zeitlimit, notices() für passende Benachrichtigungen.
 //
+// Bildschirm (present): beim Suchen die Uhr groß und wie viele Racker jeder eingeschickt hat (verdeckt),
+// beim Bewerten der Beitrag so groß wie möglich (am Laptop oder Fernseher lässt er sich dort abspielen),
+// daneben wer noch bewertet, am Ende alle Racker mit ihren Wertungen.
+//
 // Motion: Die Zeitwahl baut sich gestaffelt auf, eingeschickte Beiträge fallen wie Polaroids in
 // ihren Platz, die verdeckten Karten des anderen drehen sich herein, beim Bewerten fliegt der
 // bewertete Beitrag weg und der nächste kommt herein, am Ende landen die Wertungen wie Stempel
@@ -289,6 +293,15 @@ export function view(s, me) {
   return s;
 }
 
+// Bildschirm: wie für jemanden, der nicht mitspielt (Links erst beim Bewerten, Noten erst danach)
+export function screen(s) {
+  return view(s, null);
+}
+
+export function present(el, s, game) {
+  render(el, s, { ...game, tv: true });
+}
+
 // ---------- Anzeige (nur im Browser) ----------
 
 const TILT = [-2.2, 1.6, -0.8];
@@ -321,7 +334,7 @@ export function render(el, s, game) {
 
   let root = el.querySelector(':scope > .rj');
   if (!root) {
-    el.innerHTML = '<div class="rj"><div class="rj-main"></div></div>';
+    el.innerHTML = `<div class="rj ${game.tv ? 'rj-tv' : ''}"><div class="rj-main"></div></div>`;
     root = el.firstElementChild;
   }
   const main = root.querySelector('.rj-main');
@@ -419,16 +432,18 @@ const ENDLESS = `<svg class="rj-inf" viewBox="0 0 100 50" aria-hidden="true"><pa
 function renderTime(main, s, game, fresh) {
   if (!fresh) return;
   const intro = game.first ? 'intro' : '';
-  main.innerHTML = `
-    <p class="status rj-lead">Wie lange sucht ihr? Wer zuerst wählt, startet die Suche für ${s.players.length > 2 ? 'alle' : 'beide'}.</p>
-    <div class="rj-times">
-      ${TIMES.map(
-        (m, i) => `
+  const times = TIMES.map(
+    (m, i) => `
         <button class="rj-time ${intro}" style="--i:${i}" data-action="zeit" data-value="${m}">
           ${m ? `<span class="rj-time-num">${m}</span><span class="rj-time-unit">Minuten</span>` : `${ENDLESS}<span class="rj-time-unit">Unbegrenzt</span>`}
         </button>`,
-      ).join('')}
-    </div>
+  ).join('');
+  const lead = game.tv
+    ? 'Gleich geht die Suche los. Wer auf dem Handy zuerst eine Zeit wählt, startet sie.'
+    : `Wie lange sucht ihr? Wer zuerst wählt, startet die Suche für ${s.players.length > 2 ? 'alle' : 'beide'}.`;
+  main.innerHTML = `
+    <p class="status rj-lead">${lead}</p>
+    ${game.tv ? '' : `<div class="rj-times">${times}</div>`}
     <ol class="rj-rules ${intro}">
       <li>Sucht auf Instagram einen richtig guten Racker und schickt den Link zum Beitrag.</li>
       <li>Jeder hat bis zu drei Einsendungen.</li>
@@ -499,6 +514,7 @@ function slotHtml(game, item, i, kind, fresh) {
 }
 
 function renderSearch(root, main, s, game, u, fresh) {
+  if (game.tv) return renderSearchTv(main, s, game, u, fresh);
   const e = game.esc;
   const me = game.me;
   const others = s.players.map((p) => p.id).filter((id) => id !== me);
@@ -631,6 +647,63 @@ function renderSearch(root, main, s, game, u, fresh) {
       game.refresh();
     }
   };
+  u.timer = setInterval(update, 250);
+}
+
+// Bildschirm beim Suchen: die Uhr groß und von jedem die verdeckten Einsendungen
+function renderSearchTv(main, s, game, u, fresh) {
+  const e = game.esc;
+  const before = game.prev?.phase === 'suchen' ? game.prev : null;
+  const timeUp = limited(s) && game.now() >= s.deadline;
+  if (fresh) {
+    const intro = game.first || game.prev?.phase === 'zeit' ? 'intro' : '';
+    main.innerHTML = `${clockHtml(s, game, intro)}<p class="status rj-note rj-tvnote">Jeder sucht auf seinem Handy.</p><div class="rj-others many"></div>`;
+  }
+  const clk = main.querySelector('.rj-clock');
+  if (limited(s)) {
+    clk.classList.toggle('over', timeUp);
+    clk.querySelector('.rj-clock-label').textContent = timeUp ? 'Zeit um' : 'übrig';
+  }
+  put(main.querySelector('.rj-tvnote'), timeUp ? 'Die Zeit ist um. Gleich wird bewertet.' : 'Jeder sucht auf seinem Handy. Bis zu drei Racker pro Person.');
+  const theirs = s.players
+    .map(({ id }) => {
+      const count = s.counts[id];
+      const prevCount = before ? before.counts[id] : game.first ? 0 : count;
+      const backs = Array.from({ length: MAX }, (_, i) =>
+        i < count
+          ? `<div class="rj-back ${i >= prevCount ? 'enter' : ''}" style="--c:${game.color(id)};--tilt:${TILT[i]}deg">${BACK}</div>`
+          : '<div class="rj-back rj-back-empty"></div>',
+      ).join('');
+      const newDone = s.done[id] && before && !before.done[id];
+      return `<section class="rj-theirs">
+        <h3 class="rj-who">${marker(game, id)} ${e(game.name(id))} ${s.done[id] ? `<span class="rj-done ${newDone ? 'enter' : ''}">fertig</span>` : ''}</h3>
+        <div class="rj-backs">${backs}</div>
+      </section>`;
+    })
+    .join('');
+  put(main.querySelector('.rj-others'), theirs);
+  if (!limited(s)) return;
+  const total = s.deadline - s.startedAt;
+  const num = main.querySelector('.rj-clock-num');
+  const bar = main.querySelector('.rj-bar i');
+  let shown = '';
+  const update = () => {
+    const now = game.now();
+    const text = clock(Math.max(0, s.deadline - now));
+    bar.style.setProperty('--left', Math.max(0, s.deadline - now) / total);
+    if (text !== shown) {
+      if (shown && s.deadline - now < 10_500 && !game.reducedMotion) {
+        num.animate([{ transform: 'scale(1.14)' }, { transform: 'scale(1)' }], { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      }
+      shown = text;
+      num.textContent = text;
+    }
+    if (now >= s.deadline + GRACE + 300 && now - u.lastRefresh > 2000) {
+      u.lastRefresh = now;
+      game.refresh();
+    }
+  };
+  update();
   u.timer = setInterval(update, 250);
 }
 
@@ -779,7 +852,11 @@ function renderReview(main, s, game, u, fresh) {
   const justVoted = myVote && prev?.phase === 'bewerten' && prev.index === s.index && !prev.order[s.index]?.votes?.[game.me];
 
   let ask;
-  if (iRate) {
+  if (game.tv) {
+    const who = open.length ? `${names(open)} ${open.length === 1 ? 'bewertet' : 'bewerten'} noch.` : 'Alle haben bewertet.';
+    ask = `<p class="rj-tvowner">${marker(game, item.owner)} Racker von ${e(game.name(item.owner))}</p>
+      <p class="status rj-ask">${who}</p>${open.length ? SCRIBBLE : ''}`;
+  } else if (iRate) {
     ask = `<p class="status rj-ask">Wie gut ist der Racker von ${e(game.name(item.owner))}?</p>
            <div class="rj-scale" style="--c:${game.color(game.me)}">${scale}</div>`;
   } else if (myVote) {
@@ -1072,6 +1149,34 @@ export const style = `
   @keyframes rj-dim { from { opacity: 1; } to { opacity: .4; } }
   @keyframes rj-draw { to { stroke-dashoffset: 0; } }
   @keyframes rj-frame { from { opacity: 0; transform: scale(1.06); } }
+
+  /* Bildschirm: Uhr und verdeckte Einsendungen groß, beim Bewerten der Beitrag so hoch wie möglich */
+  .rj-tv .rj-main { gap: 3.5vh; }
+  .rj-tv .rj-lead { font-size: var(--t-xl); max-width: 36ch; }
+  .rj-tv .rj-rules { font-size: var(--t-md); max-width: 60ch; }
+  .rj-tv .rj-clock { max-width: none; }
+  .rj-tv .rj-clock-num { font-size: clamp(var(--t-4xl), 8vw, 8rem); }
+  .rj-tv .rj-clock-label, .rj-tv .rj-tvnote { font-size: var(--t-lg); }
+  .rj-tv .rj-others.many { grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr)); gap: 4vh 3vw; }
+  .rj-tv .rj-others.many .rj-who { font-size: var(--t-xl); }
+  .rj-tv .rj-others.many .rj-back { width: 4.5rem; }
+  .rj-tv .rj-others.many .rj-backs { gap: 1rem; }
+  .rj-tv .rj-big { width: calc((100svh - 230px) * var(--ar, 4 / 5) + 12px); }
+  .rj-tv .rj-big figcaption { font-size: var(--t-base); }
+  .rj-tvowner { display: flex; align-items: center; gap: .4em; font: 800 var(--t-2xl) / 1.1 var(--font-display); }
+  .rj-tv .rj-ask { font-size: var(--t-lg); }
+  .rj-tv .rj-progress { font-size: var(--t-md); }
+  .rj-tv .rj-final.many { grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr)); }
+  .rj-tv .rj-final .rj-who { font-size: var(--t-xl); }
+  @media (min-width: 880px) and (orientation: landscape) {
+    .rj-tv .rj-main[data-phase="bewerten"] {
+      grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "stage progress" "stage ask"; grid-template-rows: auto 1fr;
+      column-gap: 4vw; align-items: start;
+    }
+    .rj-tv .rj-main[data-phase="bewerten"] .rj-stage { grid-area: stage; }
+    .rj-tv .rj-main[data-phase="bewerten"] .rj-progress { grid-area: progress; }
+    .rj-tv .rj-main[data-phase="bewerten"] .rj-askbox { grid-area: ask; }
+  }
 
   @media (prefers-reduced-motion: reduce) {
     .rj *, .rj *::after { animation: none !important; transition: none !important; }

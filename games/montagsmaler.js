@@ -1642,7 +1642,7 @@ function renderEnd(stage, s, game, u) {
     })
     .join('');
   stage.innerHTML = `<section class="mm-gallery">
-      <h3 class="mm-gallery-title">${game.tv && game.result?.text ? game.esc(game.result.text) : 'Eure Bilder'}</h3>
+      <h3 class="mm-gallery-title">Eure Bilder</h3>
       <ol class="mm-tiles">${tiles}</ol>
     </section>`;
   // Bilder nacheinander malen, damit die Seite dabei nicht stockt

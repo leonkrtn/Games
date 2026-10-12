@@ -616,6 +616,16 @@ export function view(s) {
   return s.solved ? s : { ...s, sol: null };
 }
 
+// Bildschirm: dasselbe wie für alle (ohne Lösung). present() zeichnet den Grundriss groß, daneben Hinweise,
+// Personen und Notizen, ohne Eingaben; wer gerade wen in der Hand hat und wer was gesetzt hat, steht dabei.
+export function screen(s) {
+  return view(s);
+}
+
+export function present(el, s, game) {
+  render(el, s, { ...game, tv: true });
+}
+
 // ---------- Anzeige (nur im Browser) ----------
 
 // Palette (Skill „zeichnen“): Tusche, flache Druckfarben, Licht von oben links
@@ -1147,7 +1157,7 @@ function shown(u) {
   for (const op of u.ops) move(st, s, game.me, op.type, op.data);
   return st;
 }
-const canEdit = (u) => !u.game.result && !u.s.solved;
+const canEdit = (u) => !u.game.tv && !u.game.result && !u.s.solved; // der Bildschirm zeigt nur
 
 // ---------- Anzeige ----------
 
@@ -1202,7 +1212,7 @@ function pageHtml(s, game) {
     const blocked = !free(s.items[c]);
     return `<button class="kd-cell ${blocked ? 'blocked' : ''}" type="button" data-c="${c}" style="--x:${c % n};--y:${Math.floor(c / n)}"></button>`;
   }).join('');
-  return `<div class="kd ${game.first && !game.reducedMotion ? 'intro' : ''}" style="--n:${n}">
+  return `<div class="kd ${game.tv ? 'kd-tv' : ''} ${game.first && !game.reducedMotion ? 'intro' : ''}" style="--n:${n}">
     <section class="kd-sheet">
       <header class="kd-case">
         <h3 class="kd-title"><span class="kd-roof">${ROOF}</span><span class="kd-house-name">${game.esc(s.house)}</span></h3>
@@ -1226,7 +1236,7 @@ function pageHtml(s, game) {
         </div>
       </div>
     </section>
-    <details class="kd-rules"><summary>So geht’s</summary>${RULES}</details>
+    ${game.tv ? '' : `<details class="kd-rules"><summary>So geht’s</summary>${RULES}</details>`}
   </div>`;
 }
 
@@ -1938,6 +1948,25 @@ export const style = `
   .kd-crime.is-solved { font-weight: 700; }
 
   .kd-main { display: grid; gap: 18px; }
+
+  /* Bildschirm: Grundriss so groß wie möglich, daneben Hinweise, Personen und Notizen */
+  .kd-tv { gap: 2vh; }
+  .kd-tv .kd-title { font-size: var(--t-2xl); }
+  .kd-tv .kd-crime { font-size: var(--t-lg); max-width: 60ch; }
+  .kd-tv .kd-board { max-width: none; width: min(100%, 66vh); grid-template-columns: 1.2rem minmax(0, 1fr); grid-template-rows: 1.3rem auto; }
+  .kd-tv .kd-cols span, .kd-tv .kd-rows span { font-size: var(--t-sm); }
+  .kd-tv .kd-legend { max-width: 66vh; font-size: var(--t-base); }
+  .kd-tv .kd-legend-icon { width: 2rem; height: 2rem; }
+  .kd-tv .kd-hint:empty, .kd-tv .kd-tools:empty, .kd-tv .kd-pen-hint:empty, .kd-tv .kd-notes-foot:empty { display: none; }
+  .kd-tv .kd-clue-list { font-size: var(--t-md); }
+  .kd-tv .kd-clues-head { font-size: var(--t-lg); }
+  .kd-tv .kd-pen-board { max-width: 18rem; }
+  @media (min-width: 880px) and (orientation: landscape) {
+    .kd-tv .kd-main { grid-template-columns: auto minmax(0, 1fr); gap: 4vw; }
+    .kd-tv .kd-stage { position: static; }
+    .kd-tv .kd-side { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 3vh 2.5vw; }
+    .kd-tv .kd-tray { grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
   @container (min-width: 600px) {
     .kd-main { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 28px; align-items: start; }
     .kd-stage { position: sticky; top: 16px; }

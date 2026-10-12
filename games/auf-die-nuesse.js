@@ -13,6 +13,8 @@
 // Tippen fair bleibt, und nimmt mehrere Tipper in einer Anfrage an. Würfelt jemand seinen Hund nicht
 // selbst, rollt er nach kurzer Zeit von allein (tick).
 //
+// Bildschirm (present): links der Stand aller, rechts Würfeltisch, Topf und der Wettlauf groß.
+//
 // Motion: 3D-Würfel rollen über den Tisch, Nüsse fliegen in den Topf und beim Sichern in die Anzeige,
 // Tannenhäher treten zur Seite, verlorene Nüsse werden durchgestrichen, die Sonderrunde startet mit
 // Countdown, am Ende stempelt der Hund „Wuff! Wuff!“.
@@ -460,6 +462,15 @@ function local(el, game) {
   return u;
 }
 
+// Bildschirm: Hier ist nichts geheim.
+export function screen(s) {
+  return s;
+}
+
+export function present(el, s, game) {
+  render(el, s, { ...game, tv: true });
+}
+
 export function render(el, s, game) {
   if (s.special && !s.special.dogs) s = { ...s, special: null }; // Sonderrunde aus der Zeit vor mehreren Hunden
   const u = local(el, game);
@@ -468,7 +479,7 @@ export function render(el, s, game) {
 
   let root = el.querySelector(':scope > .adn');
   if (!root) {
-    el.innerHTML = `<div class="adn">
+    el.innerHTML = `<div class="adn ${game.tv ? 'adn-tv' : ''}">
       <div class="adn-board"></div>
       <p class="status adn-status"></p>
       <div class="adn-race"></div>
@@ -476,7 +487,7 @@ export function render(el, s, game) {
       <div class="adn-tray"></div>
       <div class="adn-bar"></div>
       <p class="adn-last"></p>
-      ${rulesHTML(s)}
+      ${game.tv ? '' : rulesHTML(s)}
     </div>`;
     root = el.firstElementChild;
   }
@@ -556,6 +567,10 @@ function statusHTML(s, game) {
   }
   if (s.phase === 'sonder') {
     const sp = s.special;
+    if (game.tv) {
+      const dogs = sp.dogs.length === 1 ? `${name(sp.dogs[0])} würfelt den Hund` : 'Die anderen würfeln ihre Hunde';
+      return `${marker(game, sp.by)} ${name(sp.by)} sammelt Nüsse. ${dogs}.`;
+    }
     return sp.by === me
       ? `${marker(game, me)} Alle Würfel zeigen Eichhörnchen. Würfle so schnell du kannst, bis ${sp.dogs.length > 1 ? 'ein' : 'der'} Hund kommt.`
       : `${marker(game, me)} Würfle deinen Hund, bevor ${name(sp.by)} zu viele Nüsse sammelt.`;
@@ -954,6 +969,38 @@ function rulesHTML(s) {
 
 export const style = `
   .adn { position: relative; display: grid; gap: 16px; width: 100%; max-width: 560px; }
+
+  /* Bildschirm: links der Stand, rechts Würfel, Topf und Wettlauf */
+  .adn-tv { max-width: none; gap: 3vh 4vw; }
+  .adn-tv .adn-die { --s: 5.6rem; }
+  .adn-tv .adn-tray { gap: 1.2rem; }
+  .adn-tv .adn-status { font-size: var(--t-lg); }
+  .adn-tv .adn-last { font-size: var(--t-md); }
+  .adn-tv .adn-name { font-size: var(--t-md); }
+  .adn-tv .adn-score { font-size: var(--t-3xl); }
+  .adn-tv .adn-goal { font-size: var(--t-base); }
+  .adn-tv .adn-potbox { font-size: var(--t-md); }
+  .adn-tv .adn-potbox b { font-size: var(--t-3xl); }
+  .adn-tv .adn-fdie { width: 3rem; height: 3rem; }
+  .adn-tv .adn-dogdie { width: 4.4rem; height: 4.4rem; }
+  .adn-tv .adn-sp-dice { gap: .5rem; }
+  .adn-tv .adn-lane { min-height: 5rem; }
+  .adn-tv .adn-wuff { font-size: var(--t-2xl); }
+  .adn-tv .adn-sp-title { font-size: var(--t-3xl); }
+  .adn-tv .adn-lane-who, .adn-tv .adn-dognote { font-size: var(--t-md); }
+  .adn-tv .adn-sp-num { font-size: var(--t-3xl); }
+  .adn-tv .adn-sp-result { font-size: var(--t-lg); }
+  .adn-tv .adn-count { font-size: 10rem; }
+  @media (min-width: 880px) and (orientation: landscape) {
+    .adn-tv { grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr); grid-template-areas: "board status" "board race" "board pot" "board tray" "board last"; align-content: start; }
+    .adn-tv .adn-board { grid-area: board; align-self: start; }
+    .adn-tv .adn-status { grid-area: status; }
+    .adn-tv .adn-race { grid-area: race; }
+    .adn-tv .adn-pot { grid-area: pot; }
+    .adn-tv .adn-tray { grid-area: tray; }
+    .adn-tv .adn-last { grid-area: last; }
+    .adn-tv .adn-bar { display: none; }
+  }
 
   /* ---------- Anzeige: Nüsse auf dem Weg zum Ziel ---------- */
   .adn-board { display: grid; gap: 12px; padding-top: 12px; border-top: 2px solid var(--line); }
