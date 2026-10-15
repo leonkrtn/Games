@@ -3,7 +3,8 @@
 // wenn alle gewählt haben.
 //
 // Bildschirm (present): Punkte groß, für jeden eine Karte, die sich verdeckt hinlegt, sobald er gewählt
-// hat, und das Aufdecken in großen Zeichen.
+// hat, und das Aufdecken in großen Zeichen. Quer: links die Punkte, rechts Karten und Aufdecken.
+// Handy: Die drei Knöpfe stehen über dem Ergebnis der letzten Runde, damit sie nicht wandern, wenn es dazukommt.
 //
 // Zu mehreren: Liegen genau zwei verschiedene Zeichen auf dem Tisch, bekommt jeder mit dem
 // stärkeren einen Punkt. Sind alle drei dabei oder haben alle dasselbe, gibt es keinen.
@@ -157,13 +158,14 @@ export function render(el, s, game) {
           const done = s.picked.includes(id);
           return `<li class="ssp-hand ${done ? 'done' : ''} ${done && !before.includes(id) ? 'enter' : ''}" style="--c:${game.color(id)};--k:${k}">
             <span class="ssp-card" aria-hidden="true"></span>
-            <span class="ssp-hand-name"><span class="marker" style="color:var(--c)"></span>${e(game.name(id))}</span>
+            <span class="ssp-hand-name"><span class="marker" style="color:var(--c)"></span><span class="ssp-hand-label">${e(game.name(id))}</span></span>
             <span class="ssp-sr">${done ? 'hat gewählt' : 'wählt noch'}</span>
           </li>`;
         })
         .join('')}</ul>`
     : '';
 
+  // Reihenfolge: Was dazukommt (Ergebnis der Runde), steht unter den Knöpfen; der Status hat immer zwei Zeilen Platz.
   el.innerHTML = `<div class="ssp ${tv ? 'ssp-tv' : ''}">
     <div class="ssp-score ${game.first ? 'intro' : ''}">
       ${order
@@ -178,16 +180,16 @@ export function render(el, s, game) {
       <span class="muted ssp-goal">Wer zuerst drei Runden hat, gewinnt.</span>
     </div>
     ${tv ? hands : ''}
-    ${lastRound}
-    ${status ? `<p class="status">${status}</p>` : ''}
-    ${game.result || tv ? '' : `
+    <p class="status ssp-status">${status}</p>
+    ${tv ? '' : `
       <div class="ssp-moves ${game.first ? 'intro' : ''}">
         ${Object.entries(MOVES)
           .map(([move, label], k) => `
             <button class="btn ssp-move ${s.myPick === move ? 'chosen' : ''}" style="--k:${k}" data-action="waehlen" data-value="${move}"
-                    ${s.myPick ? 'disabled' : ''} aria-pressed="${s.myPick === move}">${label}</button>`)
+                    ${s.myPick || game.result ? 'disabled' : ''} aria-pressed="${s.myPick === move}">${label}</button>`)
           .join('')}
       </div>`}
+    ${lastRound}
     </div>`;
 }
 
@@ -201,7 +203,8 @@ export const style = `
   .ssp-picks { display: flex; flex-wrap: wrap; gap: 6px 24px; margin: 6px 0 8px; }
   .ssp-pick { display: grid; gap: 0; }
   .ssp-who { font-size: var(--t-sm); color: var(--muted); }
-  .ssp-sign { color: var(--c); font: 800 var(--t-2xl) / 1.05 var(--font-display); transition: opacity 200ms ease-out; }
+  .ssp-sign { color: var(--c); font: 800 var(--t-2xl) / 1.15 var(--font-display); transition: opacity 200ms ease-out; }
+  .ssp-status { margin: 0; line-height: 1.3; min-height: 2.6em; }
   .ssp-picks.many .ssp-sign { font-size: var(--t-xl); }
   .ssp-pick.lost .ssp-sign { opacity: .4; }
   .ssp-moves { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-width: 520px; }
@@ -234,7 +237,7 @@ export const style = `
   .ssp-tv .ssp-goal { font-size: var(--t-base); }
   .ssp-tv .ssp-status, .ssp-tv .status { font-size: var(--t-lg); }
   .ssp-hands { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr)); gap: 3vh 2vw; }
-  .ssp-hand { position: relative; display: grid; justify-items: center; gap: 1vh; min-width: 0; }
+  .ssp-hand { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 1vh; min-width: 0; }
   .ssp-card {
     width: min(100%, 7rem); aspect-ratio: 2 / 3; border: 2px dashed var(--hairline); border-radius: var(--radius-m);
     transition: background-color 240ms ease-out, border-color 240ms ease-out;
@@ -247,12 +250,32 @@ export const style = `
   @keyframes ssp-lay { from { opacity: 0; transform: translateY(-18px) rotate(-6deg); } }
   .ssp-hand-name { display: flex; align-items: center; gap: .4em; max-width: 100%; font: 800 var(--t-lg) / 1.1 var(--font-display); }
   .ssp-hand-name .marker { flex: none; }
+  .ssp-hand-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ssp-tv .ssp-last { padding-top: 3vh; }
   .ssp-tv .ssp-last .muted { font-size: var(--t-md); }
   .ssp-tv .ssp-picks { gap: 2vh 4vw; margin: 2vh 0; }
   .ssp-tv .ssp-who { font-size: var(--t-md); }
-  .ssp-tv .ssp-sign, .ssp-tv .ssp-picks.many .ssp-sign { font-size: clamp(var(--t-3xl), 5.5vw, 6rem); }
+  .ssp-tv .ssp-sign, .ssp-tv .ssp-picks.many .ssp-sign { font-size: 4.5rem; }
   .ssp-tv .ssp-verdict { font-size: var(--t-xl); font-weight: 700; }
+  /* Bildschirm quer: links die Punkte untereinander, rechts Karten, Status und das Aufdecken; alles oben ausgerichtet */
+  @media (min-width: 880px) and (orientation: landscape) {
+    .ssp-tv {
+      grid-template-columns: minmax(13rem, 20rem) minmax(0, 1fr); grid-template-areas: "score hands" "score status" "score last";
+      align-content: start; align-items: start; column-gap: 5vw; row-gap: 2vh;
+    }
+    .ssp-tv > .ssp-score { grid-area: score; flex-direction: column; align-items: stretch; gap: 0; }
+    .ssp-tv .ssp-team { justify-content: space-between; padding: 1vh 0; border-bottom: 1px solid var(--hairline); min-width: 0; }
+    .ssp-tv .ssp-team-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ssp-tv .ssp-num { font-size: var(--t-3xl); }
+    .ssp-tv .ssp-goal { padding-top: 1.5vh; }
+    .ssp-tv > .ssp-hands { grid-area: hands; grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr)); }
+    .ssp-tv .ssp-card { width: min(100%, 4.8rem); }
+    .ssp-tv > .ssp-status { grid-area: status; }
+    .ssp-tv > .ssp-last { grid-area: last; padding-top: 1.5vh; }
+    .ssp-tv .ssp-picks { margin: 1vh 0; row-gap: 1.5vh; }
+    .ssp-tv .ssp-picks.many { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .ssp-tv .ssp-picks.many .ssp-sign { font-size: 3.2rem; }
+  }
 
   @media (prefers-reduced-motion: reduce) {
     .ssp-score *, .ssp-last *, .ssp-moves *, .ssp-hands * { animation: none !important; transition: none !important; }

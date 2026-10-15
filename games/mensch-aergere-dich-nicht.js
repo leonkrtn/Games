@@ -447,10 +447,19 @@ export function render(el, s, game) {
       duration: 260, delay: Math.max(0, settled - 120), easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards',
     });
   }
-  const bar = q('.mae-bar');
-  const barHTML = mine && s.phase === 'wuerfeln' ? `<button class="btn primary mae-roll" data-action="wuerfeln" data-value="${value()}">Würfeln</button>` : '';
-  put(bar, barHTML);
-  bar.hidden = !barHTML;
+  // Der Knopf steht immer da und ist nur gesperrt, wenn ich nicht würfeln darf: So rutscht nichts darunter.
+  const roll = q('.mae-roll');
+  if (roll) {
+    const ready = mine && s.phase === 'wuerfeln';
+    roll.disabled = !ready;
+    if (ready) {
+      roll.dataset.action = 'wuerfeln';
+      roll.dataset.value = JSON.stringify({ at: s.seq });
+    } else {
+      delete roll.dataset.action;
+      delete roll.dataset.value;
+    }
+  }
   paintSeats(root, s, game, me, animate ? prev : null, settled);
 
   // Ende: die Figuren im Haus jubeln nacheinander, alle anderen treten zurück
@@ -546,7 +555,9 @@ function shell(s, game, geo, rot, tv) {
           <button class="mae-die idle" type="button" disabled aria-label="Würfel">
             <span class="mae-lift"><span class="mae-cube"><i class="mae-core"></i><i class="mae-core mae-core-x"></i><i class="mae-core mae-core-y"></i>${faces}</span></span>
           </button>
-          <div class="mae-text"><p class="mae-log" aria-live="polite"></p><p class="status mae-status"></p><div class="mae-bar" hidden></div></div>
+          <div class="mae-text"><p class="mae-log" aria-live="polite"></p><p class="status mae-status"></p>${
+            tv ? '' : '<div class="mae-bar"><button class="btn primary mae-roll" type="button" disabled>Würfeln</button></div>'
+          }</div>
         </div>
         <ol class="mae-seats"></ol>
       </div>
@@ -954,13 +965,11 @@ export const style = `
     padding: 12px 0; border-top: 2px solid var(--pc, var(--line)); border-bottom: 1px solid var(--hairline);
     transition: border-color 300ms ease-out;
   }
-  .mae-text { display: grid; gap: 4px; min-width: 0; }
-  .mae-log { margin: 0; color: var(--muted); font-size: var(--t-sm); min-height: 1.3em; }
-  .mae-log:empty { display: none; }
-  .mae-status { margin: 0; }
-  .mae-status:empty { display: none; }
-  .mae-bar { display: flex; margin-top: 6px; }
-  .mae-bar[hidden] { display: none; }
+  /* Texte wechseln bei jedem Zug: zwei Zeilen sind immer reserviert, damit nichts darunter rutscht */
+  .mae-text { display: grid; gap: 4px; min-width: 0; align-content: start; }
+  .mae-log { margin: 0; color: var(--muted); font-size: var(--t-sm); line-height: 1.35; min-height: 2.7em; }
+  .mae-status { margin: 0; line-height: 1.3; min-height: 2.6em; }
+  .mae-bar { display: flex; margin-top: 4px; }
   .mae-roll { min-width: 9rem; }
 
   .mae-die {
@@ -1006,10 +1015,10 @@ export const style = `
   .mae-seats li.won { background: color-mix(in srgb, var(--pc) 14%, white); }
   .mae-who { display: flex; align-items: center; gap: 6px; min-width: 0; font: 800 var(--t-md) / 1.1 var(--font-display); }
   .mae-who .marker { flex: none; }
-  .mae-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mae-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.25; }
   .mae-seats li.is-turn .mae-name { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; text-decoration-color: var(--pc); }
   .mae-home { display: flex; gap: 2px; flex: none; }
-  .mae-home i { display: block; width: 12px; height: 16px; }
+  .mae-home i { display: block; width: 11px; height: 15px; }
   .mae-home svg { display: block; width: 100%; height: 100%; fill: var(--paper); stroke: var(--hairline); stroke-width: 1.2; }
   .mae-home i.in svg { fill: var(--pc); stroke: var(--ink); stroke-width: 1; }
   .mae-home i.gain { animation: mae-gain 420ms cubic-bezier(.2,.8,.2,1) var(--gain-delay, 0ms) backwards; }
@@ -1028,12 +1037,12 @@ export const style = `
 
   /* ---------- Bildschirm ---------- */
   .mae-tv { --mae-h: calc(100vh - 9rem); }
-  .mae-tv .mae-stage { grid-template-columns: minmax(0, 1fr) minmax(16rem, 24rem); gap: 4vw; align-items: center; }
+  .mae-tv .mae-stage { grid-template-columns: minmax(0, 1fr) minmax(18rem, 28rem); gap: 4vw; align-items: start; }
   .mae-tv .mae-side { gap: 3vh; }
-  .mae-tv .mae-die { --s: 6.5rem; margin: .6rem; }
-  .mae-tv .mae-tray { grid-template-columns: 1fr; justify-items: start; gap: 2vh; }
-  .mae-tv .mae-log { font-size: var(--t-md); }
-  .mae-tv .mae-status { font-size: var(--t-lg); }
+  .mae-tv .mae-die { --s: 5.5rem; margin: .5rem; }
+  .mae-tv .mae-tray { align-items: start; gap: 1.2rem; }
+  .mae-tv .mae-log { font-size: var(--t-base); }
+  .mae-tv .mae-status { font-size: var(--t-md); }
   .mae-tv .mae-seats, .mae-tv .mae-seats.many { grid-template-columns: minmax(0, 1fr); }
   .mae-tv .mae-seats li { padding: 1.2vh .8vw; }
   .mae-tv .mae-who { font-size: var(--t-xl); }

@@ -455,18 +455,19 @@ export const style = `
   .kdm { display: flex; flex-direction: column; gap: 20px; min-width: 0; } /* wie #game, damit am Handy alles bleibt */
 
   /* Bildschirm: Frage und Antwort groß, Vermutungen in Spalten, wer geraten hat mit Haken */
-  .kdm-tv { gap: 3.5vh; }
+  .kdm-tv { gap: 2.5vh; }
   .kdm-tv .kdm-head { font-size: var(--t-md); }
   .kdm-tv .kdm-num { font-size: var(--t-xl); }
   .kdm-tv .kdm-asker { font-size: var(--t-md); }
-  .kdm-tv .kdm-question { font: 800 clamp(var(--t-2xl), 4vw, 4.5rem) / 1.05 var(--font-display); max-width: 26ch; }
+  .kdm-tv .kdm-question { font: 800 3.2rem / 1.05 var(--font-display); max-width: 26ch; } /* rem statt vw: wächst sonst auf Breitbild über den Rand */
   .kdm-tv .status { font-size: var(--t-lg); }
   .kdm-tv .big { font-size: var(--t-xl); }
   .kdm-tv .kdm-answer-text { font-size: var(--t-3xl); }
-  .kdm-tv .kdm-guesses { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); column-gap: 3vw; }
+  .kdm-tv .kdm-guesses { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr)); column-gap: 3vw; }
   .kdm-tv .kdm-guess { align-items: start; align-content: start; }
   .kdm-tv .kdm-guess-who { font-size: var(--t-base); }
-  .kdm-tv .kdm-guess-text { font-size: var(--t-xl); }
+  /* höchstens zwei Zeilen: zu sechst passen sonst nicht alle Antworten auf den Bildschirm */
+  .kdm-tv .kdm-guess-text { font-size: var(--t-lg); line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .kdm-tv .kdm-verdict { font-size: var(--t-lg); }
   .kdm-tvguessers { display: flex; flex-wrap: wrap; gap: 1.5vh 3vw; font-size: var(--t-lg); }
   .kdm-tvguessers li { display: grid; gap: 2px; padding-left: .2em; }

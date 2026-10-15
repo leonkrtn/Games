@@ -1,6 +1,6 @@
 ---
 name: spiel-testen
-description: Spiele im Spielzimmer gründlich testen, bevor sie online gehen. Spiellogik in Node simulieren (tausende Partien mit jeder Spielerzahl, Geheimnisse in view, jede Partie endet), mit zwei bis sechs Konten im echten Browser spielen (Handy-Breite, Desktop, ohne Bewegung, dazu ein Fernseher als Bildschirm der Gruppe), seltene Zustände im Prüfstand zeichnen, Bildschirmfotos ansehen und Finger-Gesten wie Ziehen prüfen. Laden, wenn ein neues Spiel fertig ist, ein Spiel geändert wurde oder ein Fehler gemeldet wird.
+description: Spiele im Spielzimmer gründlich testen, bevor sie online gehen. Spiellogik in Node simulieren (tausende Partien mit jeder Spielerzahl, Geheimnisse in view, jede Partie endet), mit zwei bis sechs Konten im echten Browser spielen (Handy-Breite, Desktop, ohne Bewegung, dazu ein Fernseher als Bildschirm der Gruppe), jede Ansicht in allen gängigen Handy- und Bildschirmgrößen mit Screenshots und automatischen Befunden prüfen (Überlauf, überdeckte Texte, verschobene Elemente), seltene Zustände im Prüfstand zeichnen, Bildschirmfotos ansehen und Finger-Gesten wie Ziehen prüfen. Laden, wenn ein neues Spiel fertig ist, ein Spiel geändert wurde oder ein Fehler gemeldet wird.
 ---
 
 # Spiele testen
@@ -176,6 +176,74 @@ Die Bilder sind Platzhalter, also Bilder-Layouts zusätzlich
 im echten Spiel ansehen. Den ersten Wurf zeigt `game.first`: Ein Auftakt mit vielen Karten kann beim Foto
 noch laufen (dann `wait` erhöhen, oder es ist ein Hinweis, dass der Auftakt zu lang ist).
 
+Der Prüfstand zeichnet im selben Rahmen wie das Spielzimmer: Spieler neben bzw. unter der Anzeigetafel (am PC so
+breit wie echt), mit Ergebnisleiste unten; der Bildschirm mit Kopfzeile und Ergebnis darin.
+
+## Alle Größen (Pflicht vor jedem Push)
+
+Fehler in der Anzeige zeigen sich oft nur in einer Größe (Tafeln mit Lücke zum Stiel nur am Fernseher, Überlauf nur
+auf 960 × 540) oder nur im Wechsel (ein Text kommt dazu und schiebt die Knöpfe weg). Deshalb jede Ansicht in allen
+gängigen Größen ansehen: `SIZES` in `pruefung.cjs` (Handy 320 bis 430 breit, Bildschirm 960 × 540 bis 2560 × 1080 und
+iPad quer). Die Prüfungen stehen in `pruefung.cjs` und laufen in beiden Werkzeugen gleich:
+
+- **Bildschirm scrollt** (am Fernseher muss alles ohne Scrollen passen), **seitlich scrollbar**.
+- **Text ragt aus seinem Kasten**, wird **abgeschnitten** (von einem Vorfahren mit `overflow`), ist **auf wenige Zeichen
+  gekürzt** (Auslassungspunkte in einer zu schmalen Spalte), **sehr klein** oder steht **außerhalb des Fensters**.
+- **Texte überdecken sich** (zwei Texte, die nicht ineinander stecken, liegen übereinander).
+- **Spiel liegt über Ergebnis oder Reaktionsknopf** (`z-index` im Spiel).
+- **verschoben (dx, dy)**: ein Element, das schon da war, ist gerutscht, weil etwas dazukam, wegfiel oder seine Größe
+  änderte (Layout Instability API; Animationen mit `transform` zählen nicht, ein zentrierter Text, der nur wegen seines
+  eigenen neuen Inhalts seitlich rückt, auch nicht). Erlaubt ist das nur beim Wechsel zu einem ganz neuen Abschnitt
+  (Phasenwechsel). Wie man es vermeidet: CLAUDE.md, „Nichts verschieben“.
+
+**Gebaute Zustände in allen Größen** (`series` im Prüfstand): eine Abfolge, wie sie im Spiel vorkommt (mit `G.action`
+erzeugt, Zufall erzwingen siehe oben), jeder Schritt mit dem vorigen als `prev`. Für jeden Schritt ein Übersichtsblatt
+mit allen Größen nebeneinander, dazu die Befunde:
+
+```js
+import { series, report, close } from '/home/user/Games/.claude/skills/spiel-testen/pruefstand.mjs';
+const steps = [{ state: s0, label: 'start' }, { state: s1, label: 'wahl' }, …];      // lange Namen, sechs Spieler
+const r = await series('kunstkritik', G, steps, { me: 'p1', sizes: 'handy', out: '<scratchpad>/shots/kk-handy' });
+const t = await series('kunstkritik', G, steps, { present: true, out: '<scratchpad>/shots/kk-tv' }); // sizes: 'tv'
+console.log(report([...r.findings, ...t.findings]));  // gleiche Befunde über mehrere Größen zusammengefasst
+// r.sheets / t.sheets: Übersichtsblätter, jedes mit dem Read-Werkzeug ansehen
+```
+
+`wait` (Standard 1800 ms) muss länger sein als die längste Animation eines Schritts, sonst fotografiert es mitten darin.
+Beispiel einer ganzen Partie als Abfolge (Wörter, Bilder, Noten, Auflösung, Vorstellung): Kunstkritik lässt sich mit
+`G.action` von `setup` bis `epilogue` durchspielen; Bilder als Befehle mit kodierten Punkten (`encodePoints`).
+
+**Im echten Spielzimmer mit Zufallszügen** (`groessen.cjs`, braucht den laufenden Server): legt die Konten an wie
+`start()`, spielt reihum zufällige Züge (sichtbare Knöpfe mit `data-action`, Formulare mit Text, Striche auf einer
+Malfläche) und schaut mit denselben Konten in allen Größen zu, die Spieler auf Handys, der Bildschirm auf allen
+Fernsehern. Nach jeder Runde Befunde, alle paar Runden Fotos und Übersichtsblätter. Findet, was im Prüfstand fehlt:
+die echte Plattform drumherum (Anzeigetafel, Ergebnisleiste, Kopfzeile am Fernseher) und Wechsel durch Züge der anderen.
+
+```js
+const { run } = require('/home/user/Games/.claude/skills/spiel-testen/groessen.cjs');
+const r = await run({ game: 'flip-7', players: 6, options: ['Fünfzig Punkte'], rounds: 24, every: 8, out: '<scratchpad>/real/flip7' });
+console.log(r.text, r.errors);   // r.sheets ansehen; r.log zeigt die letzten Züge (bleibt ein Spiel hängen?)
+```
+
+Kurze Einstellungen wählen (eine Runde, wenig Zeit), sonst dauert es. Der Zufall drückt nur Knöpfe mit `data-action`
+und Formulare: Spiele mit eigenen Tipp-Handlern (Krimidoku, Kunstkritik, Montagsmaler) oder Eingaben, die passen müssen,
+kommen damit nicht weit (`r.log` bleibt leer). Dann die Abfolge im Prüfstand bauen (Beispiele: eine Partie Kunstkritik
+mit Bildern und Noten, Montagsmaler mit Wort, Strichen und Tipps). Was beim Laden rutscht (Schriften, Anmeldung,
+Startkarte), zählt nicht.
+
+Lesen der Befunde: „Bildschirm scrollt: 870 > 720, unten: …“ nennt, was unten herausragt. „verschoben (dx, dy)“ mit
+großem dy bei einem Phasenwechsel (anderer Abschnitt, Kopf blendet aus) ist erlaubt; dasselbe innerhalb einer Phase
+nicht. Meldungen zu Rückseiten gedrehter Karten, zu Text nur für Vorleser und zu gewollt gekürzten Zeilen
+(`-webkit-line-clamp`) filtert die Prüfung selbst, ebenso Text unter einer schwebenden Fläche mit eigenem Hintergrund
+(Countdown über dem Wettlauf, Stempel über Karten: die Fläche liegt an der Stelle oben) und Elemente, die das Spiel
+selbst bewegt: über ihren Inline-Style (`--x`/`--y` einer Figur) oder per FLIP (am Element oder einem Vorfahren läuft
+eine Animation mit `transform`, z.B. Spielfelder, die den Platz tauschen). Was vorher oder nachher außerhalb des Fensters
+lag, zählt auch nicht (die Rechtecke der API sind aufs Fenster beschnitten, ganzseitige Fotos täuschen sonst Sprünge vor). „Text ragt seitlich“ misst die Textzeilen selbst gegen den Kasten, ein gewollt überstehendes Kind (Strich
+durch eine Zahl) zählt nicht.
+
+Ganzseitige Fotos (`fullPage`, auf Handys) zeigen fest stehende Leisten (Ergebnis unten, Reaktionsknopf) dort, wo das
+Fenster beim Foto endete, also mitten auf der Seite. Das ist ein Effekt des Fotos, kein Fehler.
+
 ## Uhrzeit und Zustände vortäuschen (abgefangene Antworten)
 
 Was von der Tageszeit oder vergangenen Stunden abhängt (Hai schläft nachts, ist weggeschwommen, hat Hunger), lässt
@@ -254,4 +322,6 @@ for (const [i, P] of pages.entries()) await routeInstagram(P, 'ABCDEF'[i]);   //
 - [ ] Bei `game.live`: einmal ohne Live-Nachrichten gespielt, Ansicht stimmt trotzdem.
 - [ ] Bei iframes: `loads` geprüft, nichts lädt bei Zügen der anderen neu.
 - [ ] Hat das Spiel `present()`: mit `screen: true` im Browser und im Prüfstand mit `present: true` angesehen.
+- [ ] Alle Größen (Abschnitt „Alle Größen“): jede Phase zu zweit und zu sechst, Handy und Bildschirm, alle
+      Übersichtsblätter angesehen, keine Befunde mehr (auch kein „verschoben“ außer bei Phasenwechseln).
 - [ ] `npm run check` und `npm run build` fehlerfrei.

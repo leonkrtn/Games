@@ -214,6 +214,9 @@ export const style = `
   .ttt-duel:has(.won) li:not(.won):not(.ttt-vs) { opacity: .35; }
   .ttt-duel.intro li { animation: ttt-status 360ms cubic-bezier(.2,.8,.2,1) calc(var(--k, 1) * 100ms) backwards; }
   #game:has(.ttt-tv) .ttt-status { font-size: var(--t-lg); }
+  /* Bildschirm: Duell, Status und Feld in der Mitte statt links mit leerer Fläche daneben */
+  #game:has(.ttt-tv) { align-items: center; text-align: center; }
+  .ttt-duel { justify-content: center; }
 
   @media (prefers-reduced-motion: reduce) {
     .ttt *, .ttt-status, .ttt-duel * { animation: none !important; transition: none !important; stroke-dashoffset: 0 !important; }

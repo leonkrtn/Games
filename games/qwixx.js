@@ -684,7 +684,7 @@ function paintScreen(main, s, game, u, fx) {
     <div class="qx-tvinfo">
       ${timerHTML(s, game)}
       ${statusHTML(s, game, null)}
-      ${s.round && !s.result ? roundHTML(s, game, u) : ''}
+      ${s.round && !s.result ? roundHTML(s, game, u, true) : ''}
     </div>
     ${s.result ? finalHTML(s, game, fx) : `<div class="qx-tvsheets">${sheets}</div>`}`;
 
@@ -785,6 +785,10 @@ function statusHTML(s, game, decision) {
       const names = list(open.map((id) => e(game.name(id))));
       const verb = open.length === 1 ? 'überlegt' : 'überlegen';
       text = s.active === me ? `${names} ${verb} noch, danach kommt dein Weiß plus Farbe.` : `${names} ${verb} noch.`;
+      // Bildschirm: wer schon entschieden hat, steht in den Zeilen darunter; hier nur, wie viele noch fehlen
+      if (game.tv && open.length > 1) {
+        text = open.length === s.players.length ? 'Alle überlegen noch.' : `Noch ${ONES[open.length]} überlegen.`;
+      }
     }
   } else {
     text = decision
@@ -801,7 +805,7 @@ const fieldLabel = (s, [r, i]) => {
 
 // Was im aktuellen Wurf schon entschieden ist, pro Spieler ein Satz (offen für alle).
 // Wer noch überlegt, steht im Status darüber.
-function roundHTML(s, game, u) {
+function roundHTML(s, game, u, short = false) {
   const r = s.round;
   const line = (id) => {
     const w = r.white[id];
@@ -810,6 +814,13 @@ function roundHTML(s, game, u) {
     const v = (du, er) => (you ? du : er);
     const crosses = [w, id === r.by ? r.color : null].filter(Array.isArray).map((f) => fieldLabel(s, f));
     let text;
+    // Bildschirm: eine kurze Zeile pro Person, sonst wird die Spalte zu sechst länger als der Bildschirm
+    if (short) {
+      text = r.fail && id === r.by ? '<span class="bad">Fehlwurf</span>' : crosses.length ? crosses.join(', ') : w === 'zeit' ? 'zu spät' : 'nichts';
+      const fresh = u.lines[id] !== undefined && u.lines[id] !== text;
+      u.lines[id] = text;
+      return `<li class="${fresh ? 'enter' : ''}">${marker(game, id)}<b class="qx-round-who">${game.esc(game.name(id))}</b><span class="qx-round-what">${text}</span></li>`;
+    }
     if (r.fail && id === r.by) text = `<span class="bad">${v('hast einen Fehlwurf', 'hat einen Fehlwurf')}</span>`;
     else if (crosses.length) text = `${v('hast', 'hat')} ${crosses.join(' und ')} angekreuzt`;
     else if (w === 'passt') text = v('konntest nichts ankreuzen', 'konnte nichts ankreuzen');
@@ -823,7 +834,7 @@ function roundHTML(s, game, u) {
   const lines = seatOrder(s, game.me).map(line).join('');
   if (!lines) return '';
   const caption = s.phase === 'wuerfeln' ? '<li class="qx-round-cap">Letzter Wurf</li>' : '';
-  return `<ul class="qx-round">${caption}${lines}</ul>`;
+  return `<ul class="qx-round ${short ? 'short' : ''}">${caption}${lines}</ul>`;
 }
 
 function tabsHTML(s, game, u, fx) {
@@ -840,7 +851,9 @@ function tabsHTML(s, game, u, fx) {
       ${s.result ? '' : `<span class="qx-tab-pts" aria-label="${word(total)} Punkte">${minus(total)}</span>`}
     </button>`;
   };
-  return `<div class="qx-tabs ${order.length > 2 ? 'many' : ''} ${fx.first ? 'intro' : ''}" role="tablist" aria-label="Zettel" style="--n:${order.length}">
+  // Ab fünf Personen zwei Zeilen zu je drei Reitern, sonst bleiben von den Namen nur zwei Buchstaben
+  const rows = order.length >= 5;
+  return `<div class="qx-tabs ${order.length > 2 ? 'many' : ''} ${rows ? 'rows' : ''} ${fx.first ? 'intro' : ''}" role="tablist" aria-label="Zettel" style="--n:${order.length};--cols:${rows ? 3 : order.length}">
     ${order.map(tab).join('')}
     <span class="qx-ind" style="transform:translateX(${order.indexOf(shown) * 100}%)"></span>
   </div>`;
@@ -1032,7 +1045,9 @@ export const style = `
   .qx-tv .qx-colors { gap: .8rem; flex-wrap: wrap; justify-content: center; }
   .qx-tv .qx-sum { font-size: var(--t-2xl); }
   .qx-tv .qx-status { font-size: var(--t-lg); }
-  .qx-tv .qx-round { font-size: var(--t-md); }
+  .qx-tv .qx-round { font-size: var(--t-base); }
+  .qx-tv .qx-status { min-height: 2.6em; line-height: 1.3; }
+  .qx-tvpts { min-width: 1.6em; text-align: right; }
   .qx-tv .qx-timer-num { font-size: var(--t-xl); }
   .qx-tvinfo { display: grid; gap: 1.5vh; align-content: start; }
   .qx-tvsheets { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: 2.5vh 2vw; }
@@ -1048,6 +1063,8 @@ export const style = `
   .qx-tvturn { flex: none; padding: 0 .4em; border: 2px solid var(--pc); border-radius: var(--radius); color: var(--pc); font-size: var(--t-sm); font-weight: 700; }
   .qx-tvpts { margin-left: auto; color: var(--pc); font-size: var(--t-2xl); line-height: 1; }
   .qx-tv .qx-final { font-size: var(--t-md); }
+  .qx-tv .qx-foot { gap: .8vh 1rem; margin-top: .4vh; padding-top: .8vh; }
+  .qx-tv .qx-fail { width: 3.6vh; height: 3.6vh; }
   @media (min-width: 880px) and (orientation: landscape) {
     .qx-tv { grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr); grid-template-areas: "tray sheets" "info sheets"; grid-template-rows: auto 1fr; align-items: start; }
     .qx-tv .qx-main { display: contents; }
@@ -1132,11 +1149,14 @@ export const style = `
   .qx-round li { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
   .qx-round .num { font-size: 1.2em; line-height: 1; }
   .qx-round-cap { color: var(--muted); }
+  .qx-round.short li { display: grid; grid-template-columns: auto minmax(0, max-content) minmax(0, 1fr); align-items: baseline; gap: .4em; }
+  .qx-round-who, .qx-round-what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .qx-round-what { color: var(--muted); }
   .qx-round li.enter { animation: qx-rise 260ms cubic-bezier(.2,.8,.2,1); }
   @keyframes qx-rise { from { opacity: 0; transform: translateY(6px); } }
 
   /* ---------- Reiter: eigener Zettel und die der anderen, mit Punkten ---------- */
-  .qx-tabs { position: relative; display: grid; grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr)); border-bottom: 1px solid var(--hairline); }
+  .qx-tabs { position: relative; display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); border-bottom: 1px solid var(--hairline); }
   .qx-tab {
     appearance: none; -webkit-appearance: none;
     display: flex; align-items: center; gap: 8px;
@@ -1149,7 +1169,7 @@ export const style = `
   .qx-tab:hover { background: var(--wash); }
   .qx-tab[aria-selected="true"] { color: var(--ink); }
   .qx-tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .qx-tab-pts { margin-left: auto; color: var(--pc); font: 800 var(--t-xl) / 1 var(--font-display); font-variant-numeric: tabular-nums; }
+  .qx-tab-pts { margin-left: auto; color: var(--pc); font: 800 var(--t-xl) / 1 var(--font-display); }
   .qx-news { flex: none; width: 7px; height: 7px; background: var(--pc); animation: qx-news 900ms ease-in-out 3 alternate; }
   @keyframes qx-news { from { opacity: .25; transform: scale(.6); } }
   .qx-ind { position: absolute; left: 0; bottom: -1px; width: calc(100% / var(--n, 2)); height: 3px; background: var(--ink); }
@@ -1159,6 +1179,11 @@ export const style = `
   .qx-tabs.many .qx-tab-pts { grid-column: 1 / -1; margin-left: 0; font-size: var(--t-lg); }
   .qx-tabs.many .qx-news { position: absolute; margin: 4px 0 0 0; right: 4px; }
   .qx-tabs.many .qx-tab { position: relative; }
+  /* Zwei Zeilen: Trennlinien pro Zeile, der gewählte Reiter unterstrichen statt des wandernden Balkens */
+  .qx-tabs.rows .qx-tab:nth-child(3n+1) { padding-left: 0; border-left: 0; }
+  .qx-tabs.rows .qx-tab:nth-child(n+4) { border-top: 1px solid var(--hairline); }
+  .qx-tabs.rows .qx-ind { display: none; }
+  .qx-tabs.rows .qx-tab[aria-selected="true"]::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; background: var(--ink); }
 
   /* ---------- Zettel ---------- */
   .qx-sheet { display: grid; gap: 4px; }

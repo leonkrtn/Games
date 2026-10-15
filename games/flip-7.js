@@ -932,22 +932,23 @@ export const style = `
   .f7 { position: relative; display: grid; gap: 14px; width: 100%; max-width: 560px; }
 
   /* ---------- Bildschirm: links Punkte, Stapel und Verlauf, rechts alle Plätze mit großen Karten ---------- */
-  .f7-tv { max-width: none; gap: 2.5vh 4vw; }
+  .f7-tv { max-width: none; gap: 1vh 4vw; }
   .f7-tv .f7-rules, .f7-tv .f7-bar { display: none; }
-  .f7-tv .f7-others, .f7-tv .f7-others.many { grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 3vh 2.5vw; }
+  .f7-tv .f7-others, .f7-tv .f7-others.many { grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 2.2vh 2.5vw; }
   .f7-tv .f7-them, .f7-tv .f7-others.many .f7-them { --w: 3.4rem; --h: 4.9rem; padding: 1vh .8vw 1.4vh; border-top: 2px solid var(--hairline); transition: background-color 300ms ease-out, border-color 300ms ease-out; }
   .f7-tv .f7-them.is-turn { background: color-mix(in srgb, var(--pc) 10%, white); border-top-color: var(--pc); }
   .f7-tv .f7-others.many .f7-who, .f7-tv .f7-who { font: 800 var(--t-lg) / 1.1 var(--font-display); }
   .f7-tv .f7-others.many .f7-pts, .f7-tv .f7-pts { font-size: var(--t-2xl); }
   .f7-tv .f7-others.many .f7-badge, .f7-tv .f7-badge { font-size: var(--t-sm); padding: 2px 8px 1px; }
-  .f7-tv .f7-others.many .f7-corner { left: 5px; top: 4px; }
-  .f7-tv .f7-status { font-size: var(--t-lg); }
-  .f7-tv .f7-total { font-size: var(--t-2xl); }
-  .f7-tv .f7-board { gap: 1.2vh; }
+  .f7-tv .f7-status { font-size: var(--t-lg); line-height: 1.3; min-height: 2.6em; }
+  .f7-tv .f7-total { font-size: var(--t-xl); }
+  .f7-tv .f7-board { gap: .8vh; }
   .f7-tv .f7-name { font-size: var(--t-md); }
   .f7-tv .f7-goal { font-size: var(--t-base); }
-  .f7-tv .f7-log { font-size: var(--t-md); grid-column: 1 / -1; }
-  .f7-tv .f7-stack { --w: 3.4rem; --h: 4.9rem; width: var(--w); height: var(--h); }
+  .f7-tv .f7-log { font-size: var(--t-base); grid-column: 1 / -1; }
+  .f7-tv .f7-table { gap: 1vh 1.2rem; padding: 1vh 0; }
+  .f7-tv .f7-stack { --w: 2.9rem; --h: 4.2rem; width: var(--w); height: var(--h); }
+  .f7-tv .f7-stack .f7-corner { display: none; } /* kleine Stapelkarte: die große Zahl genügt */
   .f7-tv .f7-count { font-size: var(--t-base); }
   @media (min-width: 880px) and (orientation: landscape) {
     .f7-tv { grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr); grid-template-areas: "board others" "status others" "table others"; align-content: start; }
@@ -981,9 +982,11 @@ export const style = `
   .f7-others.many .f7-head { gap: 6px; min-height: 24px; flex-wrap: wrap; }
   .f7-others.many .f7-who { flex: 1 1 0; font-size: var(--t-sm); }
   .f7-others.many .f7-pts { font-size: var(--t-lg); }
-  .f7-others.many .f7-badge { order: 3; font-size: 11px; padding: 1px 5px 0; }
-  .f7-others.many .f7-head:has(.f7-badge)::after { content: ''; order: 2; flex-basis: 100%; } /* Stempel in eigener Zeile */
-  .f7-others.many .f7-corner { left: 3px; top: 2px; }
+  /* Stempel schräg über den Karten statt in eigener Zeile: sonst rutschen alle Plätze darunter, wenn jemand aufhört */
+  .f7-others.many .f7-them { position: relative; }
+  .f7-others.many .f7-badge { position: absolute; right: 2px; bottom: calc(var(--h) * .3); z-index: 3; background: var(--paper); rotate: -5deg; font-size: 11px; padding: 1px 5px 0; }
+  .f7-others.many .f7-corner { display: none; } /* Mini-Karten: acht Pixel wären unlesbar, die große Zahl genügt */
+  .f7-tv .f7-others.many .f7-corner { display: block; }
   .f7-them.is-turn .f7-who { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; text-decoration-color: var(--pc); }
   .f7-head { display: flex; align-items: center; gap: 10px; min-height: 30px; }
   .f7-who { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 700; }
@@ -1014,14 +1017,15 @@ export const style = `
   .f7-front::before { content: ''; position: absolute; inset: 3px; border: 1px solid var(--hairline); border-radius: 2px; }
   .f7-back { transform: rotateY(180deg); }
   .f7-backart { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .f7-corner { position: absolute; left: 5px; top: 4px; color: var(--c); font: 800 calc(var(--w) * .26) / 1 var(--font-display); }
+  /* Abstand relativ zur Karte: mit festen Pixeln rückt die Ecke auf kleinen Karten in die große Zahl */
+  .f7-corner { position: absolute; left: calc(var(--w) * .1); top: calc(var(--w) * .08); color: var(--c); font: 800 calc(var(--w) * .26) / 1 var(--font-display); }
   .f7-corner-icon { width: calc(var(--w) * .26); height: calc(var(--w) * .26); }
   .f7-corner-icon svg { display: block; width: 100%; height: 100%; }
   .f7-big { position: absolute; inset: 0; display: grid; place-items: center; color: var(--c); font: 800 calc(var(--w) * .66) / 1 var(--font-display); }
   .f7-big-mod { font-size: calc(var(--w) * .46); }
   .f7-icon { position: absolute; left: 16%; right: 16%; top: 20%; bottom: 34%; }
   .f7-icon svg { display: block; width: 100%; height: 100%; }
-  .f7-label { position: absolute; left: 2px; right: 2px; bottom: 4px; text-align: center; font: 700 8.5px / 1.05 var(--font-body); }
+  .f7-label { position: absolute; left: 1px; right: 1px; bottom: 3px; text-align: center; font: 700 10.5px / 1.05 var(--font-body); }
   /* Auf kleinen Karten (Gegner, Stapel, Ablage) reicht das Bild */
   .f7-them .f7-label, .f7-stack .f7-label { display: none; }
   .f7-them .f7-icon, .f7-stack .f7-icon { bottom: 20%; }
@@ -1063,7 +1067,7 @@ export const style = `
     .f7-seat { --w: 62px; --h: 90px; }
     .f7-them { --w: 50px; --h: 72px; }
     .f7-others.many .f7-them { --w: 38px; --h: 55px; }
-    .f7-label { font-size: 10px; }
+    .f7-label { font-size: 11px; }
   }
 
   @media (prefers-reduced-motion: reduce) {

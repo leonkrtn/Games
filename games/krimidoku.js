@@ -1943,7 +1943,7 @@ export const style = `
     font: 800 var(--t-xl)/1 var(--font-display); }
   .kd-roof { flex: none; width: 52px; }
   .kd-roof-svg { display: block; width: 52px; height: 22px; }
-  .kd-house-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kd-house-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.2; } /* Unterlängen nicht abschneiden */
   .kd-crime { margin: 0; max-width: 46ch; }
   .kd-crime.is-solved { font-weight: 700; }
 
@@ -1953,19 +1953,20 @@ export const style = `
   .kd-tv { gap: 2vh; }
   .kd-tv .kd-title { font-size: var(--t-2xl); }
   .kd-tv .kd-crime { font-size: var(--t-lg); max-width: 60ch; }
-  .kd-tv .kd-board { max-width: none; width: min(100%, 66vh); grid-template-columns: 1.2rem minmax(0, 1fr); grid-template-rows: 1.3rem auto; }
+  .kd-tv .kd-board { max-width: none; width: min(100%, 54vh); grid-template-columns: 1.2rem minmax(0, 1fr); grid-template-rows: 1.3rem auto; } /* mit Titel und Legende unter 100vh */
   .kd-tv .kd-cols span, .kd-tv .kd-rows span { font-size: var(--t-sm); }
-  .kd-tv .kd-legend { max-width: 66vh; font-size: var(--t-base); }
-  .kd-tv .kd-legend-icon { width: 2rem; height: 2rem; }
+  .kd-tv .kd-legend { max-width: 54vh; font-size: var(--t-sm); }
+  .kd-tv .kd-legend-icon { width: 1.6rem; height: 1.6rem; }
   .kd-tv .kd-hint:empty, .kd-tv .kd-tools:empty, .kd-tv .kd-pen-hint:empty, .kd-tv .kd-notes-foot:empty { display: none; }
   .kd-tv .kd-clue-list { font-size: var(--t-md); }
   .kd-tv .kd-clues-head { font-size: var(--t-lg); }
-  .kd-tv .kd-pen-board { max-width: 18rem; }
+  .kd-tv .kd-pen-board { max-width: min(18rem, 27vh); } /* nach der Höhe begrenzt: passt sonst nicht unter Hinweise und Personen */
+  .kd-tv .kd-person-text small { font-size: .85rem; }
   @media (min-width: 880px) and (orientation: landscape) {
     .kd-tv .kd-main { grid-template-columns: auto minmax(0, 1fr); gap: 4vw; }
     .kd-tv .kd-stage { position: static; }
     .kd-tv .kd-side { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 3vh 2.5vw; }
-    .kd-tv .kd-tray { grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .kd-tv .kd-tray { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); }
   }
   @container (min-width: 600px) {
     .kd-main { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 28px; align-items: start; }
@@ -2084,7 +2085,7 @@ export const style = `
   .kd-person.is-placed .kd-person-pawn { opacity: .3; }
   .kd-person-text { display: grid; flex: 1 1 auto; min-width: 0; line-height: 1.15; }
   .kd-person-text b { font: 700 var(--t-base)/1.1 var(--font-display); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .kd-person-text small { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kd-person-text small { font-size: .75rem; line-height: 1.3; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } /* Unterlängen (p in Opfer) nicht abschneiden */
   .kd-held { display: none; color: var(--ink); font-weight: 700; }
   .kd-held .marker { margin-right: 4px; }
   .kd-person.held .kd-role { display: none; }
@@ -2117,7 +2118,7 @@ export const style = `
   .kd-ref i { display: inline-block; width: 8px; height: 8px; border-radius: 1px; background: var(--pc); }
 
   /* Notizen auf dem Grundriss: Person wählen, ihre möglichen Felder antippen */
-  .kd-pen-people { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .kd-pen-people { display: grid; grid-template-columns: repeat(auto-fit, minmax(6.2rem, 1fr)); gap: 6px; } /* auf 320 px zwei pro Zeile, sonst bleibt vom Namen kaum etwas */
   .kd-pen-who { display: flex; align-items: center; gap: 4px; min-width: 0; min-height: 40px; margin: 0; padding: 2px 8px 2px 4px;
     border: 1px solid var(--hairline); border-radius: var(--radius-m); background: var(--paper); color: inherit;
     font: 700 var(--t-base)/1 var(--font-display); text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }

@@ -1044,7 +1044,11 @@ export const style = `
   /* Bildschirm: beide Meere gleich groß; das Meer, auf das gerade geschossen wird, ist umrandet */
   .sv-tv { max-width: none; gap: 3vh; }
   .sv-tv .sv-stage { justify-content: center; gap: 3vh 5vw; }
-  .sv-tv .sv-board, .sv-tv .sv-board.big { --cell: min(5.6vh, calc((50cqw - 4rem) / 11)); order: 0; padding: 1vh 1vw; border-top: 3px solid transparent; transition: border-color 300ms ease-out; }
+  /* so breit wie das Raster: Ein langer Name macht die Kopfzeile sonst breiter, und die Meere rutschen untereinander */
+  .sv-tv .sv-board, .sv-tv .sv-board.big { --cell: min(4.8vh, calc((50cqw - 4rem) / 11)); order: 0; width: calc(11 * var(--cell) + 2vw); padding: 1vh 1vw; border-top: 3px solid transparent; transition: border-color 300ms ease-out; }
+  .sv-tv .sv-head { flex-wrap: nowrap; }
+  .sv-tv .sv-title { display: block; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .sv-tv .sv-fleet { flex: none; }
   .sv-tv .sv-board.target { border-top-color: var(--pc); }
   .sv-tv .sv-board:not(.big) .sv-title, .sv-tv .sv-title { font-size: var(--t-lg); }
   .sv-tv .sv-status { font-size: var(--t-lg); }
@@ -1065,7 +1069,7 @@ export const style = `
   @keyframes sv-gone { from { opacity: 1; } }
 
   .sv-grid { display: grid; grid-template-columns: repeat(11, var(--cell)); grid-template-rows: repeat(11, var(--cell)); }
-  .sv-lab { display: grid; place-items: center; color: var(--muted); font: 800 max(10px, calc(var(--cell) * .42)) / 1 var(--font-display); }
+  .sv-lab { display: grid; place-items: center; color: var(--muted); font: 800 max(11px, calc(var(--cell) * .42)) / 1 var(--font-display); }
   .sv-sea {
     position: relative; grid-row: 2 / 12; grid-column: 2 / 12;
     --c: calc(var(--cell) - .4px); /* der Rand nimmt zweimal 2px von zehn Feldern */
@@ -1173,7 +1177,8 @@ export const style = `
   .sv.over [data-board="defense"] .sv-grid { opacity: .5; transition: opacity 600ms ease-out 1100ms; }
   .sv-log { font-size: var(--t-sm); }
   .sv-log .num { font-size: 1.2em; letter-spacing: .05em; }
-  .sv-log:empty, .sv-status:empty { display: none; }
+  .sv-log:empty { display: none; }
+  .sv-status { line-height: 1.3; min-height: 2.6em; } /* zwei Zeilen frei: wechselnde Texte schieben die Meere sonst hin und her */
 
   /* ---------- Regeln ---------- */
   .sv-rules { padding-top: 10px; border-top: 1px solid var(--hairline); font-size: var(--t-sm); }

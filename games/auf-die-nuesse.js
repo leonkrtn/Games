@@ -593,7 +593,8 @@ function potHTML(s, fx, game) {
   let lost = 0;
   if (s.phase === 'sonder') lost = s.special.lost;
   else if (s.phase === 'wuerfeln' && s.last?.kind === 'pech') lost = s.last.lost;
-  if (!lost) return '';
+  // Leer bleibt der Platz stehen (unsichtbar), sonst springen die Würfel darunter
+  if (!lost) return `<div class="adn-potbox adn-potbox-empty" aria-hidden="true">${ICON.nuss}<b class="num">0</b><span>Nüsse</span></div>`;
   const striking = fx.lastChanged || fx.raceStart;
   return `<div class="adn-potbox lost ${striking ? 'striking' : ''}">${ICON.nuss}<b class="num">${lost}<svg class="adn-strike" viewBox="0 0 100 20" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M2 15 L98 5"/></svg></b><span>${lost === 1 ? 'Nuss' : 'Nüsse'} verloren</span></div>`;
 }
@@ -722,12 +723,14 @@ function buildRace(box, s, game, u, fx) {
         (id) => `<div class="adn-lane adn-lane-dog" data-lane="${id}" style="--b:${game.color(id)}">
       <span class="adn-lane-who">${marker(game, id)} ${nm(id)}</span>
       <span class="adn-fdie adn-dogdie" data-dog>${ICON.huette}</span>
-      <span class="adn-dognote"><span data-dognote></span><span class="adn-wuff" data-wuff hidden>Wuff! Wuff!</span></span>
+      <span class="adn-dognote"><span data-dognote></span><span class="adn-wuff" data-wuff hidden>Wuff!<span class="adn-wuff-2"> Wuff!</span></span></span>
     </div>`,
       )
       .join('')}
-    ${role ? `<button type="button" class="btn primary adn-tap" data-tap disabled>${role === 'sonder' ? 'Würfeln' : 'Hund würfeln'}</button>` : ''}
-    <p class="adn-sp-result" data-result></p>
+    <div class="adn-sp-foot">
+      ${role ? `<button type="button" class="btn primary adn-tap" data-tap disabled>${role === 'sonder' ? 'Würfeln' : 'Hund würfeln'}</button>` : ''}
+      <p class="adn-sp-result" data-result></p>
+    </div>
     <div class="adn-count" data-count hidden></div>
   </section>`;
   u.shown = { rolls: 0, dogs: {}, nuts: 0, fresh: !fx.raceStart }; // fresh: ohne Animation nachholen
@@ -781,7 +784,10 @@ function updateRace(box, s, game, u, fx) {
   }
 
   const btn = box.querySelector('[data-tap]');
-  if (sp.done) btn?.remove();
+  if (btn && sp.done) {
+    btn.disabled = true;
+    btn.style.visibility = 'hidden'; // behält seinen Platz, das Ergebnis steht in derselben Zelle
+  }
   const result = box.querySelector('[data-result]');
   if (sp.done) {
     const you = sp.by === game.me;
@@ -982,17 +988,24 @@ export const style = `
   .adn-tv .adn-potbox { font-size: var(--t-md); }
   .adn-tv .adn-potbox b { font-size: var(--t-3xl); }
   .adn-tv .adn-fdie { width: 3rem; height: 3rem; }
-  .adn-tv .adn-dogdie { width: 4.4rem; height: 4.4rem; }
+  .adn-tv .adn-dogdie { width: 3.6rem; height: 3.6rem; }
   .adn-tv .adn-sp-dice { gap: .5rem; }
-  .adn-tv .adn-lane { min-height: 5rem; }
-  .adn-tv .adn-wuff { font-size: var(--t-2xl); }
-  .adn-tv .adn-sp-title { font-size: var(--t-3xl); }
+  .adn-tv .adn-sp { gap: 1.5vh; padding: 1.5vh 0; }
+  .adn-tv .adn-lane { min-height: 4.2rem; }
+  .adn-tv .adn-lane + .adn-lane { padding-top: 1.2vh; }
+  .adn-tv .adn-wuff { font-size: var(--t-xl); }
+  .adn-tv .adn-sp-title { font-size: var(--t-2xl); }
   .adn-tv .adn-lane-who, .adn-tv .adn-dognote { font-size: var(--t-md); }
   .adn-tv .adn-sp-num { font-size: var(--t-3xl); }
   .adn-tv .adn-sp-result { font-size: var(--t-lg); }
   .adn-tv .adn-count { font-size: 10rem; }
   @media (min-width: 880px) and (orientation: landscape) {
-    .adn-tv { grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr); grid-template-areas: "board status" "board race" "board pot" "board tray" "board last"; align-content: start; }
+    /* letzte Zeile 1fr: Der hohe Stand links schiebt seine Höhe dorthin statt auf die Zeilen daneben
+       (sonst rücken Topf und Würfel, sobald unten eine Zeile dazukommt oder wegfällt) */
+    .adn-tv { grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr); grid-template-rows: auto auto auto auto auto 1fr; grid-template-areas: "board status" "board race" "board pot" "board tray" "board last" "board ."; align-content: start; }
+    /* Abstände als Rand statt row-gap: Leere Zeilen (kein Wettlauf, Topf und Tisch beim Wettlauf weg) kosten so keinen Platz */
+    .adn-tv { row-gap: 0; }
+    .adn-tv .adn-status, .adn-tv .adn-race:not(:empty), .adn-tv .adn-pot, .adn-tv .adn-tray { margin-bottom: 3vh; }
     .adn-tv .adn-board { grid-area: board; align-self: start; }
     .adn-tv .adn-status { grid-area: status; }
     .adn-tv .adn-race { grid-area: race; }
@@ -1000,6 +1013,16 @@ export const style = `
     .adn-tv .adn-tray { grid-area: tray; }
     .adn-tv .adn-last { grid-area: last; }
     .adn-tv .adn-bar { display: none; }
+    /* Wettlauf: Würfeltisch und Topf ruhen (sonst passt es nicht), die Hunde laufen zu zweit nebeneinander */
+    .adn-tv:has(.adn-sp) .adn-tray, .adn-tv:has(.adn-sp) .adn-pot { display: none; }
+    .adn-tv .adn-sp:has(.adn-lane-dog + .adn-lane-dog) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 3vw; }
+    .adn-tv .adn-sp > :not(.adn-lane-dog) { grid-column: 1 / -1; }
+    /* Würfel links, Name und Hinweis untereinander: Zwei Zeilen Hinweis passen in die feste Höhe, nichts wächst */
+    .adn-tv .adn-sp:has(.adn-lane-dog + .adn-lane-dog) .adn-lane-dog { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto 2.5rem; grid-template-areas: "die who" "die note"; align-content: center; row-gap: .2rem; }
+    .adn-tv .adn-sp:has(.adn-lane-dog + .adn-lane-dog) .adn-dogdie { grid-area: die; }
+    .adn-tv .adn-sp:has(.adn-lane-dog + .adn-lane-dog) .adn-lane-dog .adn-lane-who { grid-area: who; line-height: 1.25; }
+    .adn-tv .adn-sp:has(.adn-lane-dog + .adn-lane-dog) .adn-dognote { grid-area: note; align-self: stretch; min-height: 0; font-size: var(--t-base); line-height: 1.25; }
+    .adn-tv .adn-sp:has(.adn-lane-dog + .adn-lane-dog) .adn-wuff { font-size: var(--t-lg); padding: .1rem .5rem; }
   }
 
   /* ---------- Anzeige: Nüsse auf dem Weg zum Ziel ---------- */
@@ -1011,7 +1034,7 @@ export const style = `
     color: var(--muted); font-weight: 700;
   }
   .adn-row.is-turn .adn-name { color: var(--ink); }
-  .adn-score { color: var(--pc); font: 800 var(--t-2xl) / .9 var(--font-display); font-variant-numeric: tabular-nums; }
+  .adn-score { min-width: 1.5em; text-align: right; color: var(--pc); font: 800 var(--t-2xl) / .9 var(--font-display); }
   .adn-track { grid-column: 1 / -1; position: relative; height: 6px; overflow: hidden; border-radius: var(--radius); background: var(--hairline); }
   .adn-track i { position: absolute; inset: 0; background: var(--pc); transform-origin: left; }
   .adn-goal { color: var(--muted); font-size: var(--t-sm); }
@@ -1027,7 +1050,10 @@ export const style = `
   @keyframes adn-win { 40% { transform: scale(1.22); } }
 
   /* ---------- Topf ---------- */
-  .adn-pot:empty, .adn-bar:empty, .adn-last:empty, .adn-race:empty { display: none; }
+  .adn-bar:empty, .adn-last:empty, .adn-race:empty { display: none; }
+  .adn-potbox-empty { visibility: hidden; }
+  .adn-potbox b[data-pot], .adn-potbox > b { display: inline-block; min-width: 1.1em; text-align: center; }
+  .adn-status { line-height: 1.3; min-height: 2.6em; }
   .adn-potbox { display: flex; align-items: center; gap: 10px; }
   .adn-potbox > svg { flex: none; width: 34px; height: 34px; }
   .adn-potbox b { position: relative; font: 800 var(--t-3xl) / 1 var(--font-display); font-variant-numeric: tabular-nums; }
@@ -1099,7 +1125,8 @@ export const style = `
   .adn-sp-num { min-width: 2.2ch; color: var(--a); font: 800 var(--t-2xl) / 1 var(--font-display); font-variant-numeric: tabular-nums; text-align: right; }
   .adn-dogdie { width: 48px; height: 48px; }
   .adn-dogdie.is-dog { border: 3px solid var(--b); }
-  .adn-dognote { color: var(--muted); font-size: var(--t-sm); }
+  /* fester Kasten, Inhalt mittig: Wechselt der Hinweis zwischen ein und zwei Zeilen oder zum Stempel, rückt nichts */
+  .adn-dognote { display: flex; align-items: center; min-height: 2.6em; line-height: 1.3; color: var(--muted); font-size: var(--t-sm); }
   .adn-tap { width: 100%; min-height: 64px; font: 800 var(--t-xl) / 1 var(--font-display); }
   .adn-tap:active:not(:disabled) { transform: scale(.97); }
   .adn-count {
@@ -1108,8 +1135,10 @@ export const style = `
     font: 800 var(--t-4xl) / 1 var(--font-display);
     pointer-events: none;
   }
-  .adn-sp-result:empty { display: none; }
-  .adn-sp-result { font-weight: 700; text-align: center; }
+  /* Knopf und Ergebnis teilen sich eine Zelle: Am Ende steht das Ergebnis, wo der Knopf war, nichts rückt */
+  .adn-sp-foot { display: grid; align-items: center; }
+  .adn-sp-foot > * { grid-area: 1 / 1; }
+  .adn-sp-result { min-height: 1.3em; line-height: 1.3; font-weight: 700; text-align: center; }
   .adn-sp.done .adn-sp-dice { opacity: .6; }
 
   /* Der Hund ist da: Stempel */
@@ -1120,6 +1149,7 @@ export const style = `
     transform: rotate(-6deg);
   }
   .adn-wuff[hidden] { display: none; }
+  @media (max-width: 380px) { .adn-wuff-2 { display: none; } } /* passt sonst nicht neben den Würfel */
   .adn-sp.just-done .won .adn-wuff { animation: adn-stamp 360ms cubic-bezier(.2,.8,.2,1) both; }
   .adn-sp.just-done .won .adn-dogdie { animation: adn-dog 420ms cubic-bezier(.2,.8,.2,1) both; }
   .adn-sp.done .adn-lane-dog:not(.won) { opacity: .45; transition: opacity 300ms ease-out 500ms; }

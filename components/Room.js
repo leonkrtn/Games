@@ -138,6 +138,11 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
     setTimeout(() => setRecent((r) => (r[from]?.key === key ? { ...r, [from]: null } : r)), 2600);
   }, []);
   const reactions = useReactions({ live, players: snap?.players ?? [], me: snap?.me, onShow: onReact });
+  // War die Partie beim ersten Anblick schon vorbei? Sonst kommt das Ergebnis erst nach dem Höhepunkt des Spiels.
+  const endedAtFirstSight = useRef(new Map());
+  const partie = snap?.game?.started;
+  if (partie && !endedAtFirstSight.current.has(partie)) endedAtFirstSight.current.set(partie, Boolean(snap.game.result));
+  const lateResult = Boolean(snap?.game?.result) && endedAtFirstSight.current.get(partie) === false;
 
   const leave = () => {
     if (confirm(`Gruppe „${snap.group.name}“ verlassen? Deine Punkte in der Gruppe sind dann weg.`)) send({ t: 'group-leave' });
@@ -196,7 +201,7 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
                   Anderes Spiel
                 </button>
               </div>
-              {snap.game.result && <Result result={snap.game.result} players={players} send={send} />}
+              {snap.game.result && <Result result={snap.game.result} players={players} send={send} late={lateResult} />}
               <GameView
                 game={snap.game}
                 players={players}
@@ -247,14 +252,15 @@ function Scoreboard({ snap, online, recent = {} }) {
   );
 }
 
-function Result({ result, players, send }) {
+// Ergebnis: steht unten fest über dem Spiel, statt das Spielfeld nach unten zu schieben (globals.css, .result)
+function Result({ result, players, send, late }) {
   const single = result.winners?.length === 1 ? result.winners[0] : null;
   return (
-    <div id="result" className="result">
+    <div id="result" className={`result ${late ? 'late' : ''}`}>
       <p className="result-text" style={{ color: single ? playerColor(players, single) : 'var(--ink)' }}>
         {result.text ?? 'Spiel vorbei.'}
       </p>
-      <div className="row">
+      <div className="row result-actions">
         <button className="btn primary" data-cmd="restart" onClick={() => send({ t: 'restart' })}>
           Nochmal
         </button>

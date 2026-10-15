@@ -920,7 +920,8 @@ function renderFinal(main, s, game, u, fresh) {
         </section>`;
     })
     .join('');
-  main.innerHTML = `<div class="rj-final ${s.players.length > 2 ? 'many' : ''} ${play ? 'play' : ''}">${cols}</div>`;
+  const few = game.tv && s.players.length <= 3; // Bildschirm mit wenigen: die kleinen Beiträge neben dem besten
+  main.innerHTML = `<div class="rj-final ${s.players.length > 2 ? 'many' : ''} ${few ? 'few' : ''} ${play ? 'play' : ''}" style="--n:${s.players.length}">${cols}</div>`;
   u.frames.mount(main);
 }
 
@@ -931,6 +932,10 @@ export const style = `
   .rj-who { display: flex; align-items: center; gap: 8px; font-family: var(--font-display); font-weight: 800; font-size: var(--t-lg); line-height: 1.1; margin-bottom: 12px; }
   .rj-who small { font-family: var(--font-body); font-weight: 400; font-size: var(--t-sm); }
   .rj-note { margin-top: 12px; max-width: 46ch; }
+  /* Hinweis und Knopf behalten ihre Höhe, wenn der Text kürzer wird oder „Fertig“ zu „Doch weitersuchen“ wechselt */
+  .rj-mine .rj-note { min-height: 3.9em; line-height: 1.3; }
+  @media (max-width: 380px) { .rj-mine .rj-note { min-height: 5.2em; } }
+  .rj-actions .row { min-height: 48px; align-items: center; }
   .rj-actions .row { margin-top: 14px; }
 
   /* Polaroid: Papier mit breitem unterem Rand, leicht schräg */
@@ -985,7 +990,8 @@ export const style = `
   /* ---- Uhr ---- */
   .rj-clock { border-top: 3px solid var(--line); padding-top: 8px; max-width: 520px; }
   .rj-clock-row { display: flex; align-items: baseline; gap: 10px; }
-  .rj-clock-num { display: inline-block; font-family: var(--font-display); font-weight: 800; font-size: var(--t-3xl); line-height: 1; font-variant-numeric: tabular-nums; transform-origin: left 70%; }
+  /* feste Breite: „10:00“ und „9:59“ sind verschieden breit, „übrig“ daneben soll nicht wandern */
+  .rj-clock-num { display: inline-block; min-width: 2.4em; font-family: var(--font-display); font-weight: 800; font-size: var(--t-3xl); line-height: 1; transform-origin: left 70%; }
   .rj-clock-label { color: var(--muted); }
   .rj-bar { height: 4px; margin-top: 10px; background: var(--hairline); overflow: hidden; }
   .rj-bar i { display: block; height: 100%; background: var(--ink); transform-origin: left; animation: rj-bar linear both; }
@@ -1155,7 +1161,7 @@ export const style = `
   .rj-tv .rj-lead { font-size: var(--t-xl); max-width: 36ch; }
   .rj-tv .rj-rules { font-size: var(--t-md); max-width: 60ch; }
   .rj-tv .rj-clock { max-width: none; }
-  .rj-tv .rj-clock-num { font-size: clamp(var(--t-4xl), 8vw, 8rem); }
+  .rj-tv .rj-clock-num { font-size: 6rem; }
   .rj-tv .rj-clock-label, .rj-tv .rj-tvnote { font-size: var(--t-lg); }
   .rj-tv .rj-others.many { grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr)); gap: 4vh 3vw; }
   .rj-tv .rj-others.many .rj-who { font-size: var(--t-xl); }
@@ -1166,8 +1172,14 @@ export const style = `
   .rj-tvowner { display: flex; align-items: center; gap: .4em; font: 800 var(--t-2xl) / 1.1 var(--font-display); }
   .rj-tv .rj-ask { font-size: var(--t-lg); }
   .rj-tv .rj-progress { font-size: var(--t-md); }
-  .rj-tv .rj-final.many { grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr)); }
-  .rj-tv .rj-final .rj-who { font-size: var(--t-xl); }
+  /* Bildschirm: alle in einer Reihe, die Galerie nach der Höhe begrenzt (ein Reel ist fast doppelt so hoch wie breit) */
+  .rj-tv .rj-final, .rj-tv .rj-final.many { grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr)); gap: 2vh 2vw; justify-items: center; }
+  .rj-tv .rj-final .rj-col { width: 100%; max-width: 26vh; }
+  .rj-tv .rj-final .rj-gallery { max-width: none; }
+  .rj-tv .rj-final.few .rj-col { max-width: 52vh; }
+  .rj-tv .rj-final.few .rj-gallery { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); align-items: start; }
+  .rj-tv .rj-final.few .rj-res.best { grid-column: 1; grid-row: 1 / span 2; }
+  .rj-tv .rj-final .rj-who { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--t-xl); line-height: 1.3; } /* Block statt Flex: sonst drückt ein langer Name das Farbquadrat weg */
   @media (min-width: 880px) and (orientation: landscape) {
     .rj-tv .rj-main[data-phase="bewerten"] {
       grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "stage progress" "stage ask"; grid-template-rows: auto 1fr;

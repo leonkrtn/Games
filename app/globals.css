@@ -406,6 +406,10 @@ textarea:focus {
 .team > div {
   min-width: 0;
 }
+/* Der Namensblock nimmt die ganze Breite: Kommt „gerade nicht da“ darunter, rückt „du“ nicht zur Seite */
+.team > div:first-child {
+  flex: 1 1 auto;
+}
 .team + .team {
   border-left: 1px solid var(--hairline);
   padding-left: 12px;
@@ -432,11 +436,13 @@ textarea:focus {
   text-overflow: ellipsis;
 }
 .team-score {
+  /* feste Breite: Big Shoulders hat keine gleich breiten Ziffern, sonst rückt der Name, wenn ein Punkt dazukommt */
+  min-width: 1.2em;
+  text-align: right;
   font-family: var(--font-display);
   font-weight: 800;
   font-size: var(--t-2xl);
   line-height: 0.9;
-  font-variant-numeric: tabular-nums;
 }
 @media (min-width: 880px) {
   .team {
@@ -449,6 +455,7 @@ textarea:focus {
     order: 1;
     font-size: var(--t-4xl);
     margin-top: 2px;
+    text-align: left;
   }
 }
 /* Gruppen: mehr als zwei Spieler. Am Handy zwei Spalten, in der Seitenleiste eine Zeile pro Spieler */
@@ -484,6 +491,7 @@ textarea:focus {
     order: 0;
     margin-top: 0;
     font-size: var(--t-2xl);
+    text-align: right;
   }
 }
 .room-name {
@@ -1091,24 +1099,67 @@ textarea:focus {
   margin: 0;
 }
 
+/* Ergebnis am Spielende: unten fest über dem Spiel. Im Fluss darüber würde es das Spielfeld mitten im
+   Höhepunkt nach unten schieben. Unter dem Reaktionsknopf (z-index 9), der rechts daneben Platz hat. */
 .result {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 8;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  background: var(--paper);
   border-top: 3px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  padding: 16px 0 20px;
-  margin-bottom: 28px;
+  padding: 14px max(76px, calc(env(safe-area-inset-right) + 64px)) calc(14px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+/* Kam das Ergebnis eben erst, wartet es, bis das Spiel seinen Höhepunkt gezeigt hat */
+.result.late {
+  animation: result-in 200ms ease-out 1400ms backwards;
+}
+@keyframes result-in {
+  from {
+    opacity: 0;
+  }
 }
 .result-text {
+  flex: 1 1 14em;
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: var(--t-2xl);
+  font-size: var(--t-xl);
   line-height: 1;
-  margin-bottom: 16px;
+  overflow-wrap: break-word;
+}
+.result-actions {
+  flex: none;
+}
+/* Platz unter dem Spiel, damit sich alles über das Ergebnis schieben lässt */
+.room:has(#result) {
+  padding-bottom: 200px;
+}
+@media (min-width: 880px) {
+  /* Am PC steht es unter der Spalte des Spiels (Seitenleiste 300 px, Abstand 64 px) */
+  .result {
+    left: max(0px, calc((100vw - 1040px) / 2));
+    right: max(0px, calc((100vw - 1040px) / 2));
+    padding-left: calc(16px + 300px + 64px);
+    padding-right: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .result.late {
+    animation-duration: 1ms;
+  }
 }
 
 #game {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  /* eigene Stapelebene: z-index im Spiel reicht nicht über Ergebnisleiste und Reaktionsknopf */
+  isolation: isolate;
 }
 
 .game-error {
@@ -1318,9 +1369,11 @@ textarea:focus {
 
 /* ---------- Bildschirm einer Gruppe (Fernseher, components/Screen.js) ---------- */
 
-/* Große Schrift über rem: alle Größen (--t-…) wachsen mit der Breite des Bildschirms */
+/* Große Schrift über rem: alle Größen (--t-…) wachsen mit dem Bildschirm. Maßgeblich ist die kleinere Seite
+   eines 16:9-Ausschnitts: So passt, was auf 1280 × 720 passt, auch auf 960 × 540 (manche Fernseher-Browser)
+   und auf Breitbild (2560 × 1080), ohne zu scrollen. */
 html.tv-mode {
-  font-size: clamp(16px, 1.25vw, 30px);
+  font-size: clamp(12px, min(1.25vw, 2.2222vh), 30px);
 }
 html.tv-mode .shell {
   max-width: none;
@@ -1337,6 +1390,7 @@ html.tv-mode .shell {
   cursor: none;
 }
 .tv-head {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -1458,14 +1512,30 @@ html.tv-mode .shell {
     animation: none !important;
   }
 }
-/* Ergebnis über dem Spielfeld */
+/* Ergebnis: liegt über der Kopfzeile und dem Abstand darunter, statt das Spiel nach unten zu schieben.
+   Eine Zeile; lange Sätze werden kleiner (--len = Zeichenzahl, Big Shoulders ist etwa 0,42 em breit pro Zeichen). */
 .tv-result {
-  margin-bottom: 2.5vh;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: calc(-3.5vh + 1px);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  background: var(--paper);
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: var(--t-3xl);
+  font-size: min(var(--t-2xl), calc((100vw - 8vw) / (var(--len, 30) * 0.42)));
   line-height: 1;
-  overflow-wrap: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tv-tools {
+  position: relative;
+  z-index: 2;
 }
 .tv-away {
   flex: none;

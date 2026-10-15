@@ -29,6 +29,18 @@ export default function Screen({ snap, code, now, refresh, live, reactions, send
     <div className={`tv ${awake ? 'awake' : ''}`} id="tv">
       <header className="tv-head">
         <p className="tv-where">{title}</p>
+        {/* Ergebnis über der Kopfzeile statt über dem Spiel: Nichts rutscht, und es passt weiter ohne Scrollen */}
+        {game?.result && !board && !intro && (
+          <p
+            className="tv-result"
+            style={{
+              color: winners.length === 1 ? playerColor(players, winners[0]) : undefined,
+              '--len': (game.result.text ?? 'Spiel vorbei.').length,
+            }}
+          >
+            {game.result.text ?? 'Spiel vorbei.'}
+          </p>
+        )}
         <div className="tv-tools">
           <FullscreenButton />
           <button className="link" id="tv-home" onClick={goHome}>
@@ -43,11 +55,6 @@ export default function Screen({ snap, code, now, refresh, live, reactions, send
         <StartCard snap={snap} />
       ) : !board ? (
         <div className="tv-stage">
-          {game.result && (
-            <p className="tv-result" style={{ color: winners.length === 1 ? playerColor(players, winners[0]) : undefined }}>
-              {game.result.text ?? 'Spiel vorbei.'}
-            </p>
-          )}
           <GameView
             game={game}
             players={players}

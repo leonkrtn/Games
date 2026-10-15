@@ -2249,7 +2249,7 @@ function rankHtml(s, game) {
       const won = s.result.winners.includes(p.id);
       return `<li class="kk-row ${won ? 'won' : ''}" style="--i:${n - 1 - k};--c:${game.color(p.id)}">
         <span class="kk-place">${place}</span>${marker(game, p.id)}
-        <span class="kk-row-name">${game.esc(game.name(p.id))}${p.id === game.me ? ' <small>du</small>' : ''}</span>
+        <span class="kk-row-name"><span class="kk-row-label">${game.esc(game.name(p.id))}</span>${p.id === game.me ? ' <small>du</small>' : ''}</span>
         ${won ? `<span class="kk-row-rosette">${rosette(game.color(p.id))}</span>` : ''}
         <b class="kk-row-num" data-to="${t[p.id]}">${t[p.id]}</b>
       </li>`;
@@ -2608,9 +2608,10 @@ export const style = `
   .kk-pts.many { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
   .kk-pts li { position: relative; display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--hairline); min-width: 0; }
   .kk-pts-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .kk-pts-num { font-family: var(--font-display); font-weight: 800; font-size: var(--t-lg); line-height: 1; font-variant-numeric: tabular-nums; }
+  .kk-pts-num { min-width: 1.5em; text-align: right; font-family: var(--font-display); font-weight: 800; font-size: var(--t-lg); line-height: 1; }
+  /* schwebt über der Zahl, statt in der Zeile Platz zu nehmen (sonst schrumpft der Name kurz und alles rückt) */
   .kk-plus {
-    flex: none; font: 800 var(--t-base)/1 var(--font-display); font-style: normal; color: var(--c);
+    position: absolute; right: 0; top: -.45em; z-index: 1; font: 800 var(--t-base)/1 var(--font-display); font-style: normal; color: var(--c);
     pointer-events: none; animation: kk-plus 1200ms cubic-bezier(.2,.8,.2,1) both;
   }
   @keyframes kk-plus { from { opacity: 0; transform: translateY(8px); } 25% { opacity: 1; transform: none; } 75% { opacity: 1; } to { opacity: 0; transform: translateY(-10px); } }
@@ -2772,10 +2773,10 @@ export const style = `
   @keyframes kk-flip { from { opacity: 0; transform: rotateX(80deg); } }
 
   /* Kritiker mit Wertungstafeln */
-  .kk-judges { display: flex; justify-content: center; gap: 10px; width: 100%; }
+  .kk-judges { display: flex; justify-content: center; align-items: flex-start; gap: 10px; width: 100%; }
   .kk-rate:not(.is-shown):not(.is-mine) .kk-judges { display: none; }
   .kk-judge {
-    flex: 0 1 88px; min-width: 0; display: grid; justify-items: center; opacity: .45; transform: translateY(14px);
+    flex: 0 1 88px; min-width: 0; display: grid; justify-items: center; align-content: start; opacity: .45; transform: translateY(14px);
     transition: transform 320ms cubic-bezier(.2,.8,.2,1), opacity 320ms ease-out;
   }
   .kk-judge.up { opacity: 1; transform: none; }
@@ -2794,7 +2795,7 @@ export const style = `
   .kk-stick { width: min(100%, 56px); margin-top: -1px; }
   .kk-stick svg { display: block; width: 100%; height: auto; }
   .kk-judge-name {
-    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); line-height: 1.3;
+    max-width: 100%; min-height: 1.3em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); line-height: 1.3;
     opacity: 0; transition: opacity 240ms ease-out calc(${FLIP_AT + FLIP_TIME}ms + var(--i) * ${FLIP_STEP}ms);
   }
   .kk-judge.open .kk-judge-name { opacity: 1; }
@@ -2824,7 +2825,7 @@ export const style = `
   /* Auflösung */
   .kk-result { display: grid; gap: 14px; justify-items: center; }
   .kk-sum { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 0 10px; animation: kk-rise 320ms cubic-bezier(.2,.8,.2,1) var(--sum-delay, 0ms) backwards; }
-  .kk-sum-num { font-family: var(--font-display); font-weight: 800; font-size: var(--t-3xl); line-height: 1; color: var(--c); }
+  .kk-sum-num { display: inline-block; min-width: 1.5em; text-align: right; font-family: var(--font-display); font-weight: 800; font-size: var(--t-3xl); line-height: 1; color: var(--c); }
   .kk-nextrow { display: flex; align-items: center; gap: 12px; }
   .kk-auto { width: 64px; height: 3px; background: var(--hairline); overflow: hidden; }
   .kk-auto i { display: block; height: 100%; background: var(--ink); transform-origin: left; }
@@ -2875,9 +2876,11 @@ export const style = `
   .kk-rank { display: grid; border-top: 2px solid var(--line); margin-top: 10px; }
   .kk-row { display: flex; align-items: center; gap: 10px; padding: 10px 6px; border-bottom: 1px solid var(--hairline); min-width: 0; }
   .kk-place { width: 1.2em; flex: none; font-family: var(--font-display); font-weight: 800; font-size: var(--t-lg); line-height: 1; color: var(--muted); }
-  .kk-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-weight: 800; font-size: var(--t-md); line-height: 1.2; }
-  .kk-row-name small { font-family: var(--font-body); font-weight: 400; font-size: var(--t-sm); color: var(--muted); }
-  .kk-row-num { flex: none; font-family: var(--font-display); font-weight: 800; font-size: var(--t-xl); line-height: 1; font-variant-numeric: tabular-nums; }
+  .kk-row-name { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: .35em; white-space: nowrap; font-family: var(--font-display); font-weight: 800; font-size: var(--t-md); line-height: 1.2; }
+  .kk-row-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .kk-row-name small { flex: none; font-family: var(--font-body); font-weight: 400; font-size: var(--t-sm); color: var(--muted); }
+  /* Zahlen, die hochzählen: feste Breite, rechtsbündig (die Schrift hat keine gleich breiten Ziffern), sonst zittert alles daneben */
+  .kk-row-num { flex: none; min-width: 1.5em; text-align: right; font-family: var(--font-display); font-weight: 800; font-size: var(--t-xl); line-height: 1; }
   .kk-row.won { background: color-mix(in srgb, var(--c) 10%, white); }
   .kk-row.won .kk-place { color: var(--ink); }
   .kk-row-rosette { width: 30px; flex: none; margin: -12px 0; }
@@ -2941,10 +2944,10 @@ export const style = `
   .kk-tv .kk-row-rosette { width: 2.6rem; }
   @media (min-width: 880px) and (orientation: landscape) {
     .kk-tv .kk-rate {
-      grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "hang progress" "hang judges" "hang panel";
-      align-content: center; column-gap: 5vw; row-gap: 4vh;
+      grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); grid-template-areas: "hang progress" "hang judges" "hang panel";
+      align-content: start; column-gap: 5vw; row-gap: 4vh;
     }
-    .kk-tv .kk-rate > .kk-progress { grid-area: progress; align-self: end; }
+    .kk-tv .kk-rate > .kk-progress { grid-area: progress; align-self: start; margin-top: 4vh; }
     .kk-tv .kk-rate > .kk-hang { grid-area: hang; }
     .kk-tv .kk-rate > .kk-judges { grid-area: judges; }
     .kk-tv .kk-rate > .kk-panel { grid-area: panel; align-self: start; }
@@ -2953,9 +2956,9 @@ export const style = `
 
   /* Vorstellung auf dem Bildschirm: eine Tafel nach der anderen */
   .kk-show { display: grid; gap: 2.5vh; min-width: 0; }
-  .kk-show-top { display: flex; align-items: center; justify-content: space-between; gap: 1em; font-size: var(--t-md); color: var(--muted); }
+  .kk-show-top { display: flex; align-items: center; justify-content: space-between; gap: 1em; min-height: 1.5em; font-size: var(--t-md); color: var(--muted); }
   .kk-show-top .kk-dots { flex-wrap: wrap; justify-content: flex-end; }
-  .kk-show-stage { display: grid; min-width: 0; }
+  .kk-show-stage { display: grid; align-items: start; min-width: 0; }
   .kk-show-stage > * { grid-area: 1 / 1; min-width: 0; }
   .kk-slide.from-right { animation: kk-in-r 520ms cubic-bezier(.2,.8,.2,1) 160ms backwards; }
   .kk-slide.from-left { animation: kk-in-l 520ms cubic-bezier(.2,.8,.2,1) 160ms backwards; }

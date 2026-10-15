@@ -1114,13 +1114,13 @@ function renderBoard(stage, s, game, u) {
               </div>
             </form>`
       }
+      ${drawer || tv ? '' : '<div class="mm-giveup"><button type="button" class="link">Aufgeben</button></div>'}
       <p class="status mm-note" aria-live="polite"></p>
       <section class="mm-tries" hidden>
         <h3 class="mm-tries-title">${triesTitle}</h3>
         <ol class="mm-tries-list" aria-live="polite"></ol>
       </section>
-      ${drawer || tv ? '' : '<div class="mm-giveup"><button type="button" class="link">Aufgeben</button></div>'}
-    </div>`;
+    </div>`; /* „Aufgeben“ über den Tipps: Die Liste wächst nach unten und schiebt den Knopf nicht weg */
 
   const board = stage.firstElementChild;
   const canvas = board.querySelector('.mm-canvas');
@@ -1713,7 +1713,7 @@ export const style = `
   .mm-wordline { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 8px 12px; }
   .mm-wordline > div:first-child { flex: 1 1 160px; min-width: 0; }
   .mm-count { font-size: var(--t-sm); margin-top: 4px; }
-  .mm-clock { font-family: var(--font-display); font-weight: 800; font-size: var(--t-xl); line-height: 1; font-variant-numeric: tabular-nums; }
+  .mm-clock { min-width: 2.4em; text-align: right; font-family: var(--font-display); font-weight: 800; font-size: var(--t-xl); line-height: 1; } /* feste Breite: „1:00“ und „0:59“ sind verschieden breit */
   .mm-clock-num { display: inline-block; }
   .mm-clock.low { color: var(--bad); }
   .mm-bar { height: 3px; background: var(--hairline); overflow: hidden; }
@@ -1876,7 +1876,7 @@ export const style = `
   .mm-try-by::after { content: ':'; }
   .mm-tv .mm-ready, .mm-tv .mm-wait { max-width: none; font-size: var(--t-md); }
   .mm-tv .mm-ready > .status:first-child, .mm-tv .mm-wait .status { font-family: var(--font-display); font-weight: 800; font-size: var(--t-2xl); line-height: 1.1; }
-  .mm-tv .mm-reveal { grid-template-columns: minmax(0, min(42%, 52vh)) 1fr; gap: 4vw; }
+  .mm-tv .mm-reveal { grid-template-columns: minmax(0, min(42%, 48vh)) 1fr; gap: 4vw; }
   .mm-tv .mm-reveal .mm-slots { --fs: var(--t-3xl); }
   .mm-tv .mm-reveal-cap, .mm-tv .mm-reveal-res { font-size: var(--t-md); }
   .mm-tv .mm-scribble { width: 10rem; height: auto; }
