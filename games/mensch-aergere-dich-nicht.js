@@ -9,14 +9,28 @@
 // räumen, nach einer Sechs noch einmal, drei Versuche ohne Figur auf der Laufbahn, im Haus nicht überspringen.
 // Schlagzwang als Einstellung. Gibt es nur einen Zug, zieht das Spiel selbst.
 //
+// Sonderfelder (Einstellung „Mit Sonderfeldern“): in jedem Arm dieselben vier, so trifft jede Person sie in
+// derselben Reihenfolge. Stern (noch einmal würfeln), Tausch (Platz tauschen mit der nächsten fremden Figur bis
+// sechs Felder voraus), Burg (sicher, besetzt kommt niemand hinein), Rutsche (drei Felder weiter, schlägt alle
+// fremden Figuren auf dem Weg). Sie wirken nur, wenn eine Figur mit dem Wurf darauf landet (outcome).
+//
 // Motion: Der Würfel rollt über den Tisch, Figuren laufen Feld für Feld, geschlagene fliegen zurück auf ihre
-// B-Felder, beim Start baut sich das Brett auf, am Ende jubeln die Figuren im Haus.
+// B-Felder, beim Start baut sich das Brett auf, am Ende jubeln die Figuren im Haus. Sonderfelder: Funken am
+// Stern, die Figur rutscht und zieht eine Spur, zwei Figuren springen übereinander, vor der Burg wächst eine Mauer.
 
 export const meta = {
   name: 'Mensch ärgere dich nicht',
   description: 'Würfeln, ziehen, schlagen. Wer zuerst alle Figuren im Haus hat, gewinnt.',
   players: [2, 6],
   options: [
+    {
+      id: 'felder',
+      label: 'Brett',
+      choices: [
+        { value: 'klassisch', label: 'Klassisch' },
+        { value: 'sonder', label: 'Mit Sonderfeldern' },
+      ],
+    },
     {
       id: 'figuren',
       label: 'Figuren',
@@ -41,6 +55,11 @@ const SPAN = 10; // Felder der Laufbahn pro Arm
 const HOUSE = 4; // Felder im Haus
 const YARD = -1; // Figur steht auf ihrem B-Feld
 const TRIES = 3; // Versuche für eine Sechs ohne Figur auf der Laufbahn
+// Sonderfelder nach Platz im Arm: 0 … 3 Bahn hinaus, 4 Spitze, 5 Startfeld, 6 … 8 Bahn zurück, 9 Ecke.
+// Der Tausch sucht nur bis vor das nächste Startfeld (8 + 6 = 14), so muss keine Figur hinter ihr eigenes zurück.
+const SPECIAL = { 6: 'stern', 8: 'tausch', 9: 'burg', 0: 'rutsche' };
+const SLIDE = 3; // die Rutsche führt so viele Felder weiter
+const REACH = 6; // so weit voraus sucht der Tausch
 
 const ids = (s) => s.players.map((p) => p.id);
 const nextAfter = (s, id) => ids(s)[(ids(s).indexOf(id) + 1) % s.players.length];
@@ -53,7 +72,9 @@ const seatsFor = (n) => (n === 2 ? [0, 2] : Array.from({ length: n }, (_, i) => 
 // Positionen sind relativ zum eigenen Startfeld: YARD, 0 … L-1 Laufbahn, L … L+3 Haus.
 // Feld der Laufbahn (absolut): Das Startfeld ist das sechste Feld des eigenen Arms.
 const absOf = (s, id, rel) => (s.seat[id] * SPAN + 5 + rel) % trackLen(s);
+const relOf = (s, id, abs) => (abs - s.seat[id] * SPAN - 5 + 2 * trackLen(s)) % trackLen(s);
 const onTrack = (s, rel) => rel >= 0 && rel < trackLen(s);
+const special = (s, abs) => (s.felder === 'sonder' ? SPECIAL[abs % SPAN] ?? null : null);
 
 export function setup(players, options = {}) {
   const n = players.length;
@@ -65,13 +86,14 @@ export function setup(players, options = {}) {
     seat: Object.fromEntries(players.map((p, i) => [p.id, seats[i]])),
     figures,
     rule: options.schlagen === 'pflicht' ? 'pflicht' : 'frei',
+    felder: options.felder === 'sonder' ? 'sonder' : 'klassisch',
     pos: Object.fromEntries(players.map((p) => [p.id, Array(figures).fill(YARD)])),
     turn: players[Math.floor(Math.random() * n)].id,
     phase: 'wuerfeln', // wuerfeln → (ziehen) → wuerfeln … → ende
     roll: null,
     tries: 0, // Fehlversuche in diesem Zug (nur ohne Figur auf der Laufbahn)
     seq: 0, // Zahl der Würfe; schützt vor doppelt gesendeten Zügen
-    last: null, // was zuletzt passiert ist: { seq, by, roll, kind, hit, again, left }
+    last: null, // was zuletzt passiert ist: { seq, by, roll, kind, hit, hits, again, left, piece, from, land, end, fx, swap }
   };
 }
 
@@ -112,6 +134,8 @@ export function notices(s, before, player) {
     if (p.id === player) continue;
     if (before.pos[p.id]?.some((q, i) => q >= 0 && s.pos[p.id][i] === YARD)) {
       out.set(p.id, `${nameOf(s, player)} hat dich geschlagen.`);
+    } else if (s.last?.swap?.id === p.id && s.last.seq === s.seq && s.last.seq !== before.last?.seq) {
+      out.set(p.id, `${nameOf(s, s.last.by)} hat mit dir getauscht.`);
     }
   }
   if (s.turn !== before.turn && s.turn !== player) out.set(s.turn, `${out.get(s.turn) ?? ''} Du bist dran.`.trim());
@@ -141,6 +165,39 @@ function hitAt(s, id, abs) {
   return null;
 }
 
+// Was passiert, wenn eine Figur mit dem Wurf auf `to` landet: wen sie schlägt, wo sie am Ende steht, welches
+// Sonderfeld wirkt und mit wem sie tauscht. Läuft vor dem Zug (Liste der Züge) und beim Zug selbst.
+function outcome(s, id, piece, to) {
+  const res = { end: to, fx: null, hits: [], swap: null };
+  if (!onTrack(s, to)) return res;
+  const abs = absOf(s, id, to);
+  const hit = hitAt(s, id, abs);
+  if (hit) res.hits.push(hit);
+  const kind = special(s, abs);
+  if (kind === 'rutsche') {
+    // Steht unten eine eigene Figur, rutscht sie nicht. Eigene Figuren auf dem Weg werden übersprungen.
+    if (s.pos[id].some((q, i) => i !== piece && q === to + SLIDE)) return res;
+    res.fx = 'rutsche';
+    res.end = to + SLIDE;
+    for (let r = to + 1; r <= res.end; r++) {
+      const h = hitAt(s, id, absOf(s, id, r));
+      if (h) res.hits.push(h);
+    }
+  } else if (kind === 'tausch') {
+    // Die nächste fremde Figur voraus, nicht auf einer Burg und höchstens bis vor das eigene Haus
+    for (let r = to + 1; r <= Math.min(to + REACH, trackLen(s) - 1); r++) {
+      const at = absOf(s, id, r);
+      const h = special(s, at) === 'burg' ? null : hitAt(s, id, at);
+      if (!h) continue;
+      res.fx = 'tausch';
+      res.end = r;
+      res.swap = { ...h, from: s.pos[h.id][h.piece], to: relOf(s, h.id, abs) };
+      break;
+    }
+  } else if (kind) res.fx = kind;
+  return res;
+}
+
 // Alle erlaubten Züge mit diesem Wurf, nach den Vorrangregeln gefiltert.
 function moves(s, id, r) {
   const L = trackLen(s);
@@ -151,7 +208,7 @@ function moves(s, id, r) {
     if (p === YARD) {
       if (r !== 6 || entered || mine.includes(0)) return;
       entered = true; // alle wartenden Figuren ziehen gleich
-      list.push({ piece: i, from: YARD, to: 0, hit: hitAt(s, id, absOf(s, id, 0)) });
+      list.push({ piece: i, from: YARD, to: 0, ...outcome(s, id, i, 0) });
       return;
     }
     const t = p + r;
@@ -159,17 +216,18 @@ function moves(s, id, r) {
     if (t >= L) {
       // ins Haus oder im Haus weiter: nur mit passender Zahl, ohne eigene Figuren zu überspringen
       for (let h = Math.max(p + 1, L); h <= t; h++) if (mine.includes(h)) return;
-      list.push({ piece: i, from: p, to: t, hit: null });
+      list.push({ piece: i, from: p, to: t, ...outcome(s, id, i, t) });
       return;
     }
     if (mine.includes(t)) return; // eigene Figur: überspringen ja, landen nein
-    list.push({ piece: i, from: p, to: t, hit: hitAt(s, id, absOf(s, id, t)) });
+    if (special(s, absOf(s, id, t)) === 'burg' && hitAt(s, id, absOf(s, id, t))) return; // besetzte Burg
+    list.push({ piece: i, from: p, to: t, ...outcome(s, id, i, t) });
   });
   // Eine Sechs bringt eine Figur heraus, solange eine wartet und das Startfeld frei ist.
   if (r === 6 && list.some((m) => m.from === YARD)) return list.filter((m) => m.from === YARD);
   // Das Startfeld wird geräumt, solange noch Figuren warten.
   if (mine.includes(YARD) && list.some((m) => m.from === 0)) return list.filter((m) => m.from === 0);
-  if (s.rule === 'pflicht' && list.some((m) => m.hit)) return list.filter((m) => m.hit);
+  if (s.rule === 'pflicht' && list.some((m) => m.hits.length)) return list.filter((m) => m.hits.length);
   return list;
 }
 
@@ -196,18 +254,17 @@ function roll(s, id, r) {
 
 function move(s, id, m) {
   const L = trackLen(s);
-  let hit = null;
-  if (m.to < L) {
-    const h = hitAt(s, id, absOf(s, id, m.to));
-    if (h) {
-      s.pos[h.id][h.piece] = YARD;
-      hit = h.id;
-    }
-  }
-  s.pos[id][m.piece] = m.to;
-  const again = s.roll === 6;
+  const o = outcome(s, id, m.piece, m.to);
+  for (const h of o.hits) s.pos[h.id][h.piece] = YARD;
+  if (o.swap) s.pos[o.swap.id][o.swap.piece] = o.swap.to;
+  s.pos[id][m.piece] = o.end;
+  const again = s.roll === 6 || o.fx === 'stern';
   const kind = m.from === YARD ? 'raus' : m.from >= L ? 'vor' : m.to >= L ? 'haus' : 'zug';
-  s.last = { seq: s.seq, by: id, roll: s.roll, kind, hit, again, left: 0 };
+  s.last = {
+    seq: s.seq, by: id, roll: s.roll, kind, hit: o.hits[0]?.id ?? null, hits: o.hits.map((h) => h.id), again, left: 0,
+    piece: m.piece, from: m.from, land: m.to, end: o.end, fx: o.fx,
+    swap: o.swap && { id: o.swap.id, piece: o.swap.piece, from: o.swap.from, to: o.swap.to },
+  };
   s.tries = 0;
   if (s.pos[id].every((q) => q >= L)) {
     s.phase = 'ende';
@@ -312,6 +369,33 @@ const PAWN = `<svg class="mae-pawn" viewBox="0 0 40 56" aria-hidden="true">
 // Kleine Figur für die Liste der Spieler
 const MINI = `<svg viewBox="0 0 12 16" aria-hidden="true"><circle cx="6" cy="3.6" r="2.7"/><path d="M4.5 6.6 C4.4 9.4 2.6 11 2.3 13.2 Q6 14.9 9.7 13.2 C9.4 11 7.6 9.4 7.5 6.6 Z"/></svg>`;
 
+// Stern mit n Zacken (für das Sternfeld und die Funken)
+function starPath(cx, cy, R, r, n = 5, rot = -90) {
+  const f = (v) => +v.toFixed(2);
+  const pts = Array.from({ length: n * 2 }, (_, k) => {
+    const a = ((rot + (k * 180) / n) * Math.PI) / 180;
+    const d = k % 2 ? r : R;
+    return `${f(cx + d * Math.cos(a))} ${f(cy + d * Math.sin(a))}`;
+  });
+  return `M${pts.join(' L')} Z`;
+}
+
+// Zeichen der Sonderfelder, gezeichnet in ein Feld von 40 × 40 (Feldkreis r = 16 um 20/20). Die Rutsche zeigt nach rechts
+// und wird in Richtung der Bahn gedreht.
+const SYM = {
+  stern: `<path class="i k" d="${starPath(20, 21, 11, 4.6)}" stroke-width="1.2" stroke-linejoin="round"/>`,
+  tausch: `<path class="i" d="M10.5 14.2 H23 V10.4 L30 15.6 L23 20.8 V17 H10.5 Z"/><path class="i" d="M29.5 25.8 H17 V29.6 L10 24.4 L17 19.2 V23 H29.5 Z"/>`,
+  burg: `<path class="i" d="M13.5 29 V16 H12 V11 H15 V13.2 H18.2 V11 H21.8 V13.2 H25 V11 H28 V16 H26.5 V29 Z"/><path class="p" d="M18 29 V24.5 A2 2 0 0 1 22 24.5 V29 Z"/>`,
+  rutsche: `<path class="s" d="M13.5 12 L20.5 20 L13.5 28 M20.5 12 L27.5 20 L20.5 28" stroke-width="2.8"/>`,
+};
+const SYM_NAME = { stern: 'Stern', tausch: 'Tausch', burg: 'Burg', rutsche: 'Rutsche' };
+
+// Mauer vor der Figur, solange sie auf einer Burg steht (von der Seite, wie die Figur)
+const WALL = `<svg viewBox="0 0 44 15" aria-hidden="true">
+  <path class="w" d="M2 14 V1.5 H8 V5 H13.3 V1.5 H19.3 V5 H24.7 V1.5 H30.7 V5 H36 V1.5 H42 V14 Z"/>
+  <path class="j" d="M2 9.5 H42 M10.7 5 V9.5 M21.9 5 V9.5 M33.2 5 V9.5 M6.4 9.5 V14 M16.3 9.5 V14 M27.5 9.5 V14 M37.6 9.5 V14"/>
+</svg>`;
+
 // Fester Zufall für die Anzeige (render darf kein Math.random benutzen): gleicher Wurf, gleiche Lage.
 function hash(...parts) {
   let h = 2166136261;
@@ -350,7 +434,7 @@ export function render(el, s, game) {
   // Eigener Arm unten: das Brett dreht sich um die Mitte, die Figuren bleiben aufrecht
   const rot = me ? (-s.seat[me] * 360) / s.arms : 0;
 
-  const key = JSON.stringify([s.arms, rot, tv, s.figures, s.players.map((p) => [p.id, game.color(p.id)])]);
+  const key = JSON.stringify([s.arms, rot, tv, s.figures, s.felder, s.players.map((p) => [p.id, game.color(p.id)])]);
   let root = el.querySelector(':scope > .mae');
   if (!root || u.key !== key) {
     el.innerHTML = shell(s, game, geo, rot, tv);
@@ -361,7 +445,11 @@ export function render(el, s, game) {
   }
   u.geo = geo;
   u.arm = me ? s.seat[me] : null;
-  if (me) root.querySelector('.mae-board').style.setProperty('--pc', game.color(me));
+  if (me) {
+    const board = root.querySelector('.mae-board');
+    board.style.setProperty('--pc', game.color(me));
+    board.style.setProperty('--mine', game.color(me)); // bleibt auch auf fremden Figuren meine Farbe
+  }
   const q = (sel) => root.querySelector(sel);
   const prev = game.prev && game.prev.pos ? game.prev : null;
   const animate = motion && !game.first && prev;
@@ -377,7 +465,7 @@ export function render(el, s, game) {
   root.dataset.phase = s.phase;
 
   // Figuren: Platz setzen, dann den Weg dorthin animieren
-  const ends = []; // { at: Feld, t: Ankunft }
+  const ends = []; // Ankunftszeiten
   const flights = [];
   for (const p of s.players) {
     const arm = s.seat[p.id];
@@ -392,6 +480,7 @@ export function render(el, s, game) {
       const can = Boolean(m);
       node.classList.toggle('can', can);
       node.classList.toggle('dim', Boolean(s.result) && !s.result.winners.includes(p.id));
+      node.classList.toggle('safe', onTrack(s, rel) && special(s, absOf(s, p.id, rel)) === 'burg');
       node.disabled = !can;
       node.tabIndex = can ? 0 : -1;
       if (can) {
@@ -407,18 +496,42 @@ export function render(el, s, game) {
     });
   }
   if (animate) {
-    // Zuerst die eigenen Züge, dann die Geschlagenen, wenn die schlagende Figur ankommt
+    // Ist der letzte Zug genau der Unterschied zum vorigen Stand, läuft er mit seinem Sonderfeld ab:
+    // erst bis zum Landefeld, dann rutschen oder tauschen. Sonst läuft jede Figur direkt an ihren Platz.
+    const e = s.last;
+    const exact = Boolean(e && e.seq === s.seq && e.piece !== undefined && prev.pos[e.by]?.[e.piece] === e.from && s.pos[e.by][e.piece] === e.end);
+    const passes = []; // wann die ziehenden Figuren über ein Feld kommen: { key, t }
+    const color = game.color(e?.by);
+    let swap = null;
     for (const f of flights.filter((f) => f.to !== YARD)) {
-      const t = walk(f.node, geo, u.board, f, t0, game.signal);
-      ends.push({ key: fieldKey(geo, f.arm, f.i, f.to), t });
+      const mover = exact && f.who === e.by && f.i === e.piece;
+      if (exact && e.swap && f.who === e.swap.id && f.i === e.swap.piece && f.from === e.swap.from) continue; // springt mit dem Tausch
+      const plan = mover ? { from: e.from, land: e.land, end: e.end, fx: e.fx } : { from: f.from, land: f.to, end: f.to, fx: null };
+      const r = travel(f.node, geo, u.board, f, plan, t0, game.signal);
+      for (const pass of r.passes) passes.push({ key: fieldKey(geo, f.arm, f.i, pass.rel), t: pass.t });
+      ends.push(r.t);
+      if (mover) {
+        swap = r.swap;
+        effect(root, u, geo, s, e, r, color, game);
+      }
+      if (f.node.classList.contains('safe')) wall(f.node, mover ? r.land : r.t, game.signal, true);
     }
-    for (const f of flights.filter((f) => f.to === YARD)) {
-      const struck = ends.find((e) => e.key === fieldKey(geo, f.arm, f.i, f.from));
-      const t = knock(root, f.node, geo, u.board, f, struck ? struck.t : t0 + 200, game, game.color(s.last?.by));
-      ends.push({ key: 'yard', t });
+    for (const f of flights) {
+      if (f.to === YARD) {
+        const struck = passes.find((p) => p.key === fieldKey(geo, f.arm, f.i, f.from));
+        ends.push(knock(root, f.node, geo, u.board, f, struck ? struck.t : t0 + 200, game, color));
+      } else if (swap && f.who === e.swap.id && f.i === e.swap.piece && f.from === e.swap.from) {
+        ends.push(hop(f.node, u.board.pct(spot(geo, f.arm, f.i, f.from)), u.board.pct(spot(geo, f.arm, f.i, f.to)), swap.at, swap.ms, -0.3, game.signal));
+        if (f.node.classList.contains('safe')) wall(f.node, swap.at + swap.ms, game.signal, true);
+      }
+      // Wer die Burg verlässt, lässt die Mauer zurück
+      const before = prev.pos[f.who][f.i];
+      if (onTrack(s, before) && special(s, absOf(s, f.who, before)) === 'burg' && !f.node.classList.contains('safe')) {
+        wall(f.node, t0, game.signal, false);
+      }
     }
   }
-  const settled = ends.reduce((m, e) => Math.max(m, e.t), t0);
+  const settled = ends.reduce((m, t) => Math.max(m, t), t0);
 
   // Ziele der Figuren, die ich ziehen darf
   const targets = u.moves
@@ -511,6 +624,31 @@ function shell(s, game, geo, rot, tv) {
         .join('');
     }
   }
+  // Sonderfelder: Rutschen unter den Feldern (mit Pfeilen in den Lücken und einer Spur für die Bewegung),
+  // Zeichen über den Feldern. Die Zeichen bleiben aufrecht, nur die Rutsche folgt der Bahn.
+  let chutes = '';
+  let trails = '';
+  let symbols = '';
+  if (s.felder === 'sonder') {
+    track.forEach((p, i) => {
+      const kind = SPECIAL[i % SPAN];
+      if (!kind) return;
+      let turn = 0;
+      if (kind === 'rutsche') {
+        const q = track[i + SLIDE];
+        turn = (Math.atan2(q[1] - p[1], q[0] - p[0]) * 180) / Math.PI;
+        const d = `M${f(p[0])} ${f(p[1])} L${f(q[0])} ${f(q[1])}`;
+        const gaps = Array.from({ length: SLIDE }, (_, k) => {
+          const [a, b] = [track[i + k], track[i + k + 1]];
+          return `<path class="mae-chevron" d="M-.06 -.16 L.06 0 L-.06 .16" transform="translate(${f((a[0] + b[0]) / 2)} ${f((a[1] + b[1]) / 2)}) rotate(${f(turn)})"/>`;
+        }).join('');
+        const d0 = `style="--d:${Math.round(i * stepMs + 200)}ms"`;
+        chutes += `<path class="mae-chute-rim" pathLength="1" d="${d}" ${d0}/><path class="mae-chute" pathLength="1" d="${d}" ${d0}/>${gaps}`;
+        trails += `<path class="mae-chute-trail" data-s="t${i}" pathLength="1" d="${d}"/>`;
+      }
+      symbols += `<g transform="translate(${f(p[0])} ${f(p[1])}) rotate(${f(turn)}) scale(.025) translate(-20 -20)"><g class="mae-sym" data-s="t${i}" data-kind="${kind}" style="--d:${Math.round(i * stepMs + 160)}ms">${SYM[kind]}</g></g>`;
+    });
+  }
   const trackFields = track
     .map(([x, y], i) => {
       const arm = Math.floor(i / SPAN);
@@ -527,7 +665,7 @@ function shell(s, game, geo, rot, tv) {
     .map((p) =>
       s.pos[p.id]
         .map((_, i) => `<button class="mae-piece" type="button" data-who="${game.esc(p.id)}" data-i="${i}" style="--pc:${game.color(p.id)}" disabled tabindex="-1">
-          <span class="mae-ring" aria-hidden="true"></span><span class="mae-fig">${PAWN}</span></button>`)
+          <span class="mae-ring" aria-hidden="true"></span><span class="mae-fig">${PAWN}</span>${s.felder === 'sonder' ? `<span class="mae-wall">${WALL}</span>` : ''}</button>`)
         .join(''),
     )
     .join('');
@@ -544,7 +682,7 @@ function shell(s, game, geo, rot, tv) {
     <div class="mae-stage">
       <div class="mae-board" style="aspect-ratio:${f(W)} / ${f(H)};--u:${f(100 / W)};--ar:${f(W / H)}">
         <svg class="mae-svg" viewBox="${f(minX)} ${f(minY)} ${f(W)} ${f(H)}" aria-hidden="true">
-          ${road}${lanes}${trackFields}${houses}${yards}
+          ${road}${chutes}${lanes}${trackFields}${houses}${yards}${trails}${symbols}
         </svg>
         <div class="mae-targets"></div>
         <div class="mae-pieces">${pieces}</div>
@@ -560,6 +698,7 @@ function shell(s, game, geo, rot, tv) {
           }</div>
         </div>
         <ol class="mae-seats"></ol>
+        ${s.felder === 'sonder' ? legendHTML(tv) : ''}
       </div>
     </div>
     ${tv ? '' : rulesHTML(s)}
@@ -608,10 +747,14 @@ function wire(root, u, game) {
     const m = u.moves.find((mv) => mv.piece === piece);
     root.querySelectorAll('.mae-f.trail').forEach((n) => n.classList.remove('trail'));
     root.querySelectorAll('.mae-target.hot').forEach((n) => n.classList.remove('hot'));
+    root.querySelectorAll('.mae-piece.swap-hint').forEach((n) => n.classList.remove('swap-hint'));
     if (!on || !m) return;
     if (u.arm === null) return;
     const from = m.from === YARD ? 0 : m.from + 1;
-    for (let r = from; r <= m.to; r++) u.board.fields.get(fieldKey(u.geo, u.arm, piece, r))?.classList.add('trail');
+    // Rutsche: der Weg geht bis unten; Tausch: die andere Figur wird markiert
+    const to = m.fx === 'rutsche' ? m.end : m.to;
+    for (let r = from; r <= to; r++) u.board.fields.get(fieldKey(u.geo, u.arm, piece, r))?.classList.add('trail');
+    if (m.swap) root.querySelector(`.mae-piece[data-who="${CSS.escape(m.swap.id)}"][data-i="${m.swap.piece}"]`)?.classList.add('swap-hint');
     root.querySelector(`.mae-target[data-for="${piece}"]`)?.classList.add('hot');
   };
   const over = (e, on) => {
@@ -629,35 +772,167 @@ function wire(root, u, game) {
 
 const translate = (x, y) => `translate(calc(${x.toFixed(3)}cqw - 50%), calc(${y.toFixed(3)}cqw - 50%))`;
 
-// Figur läuft Feld für Feld (oder kommt in einem Bogen aus den B-Feldern). Gibt die Ankunftszeit zurück.
-function walk(node, geo, board, f, delay, signal) {
-  const fig = node.querySelector('.mae-fig');
-  const pts = [];
-  if (f.from === YARD || f.to < f.from) {
-    pts.push(spot(geo, f.arm, f.i, f.from), spot(geo, f.arm, f.i, f.to));
+const WAY = 'cubic-bezier(.45,0,.3,1)';
+const UP = 'cubic-bezier(.2,.8,.2,1)';
+const DOWN = 'cubic-bezier(.6,0,.4,1)';
+
+// Weg einer Figur in Abschnitten: Feld für Feld hüpfen bis zum Landefeld (aus den B-Feldern oder rückwärts in einem
+// Bogen), dann auf der Rutsche gleiten oder zum Tausch springen. Eine einzige Animation für den ganzen Weg, damit
+// nichts zwischen den Abschnitten springt. Gibt die Ankunft am Landefeld und am Ende zurück, dazu wann die Figur
+// über welches Feld kommt (für die Geschlagenen) und wann der Tausch beginnt.
+function travel(node, geo, board, f, plan, delay, signal) {
+  const pos = (rel) => board.pct(spot(geo, f.arm, f.i, rel));
+  const places = [{ t: 0, p: pos(plan.from) }]; // Lage, easing gilt bis zum nächsten Eintrag
+  const lifts = [{ t: 0, tf: 'none' }];
+  const passes = [];
+  let t = 0;
+  const jump = plan.from === YARD || plan.land < plan.from;
+  if (jump) {
+    const ms = 460;
+    places[0].e = WAY;
+    lifts[0].e = UP;
+    lifts.push({ t: ms * 0.45, tf: 'translateY(-55%) scale(1.04)', e: DOWN });
+    t = ms;
+    places.push({ t, p: pos(plan.land) });
+    lifts.push({ t, tf: 'none' });
+    passes.push({ rel: plan.land, t: delay + t });
   } else {
-    for (let r = f.from; r <= f.to; r++) pts.push(spot(geo, f.arm, f.i, r));
+    const n = plan.land - plan.from;
+    const step = Math.min(640, 200 + 72 * n) / n;
+    for (let k = 1; k <= n; k++) {
+      places[places.length - 1].e = WAY;
+      lifts[lifts.length - 1].e = UP;
+      lifts.push({ t: t + step * 0.45, tf: 'translateY(-22%) scale(1.04)', e: DOWN });
+      t += step;
+      places.push({ t, p: pos(plan.from + k) });
+      lifts.push({ t, tf: 'none' });
+      passes.push({ rel: plan.from + k, t: delay + t });
+    }
   }
-  const n = pts.length - 1;
-  const jump = f.from === YARD || f.to < f.from;
-  const duration = jump ? 460 : Math.min(640, 200 + 72 * n);
-  const frames = pts.map((p, k) => {
-    const [x, y] = board.pct(p);
-    return { transform: translate(x, y), offset: k / n, easing: 'cubic-bezier(.45,0,.3,1)' };
-  });
+  const land = delay + t;
+  let swap = null;
+  let glide = null;
+  if (plan.fx === 'rutsche') {
+    // Kurz sitzen, dann immer schneller hinunter, nach vorn gelehnt, und unten aufrichten
+    const [x0, y0] = pos(plan.land);
+    const [x1, y1] = pos(plan.end);
+    const lean = (12 * (x1 - x0)) / Math.hypot(x1 - x0, y1 - y0);
+    places.push({ t: t + 90, p: [x0, y0] });
+    lifts.push({ t: t + 90, tf: 'scale(1.06, .92)', e: 'ease-out' });
+    lifts.push({ t: t + 150, tf: `rotate(${lean.toFixed(1)}deg) translateY(-6%)` });
+    t += 90;
+    const ms = 150 + 90 * (plan.end - plan.land);
+    const share = [0.46, 0.78, 1];
+    for (let r = plan.land + 1; r <= plan.end; r++) {
+      const k = r - plan.land;
+      places[places.length - 1].e = k === 1 ? 'cubic-bezier(.5,0,.8,.6)' : 'linear';
+      const at = t + ms * (share[k - 1] ?? k / (plan.end - plan.land));
+      places.push({ t: at, p: pos(r) });
+      passes.push({ rel: r, t: delay + at });
+    }
+    glide = { at: delay + t, ms };
+    t += ms;
+    lifts.push({ t, tf: `rotate(${lean.toFixed(1)}deg) translateY(-6%)`, e: UP });
+    t += 180;
+    places.push({ t, p: [x1, y1] });
+    lifts.push({ t, tf: 'none' });
+  } else if (plan.fx === 'tausch') {
+    // Kurz innehalten, dann in einem hohen Bogen auf den Platz der anderen Figur
+    const ms = 520;
+    t += 140;
+    places.push({ t, p: pos(plan.land), e: WAY });
+    lifts.push({ t, tf: 'none', e: UP });
+    swap = { at: delay + t, ms };
+    lifts.push({ t: t + ms * 0.5, tf: 'translateY(-75%) scale(1.06)', e: DOWN });
+    t += ms;
+    places.push({ t, p: pos(plan.end) });
+    lifts.push({ t, tf: 'none' });
+  }
+  const frames = (list, prop) =>
+    list.map((k) => ({ transform: prop(k), offset: k.t / t, easing: k.e ?? 'linear' }));
   node.classList.add('moving');
-  const timing = { duration, delay, fill: 'backwards' };
-  const a = node.animate(frames, timing);
-  // Bei jedem Feld hebt die Figur kurz ab
-  const lift = [{ transform: 'none', offset: 0 }];
-  for (let k = 0; k < n; k++) {
-    lift.push({ transform: `translateY(${jump ? -55 : -22}%) scale(1.04)`, offset: (k + 0.45) / n, easing: 'cubic-bezier(.2,.8,.2,1)' });
-    lift.push({ transform: 'none', offset: (k + 1) / n, easing: 'cubic-bezier(.6,0,.4,1)' });
-  }
-  fig.animate(lift, timing);
+  const timing = { duration: t, delay, fill: 'backwards' };
+  const a = node.animate(frames(places, (k) => translate(...k.p)), timing);
+  node.querySelector('.mae-fig').animate(frames(lifts, (k) => k.tf), timing);
   a.finished.then(() => node.classList.remove('moving'), () => node.classList.remove('moving'));
   signal.addEventListener('abort', () => a.cancel());
-  return delay + duration;
+  return { t: delay + t, land, passes, swap, glide };
+}
+
+// Ein Bogen von a nach b (die getauschte Figur springt unter der anderen hindurch). Gibt die Ankunft zurück.
+function hop(node, a, b, delay, ms, height, signal) {
+  node.classList.add('moving');
+  const timing = { duration: ms, delay, fill: 'backwards' };
+  const x = node.animate([{ transform: translate(...a), easing: WAY }, { transform: translate(...b) }], timing);
+  node.querySelector('.mae-fig').animate(
+    [{ transform: 'none', easing: UP }, { transform: `translateY(${height * 100}%) scale(.94)`, offset: 0.5, easing: DOWN }, { transform: 'none' }],
+    timing,
+  );
+  x.finished.then(() => node.classList.remove('moving'), () => node.classList.remove('moving'));
+  signal.addEventListener('abort', () => x.cancel());
+  return delay + ms;
+}
+
+// Mauer vor einer Figur auf der Burg: wächst, wenn sie ankommt, sinkt, wenn sie geht.
+function wall(node, delay, signal, up) {
+  const w = node.querySelector('.mae-wall');
+  if (!w) return;
+  const shown = { transform: 'none', opacity: 1 };
+  const gone = { transform: 'translateY(35%) scaleY(.2)', opacity: 0 };
+  const a = w.animate(up ? [gone, shown] : [shown, gone], { duration: up ? 300 : 220, delay, easing: UP, fill: 'backwards' });
+  signal.addEventListener('abort', () => a.cancel());
+}
+
+// Wirkung des Sonderfelds, wenn die Figur dort landet: Funken am Stern, Spur auf der Rutsche, der Tausch dreht sich.
+function effect(root, u, geo, s, e, r, color, game) {
+  if (!e.fx || e.fx === 'burg') return;
+  const abs = absOf(s, e.by, e.land);
+  const sym = root.querySelector(`.mae-sym[data-s="t${abs}"]`);
+  const keep = (a) => game.signal.addEventListener('abort', () => a.cancel());
+  if (e.fx === 'stern') {
+    if (sym) {
+      keep(sym.animate(
+        [{ transform: 'none', easing: UP }, { transform: 'scale(1.5) rotate(36deg)', offset: 0.4, easing: DOWN }, { transform: 'rotate(72deg)' }],
+        { duration: 620, delay: r.land - 60 },
+      ));
+    }
+    const [x, y] = u.board.pct(geo.track[abs]);
+    const fx = root.querySelector('.mae-fx');
+    for (let k = 0; k < 8; k++) {
+      const spark = document.createElement('span');
+      spark.className = 'mae-spark';
+      spark.style.setProperty('--pc', color);
+      spark.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="${starPath(10, 10, 9, 3.4, 4, -90)}"/></svg>`;
+      fx.append(spark);
+      const ang = (k * 45 + 22.5) * (Math.PI / 180);
+      const d = ((k % 2 ? 0.8 : 1.2) * 100) / Number(root.dataset.w);
+      const end = translate(x + Math.cos(ang) * d, y + Math.sin(ang) * d);
+      const a = spark.animate(
+        [{ transform: `${translate(x, y)} scale(.2)`, opacity: 1 }, { transform: `${end} scale(1) rotate(90deg)`, opacity: 1, offset: 0.6 }, { transform: `${end} scale(.4) rotate(140deg)`, opacity: 0 }],
+        { duration: 640, delay: r.land - 20 + (k % 2) * 40, easing: UP, fill: 'both' },
+      );
+      a.finished.then(() => spark.remove(), () => spark.remove());
+      game.signal.addEventListener('abort', () => spark.remove());
+    }
+  } else if (e.fx === 'tausch' && r.swap) {
+    if (sym) keep(sym.animate([{ transform: 'none' }, { transform: 'rotate(180deg)' }], { duration: r.swap.ms, delay: r.swap.at, easing: WAY }));
+  } else if (e.fx === 'rutsche') {
+    // Farbige Spur auf der Rutsche, die hinter der Figur her läuft und dann verblasst
+    const trail = root.querySelector(`.mae-chute-trail[data-s="t${abs}"]`);
+    if (trail && r.glide) {
+      const ms = r.glide.ms + 600;
+      trail.style.stroke = color;
+      keep(trail.animate(
+        [
+          { strokeDashoffset: 1, opacity: 0.5, easing: 'cubic-bezier(.5,0,.8,.6)' },
+          { strokeDashoffset: 0, opacity: 0.5, offset: r.glide.ms / ms },
+          { strokeDashoffset: 0, opacity: 0.5, offset: (r.glide.ms + 200) / ms, easing: 'ease-out' },
+          { strokeDashoffset: 0, opacity: 0 },
+        ],
+        { duration: ms, delay: r.glide.at },
+      ));
+    }
+  }
 }
 
 // Geschlagene Figur: kurzer Stoß, Kreis in der Farbe des Schlagenden, dann im Bogen zurück auf ihr B-Feld.
@@ -809,8 +1084,18 @@ function logText(s, game, me) {
   else if (e.kind === 'raus') text = `${who} ${v('würfelst', 'würfelt')} eine Sechs und ${v('kommst', 'kommt')} raus.`;
   else if (e.kind === 'haus') text = `${who} ${v('würfelst', 'würfelt')} eine ${n} und ${v('ziehst', 'zieht')} ins Haus.`;
   else if (e.kind === 'vor') text = `${who} ${v('würfelst', 'würfelt')} eine ${n} und ${v('rückst', 'rückt')} im Haus vor.`;
-  else if (e.hit) text = `${who} ${v('würfelst', 'würfelt')} eine ${n} und ${v('schlägst', 'schlägt')} ${victim}.`;
-  else text = `${who} ${v('würfelst', 'würfelt')} eine ${n} und ${v('ziehst', 'zieht')}.`;
+  else {
+    // Ein Zug auf der Laufbahn, vielleicht mit Sonderfeld; mehrere Geschlagene nur als Zahl, damit es kurz bleibt
+    const hits = e.hits ?? (e.hit ? [e.hit] : []);
+    const acts = [];
+    if (e.fx === 'rutsche') acts.push(v('rutschst', 'rutscht'));
+    else if (e.fx === 'tausch') acts.push(`${v('tauschst', 'tauscht')} mit ${e.swap.id === me ? 'dir' : game.esc(game.name(e.swap.id))}`);
+    else if (e.fx === 'stern') acts.push(`${v('landest', 'landet')} auf einem Stern`);
+    else if (e.fx === 'burg') acts.push(`${v('ziehst', 'zieht')} in eine Burg`);
+    if (hits.length) acts.push(`${v('schlägst', 'schlägt')} ${hits.length > 1 ? `${WORD[hits.length]} Figuren` : victim}`);
+    if (!acts.length) acts.push(v('ziehst', 'zieht'));
+    text = `${who} ${v('würfelst', 'würfelt')} eine ${n}${acts.length > 1 ? `, ${acts[0]} und ${acts[1]}` : ` und ${acts[0]}`}.`;
+  }
   return marker + text;
 }
 
@@ -857,6 +1142,21 @@ function paintSeats(root, s, game, me, prev, delay) {
   if (put(list, html)) list.style.setProperty('--gain-delay', `${delay}ms`);
 }
 
+// Legende der Sonderfelder; am Bildschirm kurz, damit sie auch zu sechst neben das Brett passt
+function legendHTML(tv) {
+  const text = tv
+    ? { stern: 'Noch einmal würfeln.', tausch: 'Platz tauschen.', burg: 'Sicher vor Schlagen.', rutsche: 'Drei weiter, schlägt.' }
+    : {
+        stern: 'Noch einmal würfeln.',
+        tausch: 'Platz tauschen mit der nächsten fremden Figur bis sechs Felder voraus.',
+        burg: 'Hier wird niemand geschlagen. Ist sie besetzt, kommt niemand hinein.',
+        rutsche: 'Drei Felder weiter, fremde Figuren auf dem Weg werden geschlagen.',
+      };
+  return `<ul class="mae-legend" aria-label="Sonderfelder">${Object.keys(text)
+    .map((k) => `<li><svg viewBox="0 0 40 40" aria-hidden="true"><circle class="f" cx="20" cy="20" r="16"/>${SYM[k]}</svg><p><strong>${SYM_NAME[k]}</strong> ${text[k]}</p></li>`)
+    .join('')}</ul>`;
+}
+
 function rulesHTML(s) {
   return `<details class="mae-rules">
     <summary>Regeln</summary>
@@ -869,7 +1169,12 @@ function rulesHTML(s) {
         s.rule === 'pflicht' ? 'Wer schlagen kann, muss schlagen, außer das Startfeld muss geräumt werden.' : 'Schlagen ist freiwillig.'
       }</li>
       <li>Ins Haus geht es nur mit der passenden Zahl, und dort wird nicht übersprungen.</li>
-      <li>Kann eine Figur ziehen, muss gezogen werden. Gibt es nur einen Zug, macht ihn das Spiel.</li>
+      <li>Kann eine Figur ziehen, muss gezogen werden. Gibt es nur einen Zug, macht ihn das Spiel.</li>${
+        s.felder === 'sonder'
+          ? `
+      <li>Die Sonderfelder stehen in der Legende. Sie wirken nur, wenn eine Figur mit dem Wurf darauf landet, nicht nach einem Tausch oder einer Rutsche. Figuren auf einer Burg werden nicht getauscht. Steht unten an der Rutsche eine eigene Figur, rutschst du nicht.</li>`
+          : ''
+      }
     </ol>
   </details>`;
 }
@@ -958,6 +1263,32 @@ export const style = `
   .mae-piece.dim { opacity: .32; }
   .mae.is-over .mae-lane:not(.won) { opacity: .5; }
 
+  /* ---------- Sonderfelder ---------- */
+  /* Rutsche: eine Rinne um die vier Felder, Pfeile in den Lücken */
+  .mae-chute-rim { fill: none; stroke: var(--ink); stroke-width: .99; stroke-linecap: round; }
+  .mae-chute { fill: none; stroke: var(--wash); stroke-width: .89; stroke-linecap: round; }
+  .mae-chevron { fill: none; stroke: var(--ink); stroke-width: .05; stroke-linecap: round; stroke-linejoin: round; }
+  .mae-chute-trail { fill: none; stroke-width: .56; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; }
+  .mae-sym { transform-box: fill-box; transform-origin: center; }
+  .mae-sym .i, .mae-legend .i { fill: var(--ink); }
+  .mae-sym .k, .mae-legend .k { stroke: var(--ink); }
+  .mae-sym .p, .mae-legend .p { fill: var(--paper); }
+  .mae-sym .s, .mae-legend .s { fill: none; stroke: var(--ink); stroke-linecap: round; stroke-linejoin: round; }
+  .mae-wall { position: absolute; left: 6%; top: 38%; width: 88%; height: 30%; opacity: 0; pointer-events: none; transform-origin: 50% 100%; }
+  .mae-piece.safe .mae-wall { opacity: 1; }
+  .mae-wall svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .mae-wall .w { fill: var(--paper); stroke: var(--ink); stroke-width: 1.7; stroke-linejoin: round; }
+  .mae-wall .j { fill: none; stroke: var(--ink); stroke-width: .8; }
+  .mae-piece.swap-hint .mae-ring { opacity: 1; border: 3px dashed var(--mine, var(--ink)); animation: mae-pulse 1400ms ease-in-out infinite; }
+  .mae-spark { position: absolute; left: 0; top: 0; width: calc(var(--u) * .5cqw); height: calc(var(--u) * .5cqw); opacity: 0; pointer-events: none; }
+  .mae-spark svg { display: block; width: 100%; height: 100%; overflow: visible; fill: var(--pc); stroke: var(--ink); stroke-width: 1.3; stroke-linejoin: round; }
+  .mae-legend { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+  .mae-legend li { display: grid; grid-template-columns: 1.6rem minmax(0, 1fr); align-items: start; gap: 8px; }
+  .mae-legend svg { display: block; width: 1.6rem; height: 1.6rem; overflow: visible; }
+  .mae-legend .f { fill: var(--paper); stroke: var(--ink); stroke-width: 2.2; }
+  .mae-legend p { margin: 0; font-size: var(--t-sm); line-height: 1.35; color: var(--muted); }
+  .mae-legend strong { color: var(--ink); }
+
   /* ---------- Würfeltisch ---------- */
   .mae-side { display: grid; gap: 14px; align-content: start; min-width: 0; }
   .mae-tray {
@@ -1032,6 +1363,10 @@ export const style = `
   .mae.intro .mae-road { stroke-dasharray: 1; stroke-dashoffset: 1; animation: mae-draw 700ms cubic-bezier(.3,.7,.2,1) forwards; }
   .mae.intro .mae-lane { stroke-dasharray: 1; stroke-dashoffset: 1; animation: mae-draw 420ms cubic-bezier(.3,.7,.2,1) 520ms forwards; }
   .mae.intro .mae-f, .mae.intro .mae-start-ring { transform-box: fill-box; transform-origin: center; animation: mae-pop 320ms cubic-bezier(.2,.8,.2,1) var(--d, 0ms) backwards; }
+  .mae.intro .mae-sym { animation: mae-pop 320ms cubic-bezier(.2,.8,.2,1) var(--d, 0ms) backwards; }
+  .mae.intro .mae-chute, .mae.intro .mae-chute-rim { stroke-dasharray: 1; stroke-dashoffset: 1; animation: mae-draw 360ms cubic-bezier(.3,.7,.2,1) var(--d, 0ms) forwards; }
+  .mae.intro .mae-chevron { animation: mae-fade 240ms ease-out 760ms backwards; }
+  @keyframes mae-fade { from { opacity: 0; } }
   @keyframes mae-draw { to { stroke-dashoffset: 0; } }
   @keyframes mae-pop { from { opacity: 0; transform: scale(.3); } }
 
@@ -1047,9 +1382,12 @@ export const style = `
   .mae-tv .mae-seats li { padding: 1.2vh .8vw; }
   .mae-tv .mae-who { font-size: var(--t-xl); }
   .mae-tv .mae-home i { width: 1.1rem; height: 1.5rem; }
+  .mae-tv .mae-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8vh 1.2rem; }
+  .mae-tv .mae-legend li { align-items: center; }
+  .mae-tv .mae-legend p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   @media (prefers-reduced-motion: reduce) {
     .mae *, .mae.intro * { animation: none !important; transition: none !important; }
-    .mae.intro .mae-road, .mae.intro .mae-lane { stroke-dashoffset: 0; }
+    .mae.intro .mae-road, .mae.intro .mae-lane, .mae.intro .mae-chute, .mae.intro .mae-chute-rim { stroke-dashoffset: 0; }
   }
 `;

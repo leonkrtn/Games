@@ -75,6 +75,9 @@ Passend zur Plattform (siehe `CLAUDE.md`, „Gestaltung der Plattform“ und „
 - Teile, die sich bewegen sollen (Schwanz wedelt, Ohr zuckt, Deckel klappt), als eigene Gruppe mit
   `transform-box: fill-box; transform-origin: …` im Spiel-CSS. Nur `transform` und `opacity`
   animieren.
+- Ein SVG-Zeichen, das mit `transform` an seinen Platz gesetzt ist (`<g transform="translate(…) scale(…)">`), in eine
+  innere Gruppe legen und diese animieren: Ein `transform` aus `element.animate()` ersetzt das Attribut, das Zeichen
+  springt sonst an den Rand (`.mae-sym` in `games/mensch-aergere-dich-nicht.js`).
 - Wiederholungen (Schraffur, Tupfen, Speichen) mit `Array.from` erzeugen, nicht abtippen.
 - Eine Figur mit mehreren Gesichtern (froh, traurig, schläft, Maul offen): alle Augen und Münder als Gruppen mit
   `data-…` zeichnen und per CSS am äußeren `svg` nur die passende zeigen (`data-auge`, `data-mund` in

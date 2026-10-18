@@ -210,6 +210,14 @@ console.log(report([...r.findings, ...t.findings]));  // gleiche Befunde über m
 ```
 
 `wait` (Standard 1800 ms) muss länger sein als die längste Animation eines Schritts, sonst fotografiert es mitten darin.
+Einen Zustand, der schon in `steps` liegt, nicht mehr ändern: `steps.push({ state: s })` und danach `s.turn = …` ändert
+auch diesen Schritt. Vor jeder Änderung von Hand `s = structuredClone(s)` (`G.action` auf einer Kopie ist sicher).
+
+**Einzelbilder einer Animation als Blatt** (Rutsche, Tausch, Funken): in `act` für den zweiten Schritt in festen Abständen
+nur das Spielfeld fotografieren (`page.screenshot({ clip })` mit dem Rechteck von `.brett`, `clip` mit `scrollY`
+rechnen) und die Bilder mit einem kleinen Skript zu einem Raster zusammensetzen (Python mit PIL, Ausschnitt um die
+Stelle des Geschehens). So sieht man Reihenfolge und Zeitpunkte, etwa ob die geschlagene Figur erst fliegt, wenn die
+andere ankommt.
 Beispiel einer ganzen Partie als Abfolge (Wörter, Bilder, Noten, Auflösung, Vorstellung): Kunstkritik lässt sich mit
 `G.action` von `setup` bis `epilogue` durchspielen; Bilder als Befehle mit kodierten Punkten (`encodePoints`).
 
