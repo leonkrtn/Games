@@ -36,4 +36,9 @@ export const storage = {
       localStorage.setItem(k, v);
     } catch {}
   },
+  remove: (k) => {
+    try {
+      localStorage.removeItem(k);
+    } catch {}
+  },
 };

@@ -23,17 +23,34 @@ export function formatDay(iso) {
  * Freunde, Anfragen und Einladungscode (für Startseite und Freunde-Seite), live aktuell gehalten.
  * act(msg) schickt eine Konto-Anfrage, zeigt deren Meldung und lädt danach neu.
  */
+// Der letzte Stand der Startseite bleibt auf dem Gerät: Beim Öffnen steht die Liste sofort da, statt erst
+// „Lädt …“ zu zeigen und dann alles darunter (das Menü) nach unten zu schieben, während jemand tippt.
+const homeKey = (user) => `spielzimmer.home.${user.id}`;
+function cachedHome(user) {
+  try {
+    const d = JSON.parse(storage.get(homeKey(user)));
+    return ['friends', 'incoming', 'outgoing', 'groups'].every((k) => Array.isArray(d?.[k])) ? d : null;
+  } catch {
+    return null;
+  }
+}
+export const forgetHome = (user) => storage.remove(homeKey(user));
+
 export function useHomeData(user, showToast, onUnauthorized) {
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(() => cachedHome(user));
+  const [failed, setFailed] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      setData(await account({ t: 'home' }));
+      const r = await account({ t: 'home' });
+      setData(r);
+      storage.set(homeKey(user), JSON.stringify(r));
     } catch (err) {
+      setFailed(true);
       if (err.status === 401) onUnauthorized();
       else if (!err.offline) showToast(err.message);
     }
-  }, [onUnauthorized, showToast]);
+  }, [onUnauthorized, showToast, user]);
 
   // Aktuell halten: beim Öffnen, beim Zurückkommen in die App und bei jeder Änderung (Supabase Realtime).
   useEffect(() => {
@@ -70,7 +87,7 @@ export function useHomeData(user, showToast, onUnauthorized) {
     [load, showToast],
   );
 
-  return { data, load, act };
+  return { data, load, act, failed };
 }
 
 // Einladungslink über das Teilen-Menü schicken (oder kopieren, wo es das nicht gibt)
@@ -87,7 +104,8 @@ export async function shareInvite(inviteCode, showToast) {
 
 // Startseite nach dem Anmelden: Freunde (mit Punkten und wer dran ist), Anfragen, Menü.
 export default function Home({ user, openRoom, openPage, showToast, push, onLogout, onUnauthorized }) {
-  const { data, load, act } = useHomeData(user, showToast, onUnauthorized);
+  const { data, load, act, failed } = useHomeData(user, showToast, onUnauthorized);
+  const ready = Boolean(data) || failed; // erst dann steht fest, wo das Menü liegt
   const inviteHandled = useRef(false);
 
   // Über einen Einladungslink gekommen: sofort befreundet.
@@ -176,14 +194,21 @@ export default function Home({ user, openRoom, openPage, showToast, push, onLogo
         </section>
       )}
 
-      <Menu data={data} push={push} openPage={openPage} />
+      {ready && <Menu data={data} push={push} openPage={openPage} />}
 
-      <InstallHint />
+      {ready && <InstallHint />}
 
-      <footer className="home-foot">
+      <footer className="home-foot" hidden={!ready}>
         <p>
           Angemeldet als <strong>{user.name}</strong>.{' '}
-          <button className="link" id="logout" onClick={onLogout}>
+          <button
+            className="link"
+            id="logout"
+            onClick={() => {
+              forgetHome(user);
+              onLogout();
+            }}
+          >
             Abmelden
           </button>
         </p>
