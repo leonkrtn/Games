@@ -61,10 +61,12 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
         return true;
       } catch (err) {
         fail(err);
+        // Ein abgelehnter Zug heißt oft: Der Stand hier ist veraltet (eine Live-Nachricht ging verloren).
+        if (!err.offline && err.status !== 401 && err.status !== 403 && err.status !== 404) refresh();
         return false;
       }
     },
-    [accept, code, fail, goHome],
+    [accept, code, fail, goHome, refresh],
   );
 
   const onAction = useCallback((type, data) => send({ t: 'action', type, data }), [send]);
@@ -87,6 +89,13 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
         document.removeEventListener('visibilitychange', onVisible);
       };
     }
+
+    // Sicherheitsnetz: Geht eine Realtime-Nachricht verloren, bliebe sonst der alte Stand stehen (man ist dran,
+    // sieht es aber nicht, und nichts lässt sich drücken). Deshalb auch ab und zu nachfragen, solange sichtbar,
+    // und wenn das Netz zurückkommt oder die Seite aus dem Zwischenspeicher wieder auftaucht (iPhone).
+    const poll = setInterval(() => document.visibilityState === 'visible' && refresh(), 15000);
+    window.addEventListener('online', refresh);
+    window.addEventListener('pageshow', refresh);
 
     let joined = false;
     const channel = supabase.channel(`room:${code}`, { config: { presence: { key: user.id } } });
@@ -113,6 +122,9 @@ export default function Room({ code, user, goHome, showToast, onUnauthorized }) 
 
     return () => {
       stopLive();
+      clearInterval(poll);
+      window.removeEventListener('online', refresh);
+      window.removeEventListener('pageshow', refresh);
       document.removeEventListener('visibilitychange', onVisible);
       supabase.removeChannel(channel);
       setOnline(null);

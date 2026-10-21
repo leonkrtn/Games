@@ -729,6 +729,16 @@ function local(el, game) {
   return u;
 }
 
+// Nachspielen nur, was kurz ist und direkt auf den vorigen Stand folgt. Kommen mehrere Züge auf einmal
+// (die App war im Hintergrund, eine Nachricht ging verloren), steht sofort der neue Stand da: Sonst wären die
+// Knöpfe so lange gesperrt, wie die Folge dauert, und es sähe aus, als hinge das Spiel.
+const MAX_REPLAY = 9000;
+function replayable(fresh, prev) {
+  if (!fresh.length || !prev || fresh[0].id !== prev.seq + 1) return false;
+  const ends = fresh.filter((e) => e.kind === 'bank' || e.kind === 'stop' || (e.kind === 'niete' && !e.feuer)).length;
+  return ends <= 1 && fresh.reduce((t, e) => t + (DUR[e.kind] ?? 300), 0) <= MAX_REPLAY;
+}
+
 // Wie lange ein Ereignis auf der Bühne dauert, bevor das nächste kommt
 const DUR = { karte: 720, mischen: 820, wurf: 980, legen: 460, tutto: 1500, niete: 1150, stop: 1000, abzug: 820, bank: 640, klee: 1400, zeit: 260 };
 
@@ -760,8 +770,10 @@ export function render(el, s, game) {
 
   const fresh = built || game.first || !game.prev ? [] : s.events.filter((e) => e.id > u.seen);
   u.seen = s.events.at(-1)?.id ?? 0;
+  // Eine unterbrochene Folge ist vorbei: Ohne das blieben die Knöpfe gesperrt, bis wieder etwas passiert.
+  u.busy = false;
 
-  if (!motion || !fresh.length) {
+  if (!motion || !replayable(fresh, game.prev)) {
     paintAll(root, s, game, u);
     if (motion && game.first) intro(root);
     if (motion && s.result && game.prev && !game.prev.result) finale(root, s, game, signal);
