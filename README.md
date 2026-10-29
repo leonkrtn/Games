@@ -70,6 +70,8 @@ Ein neues Paar erzeugt `npx web-push generate-vapid-keys`. Danach neu deployen.
 
 Danach lässt sich das auf der Startseite unter **Benachrichtigungen** pro Gerät einschalten. Dort stellt jeder auch ein, worüber und von wem er benachrichtigt wird. Auf dem iPhone geht das nur in der App vom Home-Bildschirm (ab iOS 16.4). Benachrichtigt wird nur, wer die App gerade nicht offen hat.
 
+Für das Tagesbild (neue Aufgabe um 10 Uhr, Erinnerung um 21 Uhr, Aufdecken um 23 Uhr) ruft Vercel täglich `/api/cron` auf (`crons` in `vercel.json`, geht auch im kostenlosen Tarif, dort irgendwann innerhalb der Stunde). Optional in Vercel `CRON_SECRET` eintragen (eine lange zufällige Zeichenkette): Dann nimmt `/api/cron` nur noch Aufrufe von Vercel an.
+
 ## Auf dem iPhone als App
 
 In Safari (oder einem anderen Browser) auf **Teilen** tippen und **Zum Home-Bildschirm** wählen. Das Spielzimmer startet dann mit eigenem Icon im Vollbild, ohne Browserleiste. Die Seite zeigt dazu auf dem iPhone selbst einen kurzen Hinweis.

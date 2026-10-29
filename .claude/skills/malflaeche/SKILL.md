@@ -1,6 +1,6 @@
 ---
 name: malflaeche
-description: Spiele bauen, in denen gemalt wird, ob einer malt und die anderen live zusehen oder alle gleichzeitig geheim malen (Malfläche mit Farben, Dicken, Eimer, Radierer, Zurück/Vor). Wie die Zeichnung gespeichert, live übertragen und in jedem Browser gleich gemalt wird, wie die Malfläche auf dem Handy nicht scrollt und wie man das testet. Laden, bevor eine Malfläche gebaut oder geändert wird. Vorbilder sind games/montagsmaler.js und games/kunstkritik.js.
+description: Spiele bauen, in denen gemalt wird, ob einer malt und die anderen live zusehen oder alle gleichzeitig geheim malen (Malfläche mit Farben, Dicken, Eimer, Radierer, Zurück/Vor), dazu die erweiterte Malfläche lib/malen.js (Formen, Eimer, der fast geschlossene Flächen füllt, Zoomen mit zwei Fingern, Malen über Stunden auf mehreren Geräten). Wie die Zeichnung gespeichert, live übertragen und in jedem Browser gleich gemalt wird, wie die Malfläche auf dem Handy nicht scrollt und wie man das testet. Laden, bevor eine Malfläche gebaut oder geändert wird. Vorbilder sind games/montagsmaler.js, games/kunstkritik.js und das Tagesbild (lib/malen.js, components/tagesbild-board.js).
 ---
 
 # Malfläche mit Live-Übertragung
@@ -85,6 +85,42 @@ hier die ganze Fläche und dort nicht: Die Bilder laufen auseinander. Deshalb ei
 - Maus: Ring in Stiftgröße folgt dem Zeiger (`cursor: none`), beim Eimer Fadenkreuz.
 - Während eines Strichs keine anderen Befehle: Werkzeugknöpfe schließen erst den Strich ab.
 - Beim Wechsel ins Malen Malfläche und Werkzeuge ganz ins Bild scrollen.
+
+## Erweiterte Malfläche: `lib/malen.js` (Tagesbild)
+
+Dieselben Befehle und dasselbe Raster wie oben, als eigenes Modul (Server und Browser, keine Imports), dazu:
+
+- **Vierundzwanzig Farben** (`PALETTE`, Index 0 = Papier, nur hinten ergänzen), drei Reihen hell, mittel, dunkel wie
+  Näpfchen in einem Malkasten; **fünf Dicken** (`PEN`, `RUBBER`).
+- **Formen** als Befehl `{ t: 'l', c, w, p }`: gerade Stücke von Punkt zu Punkt, ohne Glätten (Ecken bleiben Ecken).
+  Die Punkte rechnet der Browser (`shapePoints`: Linie, Rechteck, Ellipse im aufgezogenen Rechteck, für die Ellipse
+  mit Winkelfunktionen) und speichert sie gerundet: Gemalt wird aus den gespeicherten Punkten, also überall gleich.
+  Vorschau beim Aufziehen auf einer zweiten Leinwand mit `ctx.stroke()` (nur Vorschau, darf leicht abweichen).
+- **Eimer, der Lücken schließt** (`flood`): Erst die ganze gleichfarbige Fläche wie bisher. Kerne sind die Punkte,
+  die weiter als `GAP` (zwölf Rasterpunkte) vom Rand entfernt sind (Abstand mit der Schachbrett-Näherung 3-4, nur
+  ganze Zahlen). Zerfällt der Kern in mehrere große Teile (kleiner als `CORE_MIN` zählt nicht), trennt sie eine
+  Engstelle: Jeder Punkt gehört zum nächsten Kern (Breitensuche von allen Kernrändern gleichzeitig, in Zeilenfolge
+  begonnen), gefüllt wird, was zum Kern des Klickpunkts gehört. So endet die Füllung in der Mitte einer Lücke bis
+  etwa 2 × `GAP`, Spitzen und schmale Zipfel werden trotzdem gefüllt (sie hängen nur an einem Kern). Kleine Flächen
+  und Flächen mit nur einem Kern füllt er wie bisher. **`GAP` und `CORE_MIN` nie ändern:** alte Zeichnungen würden
+  anders gemalt. Tempo: ein leeres Blatt etwa 40 ms in Node; Rechnungen nur in Zeilen-Füllung bzw. mit
+  vorab belegten Typed Arrays, keine Arrays pro Punkt (`[j - 1, j + 1, …]` in der Schleife kostet das Doppelte).
+- **Zoomen** (bis sechsfach): die Leinwand liegt in einer Ebene mit `transform: translate(…) scale(…)`
+  (`transform-origin: 0 0`, Verschiebung in Bruchteilen der Blattbreite, begrenzt auf das Blatt). Punkte weiter über
+  `getBoundingClientRect` der Leinwand umrechnen, das stimmt auch vergrößert. Zwei Finger: zoomen und verschieben um
+  die Mitte zwischen ihnen; ein Strich, der gerade erst begonnen hat (unter 350 ms oder wenige Punkte), wird
+  verworfen, danach malt nichts, bis alle Finger weg sind. Maus: Strg + Mausrad (auch Zwei-Finger-Zoom am Touchpad)
+  zoomt am Zeiger, Mausrad verschiebt im vergrößerten Bild, mittlere Taste zieht. Knöpfe Vergrößern, Verkleinern,
+  Ganzes Bild für alle anderen.
+- **Malen über Stunden, auf mehreren Geräten:** Jede Anfrage trägt `base` (bestätigter Stand, auf dem der Browser
+  aufbaut) und `dev` (Kennung der geöffneten Seite). Gleiches Gerät: doppelte Befehle überspringen wie oben. Anderes
+  Gerät und anderer Stand: der Server mischt nicht, sondern schickt den gespeicherten Stand (`conflict`), der
+  Browser übernimmt ihn. Den bestätigten Stand rechnet der Browser mit `applyCmd` selbst nach (wie der Server).
+  Offene Befehle liegen im Gerätespeicher (`tagesbild.entwurf.<Raum>.<Tag>`) und gehen beim Schließen mit
+  `navigator.sendBeacon` raus; beim nächsten Öffnen werden sie nachgeschickt, wenn sie an den Stand anschließen.
+- **Vorschaubilder** für die Galerie: 160 px als JPEG-Daten-URL (`thumbnail`), höchstens alle zwanzig Sekunden mit
+  einer Speicherung und nach einer Pause; fehlt eins oder ist es älter als das Bild, reicht es der Browser nach, der
+  das Bild ganz zeigt.
 
 ## Fallen
 

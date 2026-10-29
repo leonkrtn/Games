@@ -7,6 +7,7 @@ import { isIos, isStandalone } from '@/lib/push-client';
 import { storage } from './api';
 import { PLAYER_COLORS } from '@/lib/colors';
 import { HaiCard } from './Hai';
+import { TagesbildCard } from './Tagesbild';
 
 // Zahlen im Text als Wort (die Textschrift hat eine durchgestrichene Null)
 const WORDS = ['keine', 'eine', 'zwei', 'drei', 'vier', 'fünf', 'sechs', 'sieben', 'acht', 'neun', 'zehn', 'elf', 'zwölf'];
@@ -156,6 +157,13 @@ export default function Home({ user, openRoom, openPage, showToast, push, onLogo
         <section>
           <h2 className="section-title">Hai</h2>
           <HaiCard hai={data.hai} onOpen={() => openPage('hai')} />
+        </section>
+      )}
+
+      {data?.tagesbild && (
+        <section>
+          <h2 className="section-title">Tagesbild</h2>
+          <TagesbildCard info={data.tagesbild} onOpen={() => openPage('tagesbild')} />
         </section>
       )}
 
@@ -334,6 +342,12 @@ function Menu({ data, push, openPage }) {
         <button className="menu-row" id="menu-hai" onClick={() => openPage('hai')}>
           <span className="menu-title">Hai adoptieren</span>
           <span className="menu-status">Ein Kuscheltier für dich und eine Person</span>
+        </button>
+      )}
+      {data && !data.tagesbild && data.friends.length > 0 && (
+        <button className="menu-row" id="menu-tagesbild" onClick={() => openPage('tagesbild')}>
+          <span className="menu-title">Tagesbild starten</span>
+          <span className="menu-status">Jeden Tag ein Bild mit einer Person</span>
         </button>
       )}
       <button className="menu-row" id="menu-group" onClick={() => openPage('gruppe')}>

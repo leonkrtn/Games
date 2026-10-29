@@ -1,0 +1,934 @@
+/* Tagesbild (components/Tagesbild.js, tagesbild-board.js). Ruhig wie die Plattform, Bewegung auf dem Blatt. */
+
+/* Spalten nie breiter als der Platz: sonst drücken Zeilen mit nowrap (Status mit langem Namen) ihre volle Breite durch */
+.tb-page {
+  max-width: 1000px;
+  grid-template-columns: minmax(0, 1fr);
+}
+.tb-head .back {
+  margin-bottom: 12px;
+}
+.tb-with {
+  margin-top: 6px;
+}
+
+/* ---------- Start ---------- */
+
+.tb-intro,
+.tb-wait {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px 22px;
+}
+.tb-intro-pic svg {
+  display: block;
+  width: 104px;
+  height: auto;
+}
+.tb-intro .page-intro {
+  flex: 1 1 13em;
+  margin: 0;
+}
+.tb-wait > p {
+  flex: 1 1 13em;
+}
+.tb-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin-top: 10px;
+}
+.tb-start-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+}
+.tb-small {
+  font-size: var(--t-sm);
+  margin-top: 6px;
+}
+
+/* ---------- Heute ---------- */
+
+.tb-today {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+}
+.tb-taskhead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  border-top: 2px solid var(--line);
+  padding-top: 12px;
+}
+.tb-by {
+  color: var(--muted);
+  font-size: var(--t-sm);
+  font-weight: 700;
+}
+.tb-task {
+  font: 800 var(--t-2xl) / 1.02 var(--font-display);
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+.tb-taskhead .tb-task {
+  animation: tb-task-in 460ms cubic-bezier(0.2, 0.8, 0.2, 1) 60ms backwards;
+}
+@keyframes tb-task-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+.tb-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 20px;
+  min-height: 1.6em;
+  margin-top: 4px;
+  font-size: var(--t-sm);
+}
+.tb-count .num {
+  font-size: var(--t-md);
+  line-height: 1;
+}
+/* Immer eine Zeile (langer Name mit Auslassungspunkten): Wechselt der Stand, rutscht nichts */
+.tb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  min-width: 0;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.tb-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tb-chip .marker {
+  flex: none;
+}
+.tb-chip[data-state='malt'] .marker {
+  animation: tb-busy 1.6s ease-in-out infinite;
+}
+@keyframes tb-busy {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* ---------- Malbrett ---------- */
+
+.tb-boardhost {
+  min-width: 0;
+}
+.tb-board {
+  --tb-cur: var(--ink);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.tb-paper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: #fff;
+  outline: 2px solid var(--ink);
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  cursor: none;
+  animation: tb-paper-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+@keyframes tb-paper-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+.tb-board[data-tool='eimer'] .tb-paper,
+.tb-board[data-tool='linie'] .tb-paper,
+.tb-board[data-tool='rechteck'] .tb-paper,
+.tb-board[data-tool='kreis'] .tb-paper {
+  cursor: crosshair;
+}
+.tb-board.is-locked .tb-paper {
+  cursor: default;
+}
+.tb-zoom {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+}
+.tb-zoom.tb-anim {
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.tb-canvas,
+.tb-overlay {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.tb-overlay,
+.tb-fx {
+  pointer-events: none;
+}
+.tb-fx {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.tb-ripple {
+  position: absolute;
+  width: 36%;
+  aspect-ratio: 1;
+  border: 3px solid var(--c);
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  animation: tb-ripple 520ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+@keyframes tb-ripple {
+  60% {
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}
+.tb-torn {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform-origin: 0 0;
+}
+.tb-cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px #fff;
+  pointer-events: none;
+}
+.tb-zoomlabel {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  padding: 0 4px;
+  background: #fff;
+  font-size: var(--t-md);
+  line-height: 1.1;
+  pointer-events: none;
+}
+.tb-zoomlabel:empty {
+  visibility: hidden;
+}
+
+.tb-tools {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  width: 100%;
+  max-width: 520px;
+  transition: opacity 200ms ease-out;
+}
+.tb-board.is-locked .tb-tools {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.tb-kinds {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+}
+.tb-tool {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 46px;
+  padding: 2px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+.tb-tool svg {
+  display: block;
+  width: 34px;
+  height: 34px;
+  overflow: visible;
+}
+.tb-tool:hover:not(:disabled) {
+  background: var(--wash);
+}
+.tb-tool:active:not(:disabled) {
+  transform: scale(0.96);
+}
+.tb-tool[aria-pressed='true'] {
+  border-color: var(--ink);
+  background: var(--wash);
+}
+.tb-tool:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.tb-kinds .tb-tool {
+  animation: tb-tool-in 320ms cubic-bezier(0.2, 0.8, 0.2, 1) calc(120ms + var(--i) * 40ms) backwards;
+}
+@keyframes tb-tool-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* Farben wie Näpfchen in einem Malkasten: Kasten aus Pappe, Näpfchen mit Ink-Rand und Licht oben links */
+.tb-palette {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+  padding: 7px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-m);
+  background: #f3efe6;
+}
+.tb-swatch {
+  appearance: none;
+  position: relative;
+  min-width: 0;
+  aspect-ratio: 1.15;
+  min-height: 30px;
+  padding: 0;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius-m);
+  background: var(--c);
+  cursor: pointer;
+  transition: transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: tb-tool-in 300ms cubic-bezier(0.2, 0.8, 0.2, 1) calc(160ms + var(--i) * 12ms) backwards;
+}
+.tb-swatch::after {
+  content: '';
+  position: absolute;
+  left: 16%;
+  top: 14%;
+  width: 34%;
+  height: 22%;
+  border-top: 2px solid #fff;
+  border-left: 2px solid #fff;
+  border-radius: 60% 0 0 0;
+  opacity: 0.5;
+}
+.tb-swatch:active {
+  transform: scale(0.94);
+}
+.tb-swatch[aria-pressed='true'] {
+  box-shadow:
+    0 0 0 2px #f3efe6,
+    0 0 0 4px var(--ink);
+  transform: translateY(-2px);
+}
+.tb-board[data-tool='radierer'] .tb-swatch[aria-pressed='true'] {
+  box-shadow: none;
+  transform: none;
+}
+
+.tb-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.tb-sizes,
+.tb-view {
+  display: flex;
+  gap: 2px;
+}
+.tb-size {
+  min-width: 36px;
+}
+.tb-size i {
+  display: block;
+  width: var(--d);
+  height: var(--d);
+  border-radius: 50%;
+  background: var(--tb-cur);
+  box-shadow: 0 0 0 1px var(--ink);
+}
+.tb-board[data-tool='radierer'] .tb-size i {
+  background: #fff;
+}
+.tb-view .tb-tool {
+  min-width: 40px;
+}
+.tb-cmds {
+  justify-content: flex-start;
+}
+.tb-cmd {
+  min-height: 44px;
+  padding: 6px 12px;
+  gap: 6px;
+}
+.tb-cmd svg {
+  width: 26px;
+  height: 26px;
+}
+/* Auf dem Handy nur die Pfeile; sie sind bekannt, und so passt die Reihe */
+.tb-cmd[data-cmd='u'] span,
+.tb-cmd[data-cmd='r'] span {
+  display: none;
+}
+.tb-note {
+  min-height: 1.5em;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+.tb-drawing {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+}
+.tb-send {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+}
+.tb-send .muted {
+  font-size: var(--t-sm);
+}
+
+@media (min-width: 880px) {
+  .tb-board {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 24px;
+  }
+  .tb-paper {
+    width: min(100%, calc(100vh - 150px));
+    justify-self: center;
+  }
+  .tb-cmd[data-cmd='u'] span,
+  .tb-cmd[data-cmd='r'] span {
+    display: inline;
+  }
+}
+
+/* ---------- Blätter: abgeschickt, aufgedeckt, Galerie ---------- */
+
+.tb-sent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px 28px;
+}
+.tb-sent > div {
+  flex: 1 1 13em;
+}
+.tb-fig-sent {
+  flex: none;
+  width: min(100%, 280px);
+}
+.tb-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 30px;
+  align-items: start;
+}
+.tb-pair-wait {
+  aspect-ratio: 1;
+}
+@media (min-width: 640px) {
+  .tb-pair {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 28px;
+  }
+  .tb-pair-wait {
+    aspect-ratio: 2;
+  }
+}
+.tb-fig {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  margin: 0;
+  min-width: 0;
+}
+.tb-flip {
+  position: relative;
+  perspective: 1600px;
+  transform: rotate(var(--tilt, 0deg));
+  padding-top: 10px;
+}
+.tb-flip-inner {
+  position: relative;
+  display: grid;
+  transform-style: preserve-3d;
+}
+.tb-face {
+  grid-area: 1 / 1;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+.tb-back {
+  transform: rotateY(180deg);
+}
+.tb-back svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.tb-sheet {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1.5px solid var(--ink);
+  background: #fff;
+}
+.tb-sheet canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.tb-fig-sent .tb-sheet {
+  transform: rotate(-1.2deg);
+}
+/* Klebestreifen in der Farbe der Person, mit gezackten Enden */
+.tb-tape {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 36%;
+  height: 22px;
+  margin-left: -18%;
+  background: color-mix(in srgb, var(--pc) 45%, white);
+  opacity: 0.92;
+  transform: rotate(-2.5deg);
+  clip-path: polygon(0 8%, 6% 0, 12% 10%, 18% 0, 82% 0, 88% 10%, 94% 0, 100% 8%, 100% 92%, 94% 100%, 88% 90%, 82% 100%, 18% 100%, 12% 90%, 6% 100%, 0 92%);
+  pointer-events: none;
+}
+.tb-fig-sent .tb-tape {
+  top: -10px;
+}
+.tb-noimg {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  color: var(--muted);
+  text-align: center;
+}
+.tb-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font: 800 var(--t-lg) / 1 var(--font-display);
+}
+.tb-social {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+.tb-heart {
+  appearance: none;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 4px 12px 4px 6px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  font: 700 var(--t-sm) / 1.2 var(--font-body);
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+.tb-heart:hover:not(:disabled) {
+  background: var(--wash);
+}
+.tb-heart:active:not(:disabled) {
+  transform: scale(0.96);
+}
+.tb-heart-icon {
+  position: relative;
+  display: block;
+}
+.tb-heart-icon svg {
+  display: block;
+  width: 32px;
+  height: 32px;
+}
+/* Herz geben: das Herz wächst heraus, ein Ring läuft auseinander */
+.tb-heart-icon.pop svg {
+  animation: tb-heart 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.tb-heart-icon.pop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--p1);
+  border-radius: 50%;
+  animation: tb-heart-ring 520ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  pointer-events: none;
+}
+@keyframes tb-heart {
+  from {
+    transform: scale(0.55);
+  }
+}
+@keyframes tb-heart-ring {
+  from {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+.tb-heart-small svg {
+  display: inline-block;
+  width: 1.15em;
+  height: 1.15em;
+  margin-right: 5px;
+  vertical-align: -0.2em;
+}
+.tb-got {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 1.6em;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.tb-got .tb-heart-small svg {
+  margin: 0;
+}
+.tb-got-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Drei Zeilen Platz: so lang ist ein Kommentar höchstens (hundert Zeichen) */
+.tb-comment {
+  min-height: 4.5em;
+  font-size: var(--t-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.tb-comment-form label {
+  margin-bottom: 6px;
+}
+.tb-comment-row {
+  display: flex;
+  gap: 8px;
+}
+.tb-comment-row input {
+  flex: 1 1 auto;
+}
+
+/* ---------- Aufgabe für den nächsten Tag ---------- */
+
+.tb-next {
+  display: grid;
+  gap: 8px;
+  max-width: 560px;
+}
+.tb-next .section-title {
+  margin-bottom: 4px;
+}
+.tb-task-form {
+  margin-top: 6px;
+}
+.tb-task-set {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 18px;
+}
+.tb-task-text {
+  font: 800 var(--t-xl) / 1.05 var(--font-display);
+  overflow-wrap: break-word;
+}
+
+/* ---------- Alle Tage ---------- */
+
+.tb-gallery {
+  display: grid;
+  gap: 10px;
+  max-width: 640px;
+}
+.tb-gallery-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 18px;
+}
+.tb-gallery-head .section-title {
+  margin: 0;
+}
+.tb-hearts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  font-weight: 700;
+}
+.tb-hearts .tb-heart-small svg {
+  margin-right: 0;
+}
+.tb-hearts .num {
+  font-size: var(--t-md);
+  line-height: 1;
+}
+.tb-month {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 2px solid var(--line);
+  padding: 4px 0;
+}
+.tb-month-btn {
+  appearance: none;
+  min-width: 48px;
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ink);
+  font: 700 var(--t-lg) / 1 var(--font-body);
+  cursor: pointer;
+}
+.tb-month-btn:hover:not(:disabled) {
+  background: var(--wash);
+}
+.tb-month-btn:disabled {
+  color: var(--hairline);
+  cursor: default;
+}
+.tb-month-name {
+  font: 800 var(--t-lg) / 1 var(--font-display);
+}
+.tb-cal {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+.tb-cal-wd {
+  color: var(--muted);
+  font-size: var(--t-sm);
+  font-weight: 700;
+  text-align: center;
+}
+.tb-cal-cell {
+  appearance: none;
+  position: relative;
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  min-width: 0;
+  aspect-ratio: 1;
+  padding: 3px;
+  border: 0;
+  border-top: 1px solid var(--hairline);
+  border-radius: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+}
+.tb-cal-cell.has-day {
+  color: var(--ink);
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+.tb-cal-cell.has-day:hover {
+  background: var(--wash);
+}
+.tb-cal-cell.is-blank {
+  border-top-color: transparent;
+}
+.tb-cal-n {
+  position: relative;
+  z-index: 1;
+  font-size: var(--t-sm);
+  line-height: 1;
+}
+.tb-cal-cell.is-today .tb-cal-n {
+  color: var(--p1);
+}
+.tb-cal-pics {
+  position: absolute;
+  inset: 34% 6% 5% 14%;
+}
+.tb-cal-pics img {
+  position: absolute;
+  width: 70%;
+  aspect-ratio: 1;
+  border: 1px solid var(--ink);
+  background: #fff;
+}
+.tb-cal-pics img:first-child {
+  left: 0;
+  top: 0;
+  transform: rotate(-4deg);
+}
+.tb-cal-pics img:nth-child(2) {
+  right: 0;
+  bottom: 0;
+  transform: rotate(3deg);
+}
+.tb-cal-pics[data-n='1'] img {
+  left: 15%;
+  top: 4%;
+}
+
+/* Ein Tag groß, über der Seite */
+.tb-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+  background: var(--paper);
+  animation: tb-layer-in 160ms ease-out;
+}
+@keyframes tb-layer-in {
+  from {
+    opacity: 0;
+  }
+}
+.tb-dayview {
+  display: grid;
+  gap: 14px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+.tb-dayview-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--line);
+}
+.tb-date {
+  font: 800 var(--t-lg) / 1.05 var(--font-display);
+}
+.tb-dayview .tb-task {
+  font-size: var(--t-xl);
+}
+.tb-dayview-nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+.tb-dayview-nav .link:disabled {
+  color: var(--hairline);
+  text-decoration-color: var(--hairline);
+  cursor: default;
+}
+
+.tb-end {
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
+}
+
+/* ---------- Startseite ---------- */
+
+.tb-card {
+  appearance: none;
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  padding: 12px 8px;
+  border: 0;
+  border-top: 2px solid var(--line);
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+.tb-card:hover {
+  background: var(--wash);
+}
+.tb-card-pic svg {
+  display: block;
+  width: 80px;
+  height: auto;
+}
+.tb-card-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.tb-card-name {
+  font: 800 var(--t-lg) / 1.05 var(--font-display);
+}
+.tb-card-with {
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+.tb-card-status {
+  font-size: var(--t-sm);
+  font-weight: 700;
+}
+.tb-card-status.urgent {
+  color: var(--p1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tb-taskhead .tb-task,
+  .tb-paper,
+  .tb-kinds .tb-tool,
+  .tb-swatch,
+  .tb-layer,
+  .tb-chip[data-state='malt'] .marker,
+  .tb-heart-icon.pop svg,
+  .tb-heart-icon.pop::after {
+    animation: none;
+  }
+  .tb-heart-icon.pop::after {
+    display: none;
+  }
+  .tb-zoom.tb-anim,
+  .tb-swatch {
+    transition: none;
+  }
+}

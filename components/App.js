@@ -9,6 +9,7 @@ import Friends from './Friends';
 import NotifySettings from './NotifySettings';
 import NewGroup from './NewGroup';
 import Hai from './Hai';
+import Tagesbild from './Tagesbild';
 import {
   pushSupport,
   registerServiceWorker,
@@ -18,7 +19,7 @@ import {
   deviceLabel,
 } from '@/lib/push-client';
 
-// Ansicht aus der Adresse: ?raum=CODE (Spielzimmer) oder ?seite=freunde|gruppe|benachrichtigungen|hai
+// Ansicht aus der Adresse: ?raum=CODE (Spielzimmer) oder ?seite=freunde|gruppe|benachrichtigungen|hai|tagesbild
 const roomFromUrl = () => new URLSearchParams(location.search).get('raum');
 const pageFromUrl = () => new URLSearchParams(location.search).get('seite');
 
@@ -80,7 +81,7 @@ export default function App() {
     history.replaceState(null, '', location.pathname);
   }, []);
 
-  const push = usePushDevice(room ?? (page === 'hai' ? 'hai' : 'home'), Boolean(user), showToast);
+  const push = usePushDevice(room ?? (page === 'hai' ? 'hai' : page === 'tagesbild' ? 'bild' : 'home'), Boolean(user), showToast);
   endpointRef.current = push.endpoint;
 
   if (user === undefined) return null;
@@ -110,6 +111,8 @@ export default function App() {
           />
         ) : page === 'hai' ? (
           <Hai user={user} goHome={goHome} showToast={showToast} onUnauthorized={onUnauthorized} />
+        ) : page === 'tagesbild' ? (
+          <Tagesbild user={user} goHome={goHome} showToast={showToast} onUnauthorized={onUnauthorized} />
         ) : page === 'benachrichtigungen' ? (
           <NotifySettings goHome={goHome} showToast={showToast} push={push} onUnauthorized={onUnauthorized} />
         ) : (
@@ -131,7 +134,7 @@ export default function App() {
 
 /**
  * Benachrichtigungen für dieses Gerät. Solange die App sichtbar ist, meldet sie alle 30 Sekunden,
- * welche Ansicht offen ist (Freundesliste, ein Spielzimmer oder der Hai). Dafür schickt der Server dann nichts.
+ * welche Ansicht offen ist (Freundesliste, ein Spielzimmer, der Hai oder das Tagesbild). Dafür schickt der Server dann nichts.
  */
 function usePushDevice(view, loggedIn, showToast) {
   const [support, setSupport] = useState(() => pushSupport());

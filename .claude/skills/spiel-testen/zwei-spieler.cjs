@@ -121,6 +121,21 @@ async function touchPath(page, points, { steps = 4 } = {}) {
   await touch('touchEnd');
 }
 
+// Zwei Finger spreizen oder zusammenziehen (Zoomen): um die Mitte c, Abstand jedes Fingers von `from` zu `to` px
+async function pinch(page, c, from, to, { steps = 10 } = {}) {
+  const cdp = page._svCdp ?? (page._svCdp = await page.context().newCDPSession(page));
+  const pts = (d) => [
+    { x: c.x - d, y: c.y, id: 1 },
+    { x: c.x + d, y: c.y, id: 2 },
+  ];
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(from) });
+  for (let k = 1; k <= steps; k++) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(from + ((to - from) * k) / steps) });
+    await sleep(16);
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+}
+
 // Mitte eines Elements in Fensterkoordinaten, z.B. für touchDrag oder page.mouse
 const center = (page, selector) =>
   page.$eval(selector, (n) => {
@@ -128,4 +143,4 @@ const center = (page, selector) =>
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   });
 
-module.exports = { start, sleep, touchDrag, touchPath, center, loadPlaywright };
+module.exports = { start, sleep, touchDrag, touchPath, pinch, center, loadPlaywright };

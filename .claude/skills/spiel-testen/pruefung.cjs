@@ -8,7 +8,8 @@
 //                  FLIP gleiten lässt (am Element oder einem Vorfahren läuft eine Animation mit transform).
 //   window.audit() Befunde zum jetzigen Bild: seitlich scrollbar, Bildschirm scrollt (am Fernseher), Text ragt
 //                  aus seinem Kasten, wird abgeschnitten, ist sehr klein, überdeckt anderen Text oder steht
-//                  außerhalb des Fensters.
+//                  außerhalb des Fensters. Geprüft wird das Spiel (#game); für andere Seiten der Plattform einen
+//                  Selektor mitgeben, z.B. window.audit('#tagesbild-page').
 
 // Gängige Größen (CSS-Pixel). Handy hochkant, PC und Tablet für Spieler; Fernseher, Laptop, Beamer und Tablet quer
 // als Bildschirm einer Gruppe.
@@ -86,7 +87,7 @@ function install() {
     }
   }).observe({ type: 'layout-shift', buffered: true });
 
-  window.audit = () => {
+  window.audit = (rootSelector = '#game') => {
     const out = [];
     const tv = document.documentElement.classList.contains('tv-mode');
     const de = document.documentElement;
@@ -100,7 +101,7 @@ function install() {
       below.sort((a, b) => b.getBoundingClientRect().bottom - a.getBoundingClientRect().bottom);
       out.push('Bildschirm scrollt: ' + de.scrollHeight + ' > ' + innerHeight + ', unten: ' + below.slice(0, 2).map((n) => describe(n) + ' bis ' + Math.round(n.getBoundingClientRect().bottom)).join(', '));
     }
-    const root = document.getElementById('game');
+    const root = document.querySelector(rootSelector);
     if (!root) return out;
     // Rückseite einer gedrehten Karte (backface-visibility: hidden und von hinten zu sehen): unsichtbar
     const facingAway = (face) => {

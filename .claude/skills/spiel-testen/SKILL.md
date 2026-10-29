@@ -70,7 +70,7 @@ genauso `env -u … npx next start -p 3100`.
 `players: 3` bis `6` gründet Anna eine Gruppe mit allen; `pages` enthält dann alle Seiten (Anna zuerst):
 
 ```js
-const { start, sleep, touchDrag, center } = require('/home/user/Games/.claude/skills/spiel-testen/zwei-spieler.cjs');
+const { start, sleep, touchDrag, pinch, center } = require('/home/user/Games/.claude/skills/spiel-testen/zwei-spieler.cjs');
 const { browser, A, B, errors } = await start({ game: 'qwixx', options: ['Gemixxt'] }); // 360 × 780, Touch
 await A.click('[data-action="wuerfeln"]');
 await A.screenshot({ path: '<scratchpad>/shots/01.png', fullPage: true });
@@ -273,6 +273,36 @@ Uhr), dafür die Regeln in Node mit festen Zeitpunkten simulieren (`advance(h, t
 zwei Konten: adoptieren (`/api/hai` mit `t: 'adopt'`), Meilen über zwei Partien Tic-Tac-Toe per API sammeln, dann
 reisen. Beim Schrubben mit `touchPath` über den Hai prüfen, dass `scrollY` gleich bleibt.
 
+## Plattformseiten: Tagesbild (Testuhr, alle Größen)
+
+Das Tagesbild hängt an der Uhrzeit des Servers (10, 21 und 23 Uhr in Berlin). Abgefangene Antworten reichen dafür
+nicht, denn der Server entscheidet, ob gemalt werden darf. Deshalb die **Testuhr**: Server mit
+`SPIELZIMMER_TESTUHR=1` starten (nie in Produktion, auf Vercel ist sie aus), dann stellt
+`POST /api/tagesbild { t: 'uhr', at: Date.parse('2026-10-29T21:59:20Z') }` die Uhr des Tagesbilds (Server und, über
+`now` in den Antworten, die Browser). In Node dasselbe ohne Server: `process.env.SPIELZIMMER_TESTUHR = '1'`,
+`globalThis.__tagesbildVersatz = ziel - Date.now()`, dann `handleTagesbild` und `tagesbildCron` direkt aufrufen
+(Ablauf über mehrere Tage mit Benachrichtigungen, Aufdecken um 23 Uhr, zweites Gerät mit altem Stand).
+
+```bash
+env -u NEXT_PUBLIC_SUPABASE_URL -u SUPABASE_SERVICE_ROLE_KEY -u SUPABASE_SECRET_KEY SPIELZIMMER_TESTUHR=1 npx next start -p 3100
+node .claude/skills/spiel-testen/tagesbild.cjs <scratchpad>/tagesbild            # alle Phasen in allen Größen
+node .claude/skills/spiel-testen/tagesbild.cjs <scratchpad>/tagesbild aufgedeckt # nur eine Phase fotografieren
+curl -s http://localhost:3100/api/cron                                            # täglicher Aufruf, z.B. nach dem Stellen der Uhr
+```
+
+`tagesbild.cjs` legt vier Konten mit zwanzig Zeichen langen Namen an und spielt Malen, Abschicken, Aufdecken, Herz
+und Kommentar, Tagesansicht, nächsten Morgen, Startseite, Start und „morgen geht es los“; nach jeder Phase Befunde
+und ein Übersichtsblatt. Die Prüfungen aus `pruefung.cjs` gelten auch für andere Seiten als das Spiel:
+`window.audit('#tagesbild-page')` (ohne Angabe nur `#game`). Begründete Befunde: In der Tagesansicht (fest über der
+Seite, scrollt in sich) meldet es Text „abgeschnitten“, der nur weiter unten in der Ansicht steht. Ganzseitige
+Fotos ändern kurz die Fenstergröße; was dabei rutscht, nach dem Foto verwerfen (`shifts.splice(0)` nach einer
+kurzen Pause), sonst stehen falsche „verschoben“-Meldungen da.
+
+Weitere Fallen dabei: Vor dem Messen der Malfläche (`boundingBox`) erst alle Knöpfe klicken, denn ein Klick scrollt
+den Knopf ins Bild und das Blatt verschiebt sich; `navigator.sendBeacon` geht an `page.route` vorbei (ein
+„ohne Netz“-Test sieht die Striche trotzdem beim Server ankommen). Gleiches Bild bei beiden: Pixel der eigenen
+Malfläche und des aufgedeckten Blatts bei der anderen Person hashen und vergleichen.
+
 ## 4. Finger-Gesten
 
 `page.mouse` und `page.click` prüfen nicht, ob die Seite beim Ziehen mit dem Finger scrollt.
@@ -285,6 +315,7 @@ console.log(await A.evaluate(() => scrollY) === y0); // true: gezogen, nicht ges
 ```
 
 Immer beides prüfen: Ziehen auf dem Spielstück scrollt nicht, Wischen daneben scrollt weiterhin.
+Zwei Finger (Zoomen): `pinch(A, mitte, 40, 120)` spreizt die Finger von 40 auf 120 px Abstand zur Mitte.
 Tippen: `A.touchscreen.tap(x, y)`. Über mehrere Punkte (Malen, Wischgesten): `touchPath(A, [{ x, y }, …])`.
 
 ## 5. Live-Nachrichten (`game.live`)
