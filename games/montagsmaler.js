@@ -6,21 +6,26 @@
 // Zeit um oder alle haben aufgegeben: nächste Runde, der Nächste zeichnet. Schafft ihr alle Wörter,
 // gewinnt ihr alle. Am Ende zeigt eine Galerie alle Bilder der Partie.
 //
-// Zeichnen: Die Zeichnung ist eine Liste von Befehlen (Strich, Füllen, Löschen, Zurück, Vor), die der
-// Server und beide Browser gleich anwenden. Gemalt wird auf ein eigenes Raster (S × S Punkte, jede
-// Zelle eine Farbnummer) statt mit den Canvas-Funktionen: So ergibt der Eimer überall exakt dieselbe
-// Fläche, auch wenn Browser Linien unterschiedlich glätten. Damit die Rater flüssig zusehen, gehen
-// Striche schon während des Zeichnens über game.live an die anderen Browser; gespeichert wird jeder
-// fertige Befehl mit einer laufenden Nummer (seq), damit nichts doppelt oder in falscher Reihenfolge ankommt.
+// Zeichnen: Die Zeichnung ist eine Liste von Befehlen (Strich, Form, Füllen, Löschen, Zurück, Vor), die der
+// Server und alle Browser gleich anwenden (lib/malen.js, wie beim Tagesbild). Gemalt wird auf ein eigenes
+// Raster (S × S Punkte, jede Zelle eine Farbnummer) statt mit den Canvas-Funktionen: So ergibt der Eimer
+// überall exakt dieselbe Fläche, auch wenn Browser Linien unterschiedlich glätten. Das Malbrett mit
+// vierundzwanzig Farben, fünf Dicken, Linie, Rechteck, Kreis, Eimer, der Lücken schließt, und Zoomen kommt
+// aus lib/malbrett.js. Damit die Rater flüssig zusehen, gehen Striche und Formen schon während des Zeichnens
+// über game.live an die anderen Browser; gespeichert wird jeder fertige Befehl mit einer laufenden Nummer
+// (seq), damit nichts doppelt oder in falscher Reihenfolge ankommt.
 //
 // Bildschirm (ein Gruppenmitglied, das nicht mitspielt, z.B. ein Fernseher): screen() zeigt, was die Rater
 // sehen, present() zeichnet es groß ohne Eingaben: Zeichnung live, Zeit, Wortstriche, Versuche aller, wer
 // zeichnet und wer es erraten hat, die Auflösung und am Ende die Galerie.
 //
-// Motion: Die Runden bauen sich als Kästchen auf, die Buchstaben-Striche fallen ein, Stifte heben
-// sich bei der Auswahl, der Eimer zieht einen Ring, „Alles löschen“ reißt das Blatt ab, falsche
+// Motion: Die Runden bauen sich als Kästchen auf, die Buchstaben-Striche fallen ein, Werkzeuge und
+// Näpfchen des Malkastens rücken ein, der Eimer zieht einen Ring, „Alles löschen“ reißt das Blatt ab, falsche
 // Versuche rutschen in die Liste. Ist das Wort erraten, schrumpft die Zeichnung in die Auflösung,
 // die Buchstaben klappen um und ein Haken zeichnet sich ein. Am Ende kommt die Galerie Bild für Bild.
+
+import { PALETTE, PEN, S, applyCmd, emptyDrawing, fromSmallPalette, paintRaster, rasterOf } from '../lib/malen.js';
+import { MALBRETT_CSS, createPad, defaultTools, paperHtml, toolsHtml } from '../lib/malbrett.js';
 
 export const meta = {
   name: 'Montagsmaler',
@@ -51,114 +56,13 @@ export const meta = {
 
 // ---------- Zeichnung (Server und Browser) ----------
 
-const S = 1000; // Malfläche: S × S Rasterpunkte
-const PEN = [4, 10, 22]; // Stiftdicke als Radius in Rasterpunkten: dünn, mittel, dick
-const RUBBER = [10, 24, 48]; // Radierer
-const COLORS = 7; // 0 = Papier (Radierer), 1–6 = Farben
-const MAX_OPS = 1500;
-const MAX_CHARS = 60_000; // Summe aller Strich-Codes einer Zeichnung, hält den Zustand klein
-const MAX_STROKE = 6000; // Zeichen eines Strichs
+// Befehle, Raster und Eimer: lib/malen.js (wie beim Tagesbild), Malbrett mit Werkzeugen: lib/malbrett.js.
+// Kleinere Obergrenzen als dort: Der Zustand wird bei jedem Zug ganz gespeichert.
+const LIMITS = { ops: 1500, chars: 60_000 };
+const apply = (d, cmd) => applyCmd(d, cmd, LIMITS);
 const MAX_WORD = 24;
 const GRACE = 800; // ms nach Ablauf: Tipps, die gerade unterwegs sind, zählen noch
-
-const radius = (c, w) => (c === 0 ? RUBBER : PEN)[w];
-
-// Punkte eines Strichs als kurzer Text: pro Achse ein Zeichen für den Abstand zum vorigen Punkt
-// (−31 bis 31), sonst „_“ und zwei Zeichen für den Wert selbst.
-const ABC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-const IDX = new Map([...ABC].map((c, i) => [c, i]));
-
-function encodePoints(pts) {
-  let out = '';
-  let px = null;
-  let py = null;
-  for (const [x, y] of pts) {
-    for (const [v, prev] of [
-      [x, px],
-      [y, py],
-    ]) {
-      const d = prev === null ? 99 : v - prev;
-      out += d >= -31 && d <= 31 ? ABC[d + 31] : '_' + ABC[v >> 6] + ABC[v & 63];
-    }
-    px = x;
-    py = y;
-  }
-  return out;
-}
-
-// [[x, y], …] oder null, wenn der Text nicht stimmt
-function decodePoints(p) {
-  if (typeof p !== 'string' || !p.length || p.length > MAX_STROKE) return null;
-  const vals = [];
-  const prev = [null, null];
-  for (let i = 0; i < p.length; ) {
-    const axis = vals.length % 2;
-    const c = IDX.get(p[i]);
-    let v;
-    if (c === undefined) return null;
-    if (c === 63) {
-      const a = IDX.get(p[i + 1]);
-      const b = IDX.get(p[i + 2]);
-      if (a === undefined || b === undefined) return null;
-      v = a * 64 + b;
-      i += 3;
-    } else {
-      if (prev[axis] === null) return null;
-      v = prev[axis] + c - 31;
-      i += 1;
-    }
-    if (v < 0 || v >= S) return null;
-    prev[axis] = v;
-    vals.push(v);
-  }
-  if (vals.length % 2) return null;
-  const pts = [];
-  for (let i = 0; i < vals.length; i += 2) pts.push([vals[i], vals[i + 1]]);
-  return pts;
-}
-
 const isInt = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
-
-// Befehl → gespeicherter Schritt der Zeichnung (oder null, wenn er keiner ist bzw. nicht stimmt)
-function cleanOp(cmd) {
-  const { s, t } = cmd;
-  if (t === 's' && isInt(cmd.c, 0, COLORS - 1) && isInt(cmd.w, 0, 2) && decodePoints(cmd.p)) {
-    return { s, t, c: cmd.c, w: cmd.w, p: cmd.p };
-  }
-  if (t === 'f' && isInt(cmd.c, 0, COLORS - 1) && isInt(cmd.x, 0, S - 1) && isInt(cmd.y, 0, S - 1)) {
-    return { s, t, c: cmd.c, x: cmd.x, y: cmd.y };
-  }
-  if (t === 'c') return { s, t };
-  return null;
-}
-
-const charsOf = (ops) => ops.reduce((sum, op) => sum + (op.p?.length ?? 8), 0);
-
-const emptyDrawing = () => ({ ops: [], n: 0, seq: 0 });
-
-/**
- * Wendet einen Befehl auf die Zeichnung d = { ops, n, seq } an (verändert d).
- * ops.slice(0, n) ist zu sehen, der Rest lässt sich mit „Vor“ zurückholen.
- * Befehle: s Strich { c, w, p }, f Füllen { c, x, y }, c Alles löschen, u Zurück, r Vor;
- * jeder mit laufender Nummer s = seq + 1.
- * Rückgabe: false = passt nicht an diese Stelle, 'voll' = verworfen, weil die Zeichnung voll ist, sonst true.
- */
-function applyCmd(d, cmd) {
-  if (!cmd || typeof cmd !== 'object' || cmd.s !== d.seq + 1) return false;
-  d.seq = cmd.s;
-  if (cmd.t === 'u') d.n = Math.max(0, d.n - 1);
-  else if (cmd.t === 'r') d.n = Math.min(d.ops.length, d.n + 1);
-  else {
-    const op = cleanOp(cmd);
-    if (!op || (op.t === 'c' && !d.n)) return true;
-    const ops = d.ops.slice(0, d.n);
-    if (ops.length >= MAX_OPS || charsOf(ops) + (op.p?.length ?? 8) > MAX_CHARS) return 'voll';
-    ops.push(op);
-    d.ops = ops;
-    d.n = ops.length;
-  }
-  return true;
-}
 
 // ---------- Wörter ----------
 
@@ -282,7 +186,18 @@ export function setup(players, options = {}) {
     guesses: [], // falsche Versuche dieser Runde: [{ text, close, by }]
     gaveUp: [], // Rater, die in dieser Runde aufgegeben haben
     past: [], // fertige Runden: [{ drawer, word, guessed, by, ms, tries, ops }]
+    mal: 2, // Zeichnungen mit der großen Palette (lib/malen.js); ohne: alte Partie, siehe upgrade
   };
+}
+
+// Partien von vor der großen Palette (sieben Farben, drei Dicken): Farben und Dicken der gespeicherten
+// Zeichnungen umschreiben. Laufende Partien in tick (wird gespeichert), fertige nur für die Ansicht in view.
+function upgrade(s) {
+  if (s.mal === 2) return s;
+  s.drawing = { ...s.drawing, ops: s.drawing.ops.map(fromSmallPalette) };
+  s.past = s.past.map((r) => (r.ops ? { ...r, ops: r.ops.map(fromSmallPalette) } : r));
+  s.mal = 2;
+  return s;
 }
 
 export function action(s, { player, type, data }) {
@@ -319,7 +234,7 @@ export function action(s, { player, type, data }) {
       let changed = false;
       for (const cmd of cmds) {
         if (typeof cmd?.s === 'number' && cmd.s <= s.drawing.seq) continue;
-        if (!applyCmd(s.drawing, cmd)) break;
+        if (!apply(s.drawing, cmd)) break;
         changed = true;
       }
       if (changed && !s.startedAt) {
@@ -355,6 +270,7 @@ export function action(s, { player, type, data }) {
 
 // Zeit um? Dann ist das Wort nicht erraten.
 export function tick(s, now) {
+  upgrade(s);
   if (s.phase === 'malen' && s.deadline && now >= s.deadline + GRACE) endRound(s, false, now);
 }
 
@@ -425,7 +341,8 @@ export function notices(s, before, player) {
 
 // Geheim: das Wort (die Rater sehen nur die Striche) und die Vorschläge des Zeichners.
 // Die Zeichnungen fertiger Runden kommen erst am Ende mit, bis dahin nur die der letzten Runde.
-export function view(s, me) {
+export function view(state, me) {
+  const s = state.mal === 2 ? state : upgrade({ ...state });
   const { deck, deckPos, ...rest } = s;
   if (s.result) return rest;
   const v = {
@@ -448,337 +365,10 @@ export function screen(s) {
 
 // ---------- Anzeige (nur im Browser) ----------
 
-const INK = '#141414';
-const WOOD = '#ecc995';
-const ROSE = '#e9a3a0'; // Radiergummi
-const SLEEVE = '#3a6b98';
-// Malfarben (Index wie in den Befehlen): Farbe auf dem Papier und die drei Facetten des Stifts (Licht von links)
-const PAINTS = [
-  { name: 'Radierer', paint: '#ffffff' },
-  { name: 'Schwarz', paint: '#141414', facets: ['#262626', '#4d4d4d', '#0d0d0d'] },
-  { name: 'Rot', paint: '#d33a2c', facets: ['#d33a2c', '#e0675b', '#a82a1f'] },
-  { name: 'Blau', paint: '#2f6fb3', facets: ['#2f6fb3', '#5a8fc8', '#22558c'] },
-  { name: 'Grün', paint: '#2e8b4e', facets: ['#2e8b4e', '#58a674', '#226a3b'] },
-  { name: 'Gelb', paint: '#f2c230', facets: ['#f2c230', '#f6d46a', '#cf9f17'] },
-  { name: 'Braun', paint: '#8a5a2e', facets: ['#8a5a2e', '#a77b52', '#6a4321'] },
-];
-const RGB = PAINTS.map(({ paint }) => [1, 3, 5].map((i) => parseInt(paint.slice(i, i + 2), 16)));
-const LUT = new Uint32Array(RGB.map(([r, g, b]) => (255 << 24) | (b << 16) | (g << 8) | r)); // RGBA im Speicher
+// Kleines Bild einer Zeichnung (Auflösung, Galerie), gemittelt, das glättet die Kanten.
+const drawThumb = (canvas, ops) => paintRaster(canvas, rasterOf(ops));
 
-// --- Raster: eine Farbnummer pro Rasterpunkt ---
-
-function createRaster() {
-  // drawn: Schlüssel der gemalten Schritte, marks: Zwischenstände (Anzahl Schritte → Kopie), pv: Vorschau obendrauf
-  return { buf: new Uint8Array(S * S), drawn: [], marks: new Map(), pv: null, dirty: null };
-}
-
-function touch(r, x0, y0, x1, y1) {
-  const d = r.dirty;
-  if (!d) r.dirty = { x0, y0, x1, y1 };
-  else Object.assign(d, { x0: Math.min(d.x0, x0), y0: Math.min(d.y0, y0), x1: Math.max(d.x1, x1), y1: Math.max(d.y1, y1) });
-}
-
-// Strichstück mit runden Enden: alle Punkte, deren Mitte höchstens rad von der Strecke a–b entfernt ist.
-// Pro Zeile ist das eine Spanne (Kreis um a, Kreis um b und das Band dazwischen). Nur Grundrechenarten
-// und Wurzeln, damit jeder Browser exakt dieselben Punkte trifft.
-function capsule(r, ax, ay, bx, by, rad, c) {
-  const y0 = Math.max(0, Math.floor(Math.min(ay, by) - rad));
-  const y1 = Math.min(S - 1, Math.ceil(Math.max(ay, by) + rad));
-  const dx = bx - ax;
-  const dy = by - ay;
-  const len2 = dx * dx + dy * dy;
-  const reach = rad * Math.sqrt(len2);
-  const r2 = rad * rad;
-  let minX = S;
-  let maxX = -1;
-  for (let y = y0; y <= y1; y++) {
-    const py = y + 0.5 - ay; // alles relativ zu a
-    let lo = Infinity;
-    let hi = -Infinity;
-    let h = r2 - py * py;
-    if (h >= 0) {
-      h = Math.sqrt(h);
-      lo = -h;
-      hi = h;
-    }
-    const qy = py - dy;
-    h = r2 - qy * qy;
-    if (h >= 0) {
-      h = Math.sqrt(h);
-      lo = Math.min(lo, dx - h);
-      hi = Math.max(hi, dx + h);
-    }
-    if (len2 > 0) {
-      // Band: Fußpunkt auf der Strecke (0 ≤ p·d ≤ |d|²) und Abstand zur Geraden höchstens rad
-      let a = -Infinity;
-      let b = Infinity;
-      if (dx !== 0) {
-        const u = (-py * dy) / dx;
-        const v = (len2 - py * dy) / dx;
-        a = Math.max(a, Math.min(u, v));
-        b = Math.min(b, Math.max(u, v));
-      } else if (py * dy < 0 || py * dy > len2) b = -Infinity;
-      if (dy !== 0) {
-        const u = (py * dx - reach) / dy;
-        const v = (py * dx + reach) / dy;
-        a = Math.max(a, Math.min(u, v));
-        b = Math.min(b, Math.max(u, v));
-      } else if (Math.abs(py * dx) > reach) b = -Infinity;
-      if (a <= b) {
-        lo = Math.min(lo, a);
-        hi = Math.max(hi, b);
-      }
-    }
-    const xs = Math.max(0, Math.ceil(lo + ax - 0.5));
-    const xe = Math.min(S - 1, Math.floor(hi + ax - 0.5));
-    if (xs > xe) continue;
-    r.buf.fill(c, y * S + xs, y * S + xe + 1);
-    if (xs < minX) minX = xs;
-    if (xe > maxX) maxX = xe;
-  }
-  if (maxX >= 0) touch(r, minX, y0, maxX, y1);
-}
-
-// Kurve von a nach b mit Kontrollpunkt q, in kurze Stücke zerlegt
-function curve(r, a, q, b, rad, c) {
-  const len = Math.sqrt((q[0] - a[0]) ** 2 + (q[1] - a[1]) ** 2) + Math.sqrt((b[0] - q[0]) ** 2 + (b[1] - q[1]) ** 2);
-  const n = Math.max(1, Math.ceil(len / Math.max(2, rad * 0.75)));
-  let [px, py] = a;
-  for (let i = 1; i <= n; i++) {
-    const t = i / n;
-    const v = 1 - t;
-    const x = v * v * a[0] + 2 * v * t * q[0] + t * t * b[0];
-    const y = v * v * a[1] + 2 * v * t * q[1] + t * t * b[1];
-    capsule(r, px, py, x, y, rad, c);
-    px = x;
-    py = y;
-  }
-}
-
-// Ein Strich besteht aus Stücken: Stück 0 vom ersten Punkt zur ersten Mitte, Stück k eine Kurve um Punkt k
-// (braucht Punkt k + 1), am Schluss das Endstück bis zum letzten Punkt. Zeichnet die Stücke ab `from`,
-// so kann ein Strich wachsen, während er noch gezeichnet wird. Rückgabe: Zahl der fertigen Stücke.
-function strokePieces(r, pts, c, rad, from, final) {
-  const n = pts.length;
-  const mid = (i) => [(pts[i][0] + pts[i + 1][0]) / 2, (pts[i][1] + pts[i + 1][1]) / 2];
-  const ready = Math.max(0, n - 1);
-  for (let k = from; k < ready; k++) {
-    if (k === 0) capsule(r, pts[0][0], pts[0][1], ...mid(0), rad, c);
-    else curve(r, mid(k - 1), pts[k], mid(k), rad, c);
-  }
-  if (final) {
-    const a = n === 1 ? pts[0] : mid(n - 2);
-    capsule(r, a[0], a[1], pts[n - 1][0], pts[n - 1][1], rad, c);
-  }
-  return ready;
-}
-
-// Eimer: zusammenhängende Fläche gleicher Farbe (Nachbarn oben, unten, links, rechts) umfärben
-function flood(r, x, y, c) {
-  const buf = r.buf;
-  const target = buf[y * S + x];
-  if (target === c) return;
-  let x0 = x;
-  let x1 = x;
-  let y0 = y;
-  let y1 = y;
-  const stack = [x, y];
-  while (stack.length) {
-    const sy = stack.pop();
-    const sx = stack.pop();
-    const row = sy * S;
-    if (buf[row + sx] !== target) continue;
-    let l = sx;
-    let rr = sx;
-    while (l > 0 && buf[row + l - 1] === target) l--;
-    while (rr < S - 1 && buf[row + rr + 1] === target) rr++;
-    buf.fill(c, row + l, row + rr + 1);
-    if (l < x0) x0 = l;
-    if (rr > x1) x1 = rr;
-    if (sy < y0) y0 = sy;
-    if (sy > y1) y1 = sy;
-    for (const ny of [sy - 1, sy + 1]) {
-      if (ny < 0 || ny >= S) continue;
-      const nrow = ny * S;
-      let open = false;
-      for (let k = l; k <= rr; k++) {
-        if (buf[nrow + k] === target) {
-          if (!open) stack.push(k, ny);
-          open = true;
-        } else open = false;
-      }
-    }
-  }
-  touch(r, x0, y0, x1, y1);
-}
-
-function applyOp(r, op) {
-  if (op.t === 's') {
-    const pts = decodePoints(op.p);
-    if (pts) strokePieces(r, pts, op.c, radius(op.c, op.w), 0, true);
-  } else if (op.t === 'f') flood(r, op.x, op.y, op.c);
-  else if (op.t === 'c') {
-    r.buf.fill(0);
-    touch(r, 0, 0, S - 1, S - 1);
-  }
-}
-
-const opKey = (op) =>
-  op.t === 's' ? `${op.s}s${op.c}${op.w}:${op.p.length}:${op.p.slice(-6)}` : op.t === 'f' ? `${op.s}f${op.c}:${op.x},${op.y}` : `${op.s}c`;
-
-const MARK_EVERY = 12;
-
-function remember(r) {
-  const k = r.drawn.length;
-  if (k % MARK_EVERY || r.marks.has(k)) return;
-  r.marks.set(k, r.buf.slice());
-  if (r.marks.size > 24) r.marks.delete(Math.min(...r.marks.keys()));
-}
-
-// Zurück auf den letzten Zwischenstand mit höchstens `upTo` Schritten (für Zurück oder eine verworfene Vorschau)
-function rewind(r, upTo) {
-  let best = 0;
-  for (const k of [...r.marks.keys()]) {
-    if (k > upTo) r.marks.delete(k);
-    else if (k > best) best = k;
-  }
-  if (best) r.buf.set(r.marks.get(best));
-  else r.buf.fill(0);
-  r.drawn.length = best;
-  r.pv = null;
-  touch(r, 0, 0, S - 1, S - 1);
-}
-
-const isPrefix = (a, b) => b && a.length <= b.length && a.every((p, i) => p[0] === b[i][0] && p[1] === b[i][1]);
-
-/**
- * Bringt das Raster auf den Stand `active` (sichtbare Schritte) plus `preview` (Strich, der gerade
- * entsteht: { s, c, w, pts }). Malt nur, was neu ist; bei Zurück oder Abweichungen ab einem Zwischenstand.
- */
-function syncRaster(r, active, preview) {
-  const keys = active.map(opKey);
-  let same = 0;
-  while (same < r.drawn.length && same < keys.length && r.drawn[same] === keys[same]) same++;
-  let i = same;
-  if (same < r.drawn.length) {
-    rewind(r, same);
-    i = r.drawn.length;
-  } else if (r.pv) {
-    // Eine Vorschau liegt obendrauf. Wird sie gerade zum fertigen Strich, einfach fertig malen.
-    const op = active[same];
-    const ref = r.pv.ref;
-    if (op && op.s === ref.s && op.t === 's' && op.c === ref.c && op.w === ref.w && isPrefix(ref.pts, decodePoints(op.p))) {
-      applyOp(r, op);
-      r.drawn.push(keys[same]);
-      remember(r);
-      r.pv = null;
-      i = same + 1;
-    } else if (op || ref !== preview) {
-      rewind(r, same);
-      i = r.drawn.length;
-    }
-  }
-  for (; i < active.length; i++) {
-    applyOp(r, active[i]);
-    r.drawn.push(keys[i]);
-    remember(r);
-  }
-  if (preview) {
-    if (r.pv?.ref !== preview) r.pv = { ref: preview, pieces: 0 };
-    r.pv.pieces = strokePieces(r, preview.pts, preview.c, radius(preview.c, preview.w), r.pv.pieces, false);
-  }
-}
-
-// Kleines Bild einer Zeichnung (Auflösung, Galerie): je 2 × 2 Rasterpunkte gemittelt, das glättet die Kanten.
-function drawThumb(canvas, ops) {
-  const r = createRaster();
-  for (const op of ops ?? []) applyOp(r, op);
-  const n = canvas.width;
-  const f = S / n;
-  const ctx = canvas.getContext('2d');
-  const img = ctx.createImageData(n, n);
-  const out = img.data;
-  const area = f * f;
-  for (let y = 0; y < n; y++) {
-    for (let x = 0; x < n; x++) {
-      let rs = 0;
-      let gs = 0;
-      let bs = 0;
-      for (let dy = 0; dy < f; dy++) {
-        const row = (y * f + dy) * S + x * f;
-        for (let dx = 0; dx < f; dx++) {
-          const [cr, cg, cb] = RGB[r.buf[row + dx]];
-          rs += cr;
-          gs += cg;
-          bs += cb;
-        }
-      }
-      const o = (y * n + x) * 4;
-      out[o] = rs / area;
-      out[o + 1] = gs / area;
-      out[o + 2] = bs / area;
-      out[o + 3] = 255;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-}
-
-// --- Zeichnungen (Skill „zeichnen“): Buntstifte und Werkzeuge ---
-
-const BODY = 'M5 15 H19 V56.5 Q19 58 17.5 58 H6.5 Q5 58 5 56.5 Z';
-const pencilSvg = ([base, light, dark]) => `<svg viewBox="0 0 24 60" aria-hidden="true">
-  <path d="${BODY}" fill="${base}"/>
-  <rect x="5" y="15" width="4.7" height="43" fill="${light}"/>
-  <rect x="14.3" y="15" width="4.7" height="43" fill="${dark}"/>
-  <path d="M7 20 V47" stroke="#fff" stroke-width="1" stroke-linecap="round" opacity=".45"/>
-  <g stroke="${INK}" stroke-linejoin="round" fill="none">
-    <path d="M9.7 16 V57.5 M14.3 16 V57.5" stroke-width=".7" opacity=".5"/>
-    <path d="M5 50.5 H19 M5 52.5 H19" stroke-width=".8"/>
-    <path d="${BODY}" stroke-width="1.4"/>
-    <path d="M12 2.5 L5 15 Q7.3 18 9.7 15 Q12 18 14.3 15 Q16.7 18 19 15 Z" fill="${WOOD}" stroke-width="1.4"/>
-    <path d="M12 2.5 L9.2 7.6 Q12 8.8 14.8 7.6 Z" fill="${base}" stroke-width="1.2"/>
-  </g>
-</svg>`;
-
-// Die aktuelle Farbe (--mm-cur) steckt in der Stiftmine, der Farbe im Eimer und dem Klecks.
-const ICON = {
-  stift: `<svg viewBox="0 0 40 40" aria-hidden="true"><g stroke="${INK}" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" transform="rotate(45 20 20)">
-    <path d="M15.5 9 H24.5 V31 H15.5 Z" fill="#fff"/>
-    <path d="M20 10 V30" stroke-width=".9" opacity=".5"/>
-    <path d="M15.5 9 L20 0.5 L24.5 9 Z" fill="${WOOD}"/>
-    <path d="M17.6 5.2 L20 0.5 L22.4 5.2 Q20 6.2 17.6 5.2 Z" style="fill:var(--mm-cur)" stroke-width="1.2"/>
-    <rect x="15.5" y="31" width="9" height="3" fill="#bdbdbd"/>
-    <path d="M15.5 34 H24.5 V36 Q24.5 38.5 22 38.5 H18 Q15.5 38.5 15.5 36 Z" fill="${ROSE}"/>
-  </g></svg>`,
-  eimer: `<svg viewBox="0 0 40 40" aria-hidden="true"><g stroke="${INK}" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round">
-    <g transform="rotate(-40 23 19)">
-      <path d="M13.5 14.5 Q23 1.5 32.5 14.5" fill="none"/>
-      <path d="M13 14 L15.5 32 Q23 34.5 30.5 32 L33 14" fill="#fff"/>
-      <path d="M14.3 23 Q23 25.5 31.7 23" fill="none" stroke-width="1"/>
-      <ellipse cx="23" cy="14" rx="10" ry="3.2" style="fill:var(--mm-cur)"/>
-    </g>
-    <path d="M10.2 18 C 7.4 21.8, 9 27, 7.9 31.6" fill="none" style="stroke:var(--mm-cur)" stroke-width="3"/>
-    <path d="M7.9 30.5 C 5.6 33.6, 6 37.3, 7.9 37.3 C 9.8 37.3, 10.3 33.6, 7.9 30.5 Z" style="fill:var(--mm-cur)" stroke-width="1.3"/>
-  </g></svg>`,
-  radierer: `<svg viewBox="0 0 40 40" aria-hidden="true"><g stroke="${INK}" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" transform="rotate(-35 20 21)">
-    <rect x="6" y="14" width="28" height="13" rx="2" fill="${ROSE}"/>
-    <path d="M17 14 H34 V27 H17 Z" fill="${SLEEVE}"/>
-    <path d="M21 18.5 H30" stroke="#fff" stroke-width="1.2" opacity=".6"/>
-    <path d="M6 22 H17"/>
-  </g>
-  <g fill="${INK}"><circle cx="9" cy="33.5" r="1"/><circle cx="12.5" cy="35.5" r=".8"/><circle cx="6.5" cy="36.5" r=".7"/></g></svg>`,
-  zurueck: `<svg viewBox="0 0 40 40" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M14 13 H24 C30 13 33 17.5 33 22 C33 27 29.5 31 24 31 H13"/><path d="M19 7.5 L13.5 13 L19 18.5"/></g></svg>`,
-  vor: `<svg viewBox="0 0 40 40" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" transform="matrix(-1 0 0 1 40 0)">
-    <path d="M14 13 H24 C30 13 33 17.5 33 22 C33 27 29.5 31 24 31 H13"/><path d="M19 7.5 L13.5 13 L19 18.5"/></g></svg>`,
-  leeren: `<svg viewBox="0 0 40 40" aria-hidden="true"><g stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round">
-    <path d="M14 13.5 C 12 9, 16 4.5, 20.5 6 C 23 3.5, 28.5 5, 27.5 9.5 C 30 11.5, 28.5 14.5, 26.5 14.5" fill="#fff"/>
-    <path d="M17.5 9.5 L19.5 7.8 M22.5 11.5 L24.5 8.8 L26 10" fill="none" stroke-width="1.1"/>
-    <path d="M8.5 14 H31.5 L28.5 36 H11.5 Z" fill="#fff"/>
-    <path d="M14.5 18 L15.8 32.5 M20 18 V32.5 M25.5 18 L24.2 32.5" fill="none" stroke-width="1.3"/>
-    <path d="M7.5 14 H32.5" stroke-width="2.6"/>
-  </g></svg>`,
-};
+// --- Zeichnungen (Skill „zeichnen“) ---
 
 // Haken und Kreuz wie mit dem Stift gezogen; der Stempel mit Ring für die Auflösung
 const MARK = {
@@ -827,7 +417,7 @@ const ui = new WeakMap();
 function local(el, game) {
   let u = ui.get(el);
   if (!u || u.signal !== game.signal) {
-    u = { signal: game.signal, key: null, stage: null, tool: 'stift', color: 1, size: 1, suggest: 0, lastRefresh: 0 };
+    u = { signal: game.signal, key: null, stage: null, tools: defaultTools(), suggest: 0, lastRefresh: 0 };
     reset(u);
     ui.set(el, u);
     game.live.on((data) => onLive(u, data));
@@ -838,17 +428,21 @@ function local(el, game) {
 
 // Alles, was nur für eine Ansicht (Phase einer Runde) gilt
 function reset(u) {
+  clearTimeout(u.liveTimer);
+  clearTimeout(u.shapeTimer);
+  clearTimeout(u.retry);
   Object.assign(u, {
     board: null,
-    raster: null,
+    pad: null, // Malbrett (lib/malbrett.js): Raster, Werkzeuge, Eingaben
     model: null,
     pending: [], // eigene Zeichenbefehle, die der Server noch nicht hat
     sending: false,
-    stroke: null, // Strich, der gerade gezeichnet wird
     livePreview: null, // Rater: Strich des anderen, der gerade entsteht
     liveCmds: new Map(), // Rater: fertige Befehle, die live schon da sind
-    pointer: null,
-    fillAt: null,
+    liveTimer: null, // Zeichner: neue Punkte gehen gesammelt alle 50 ms raus
+    shapeTimer: null,
+    liveShape: null, // Zeichner: Form, die gerade aufgezogen wird
+    seenSeq: 0, // Rater: gespeicherter Stand, bis zu dem die Vorschau einer Form gilt
     full: false,
     triesShown: 0,
     tickClock: null,
@@ -1040,43 +634,6 @@ function renderReady(stage, s, game) {
 
 // --- Malen und raten ---
 
-function toolsHtml() {
-  const crayons = PAINTS.slice(1)
-    .map(
-      (p, i) =>
-        `<button type="button" class="mm-crayon" data-color="${i + 1}" aria-label="${p.name}" title="${p.name}" aria-pressed="false" style="--i:${i}">${pencilSvg(p.facets)}</button>`,
-    )
-    .join('');
-  const tools = [
-    ['stift', 'Stift'],
-    ['eimer', 'Eimer: Fläche füllen'],
-    ['radierer', 'Radierer'],
-  ]
-    .map(
-      ([id, label], i) =>
-        `<button type="button" class="mm-tool" data-tool="${id}" aria-label="${label}" title="${label}" aria-pressed="false" style="--i:${i}">${ICON[id]}</button>`,
-    )
-    .join('');
-  const sizes = ['dünn', 'mittel', 'dick']
-    .map(
-      (label, i) =>
-        `<button type="button" class="mm-tool mm-size" data-size="${i}" aria-label="${cap(label)}" title="${cap(label)}" aria-pressed="false" style="--i:${i + 3}"><i style="--d:${[5, 10, 18][i]}px"></i></button>`,
-    )
-    .join('');
-  return `<div class="mm-tools">
-    <div class="mm-crayons" role="group" aria-label="Farbe">${crayons}</div>
-    <div class="mm-toolrow">
-      <div class="mm-seg" role="group" aria-label="Werkzeug">${tools}</div>
-      <div class="mm-seg" role="group" aria-label="Dicke">${sizes}</div>
-    </div>
-    <div class="mm-toolrow mm-cmds">
-      <button type="button" class="btn mm-cmd" data-cmd="u">${ICON.zurueck}<span>Zurück</span></button>
-      <button type="button" class="btn mm-cmd" data-cmd="r">${ICON.vor}<span>Vor</span></button>
-      <button type="button" class="btn mm-cmd" data-cmd="c">${ICON.leeren}<span>Alles löschen</span></button>
-    </div>
-  </div>`;
-}
-
 function renderBoard(stage, s, game, u) {
   const signal = u.stage.signal;
   const drawer = u.drawer;
@@ -1085,6 +642,7 @@ function renderBoard(stage, s, game, u) {
   const otherName = game.esc(game.name(drawer ? guessersOf(s)[0] : s.drawer));
   const triesTitle = drawer ? (many ? 'Versuche der anderen' : `Versuche von ${otherName}`) : many || tv ? 'Versuche' : 'Deine Versuche';
   const n = slotCount(s.pattern);
+  const frame = '<svg class="mm-frame" viewBox="0 0 100 100" aria-hidden="true"><rect pathLength="1" x=".4" y=".4" width="99.2" height="99.2"/></svg>';
   stage.innerHTML = `
     <div class="mm-board ${drawer ? 'is-drawer' : 'is-guesser'}">
       <div class="mm-wordline">
@@ -1095,12 +653,7 @@ function renderBoard(stage, s, game, u) {
         <div class="mm-clock"><span class="mm-clock-num"></span></div>
       </div>
       <div class="mm-bar" ${s.zeit ? '' : 'hidden'}><i></i></div>
-      <div class="mm-paper">
-        <canvas class="mm-canvas" width="${S}" height="${S}" role="img" aria-label="${drawer ? 'Malfläche' : `Zeichnung von ${otherName}`}"></canvas>
-        <div class="mm-fx" aria-hidden="true"></div>
-        ${drawer ? '<div class="mm-cursor" hidden></div>' : ''}
-        <svg class="mm-frame" viewBox="0 0 100 100" aria-hidden="true"><rect pathLength="1" x=".4" y=".4" width="99.2" height="99.2"/></svg>
-      </div>
+      ${paperHtml({ cls: 'mm-paper', label: drawer ? 'Malfläche' : `Zeichnung von ${otherName}`, input: drawer, extra: frame })}
       ${
         tv
           ? ''
@@ -1123,21 +676,21 @@ function renderBoard(stage, s, game, u) {
     </div>`; /* „Aufgeben“ über den Tipps: Die Liste wächst nach unten und schiebt den Knopf nicht weg */
 
   const board = stage.firstElementChild;
-  const canvas = board.querySelector('.mm-canvas');
-  const ctx = canvas.getContext('2d');
-  const img = ctx.createImageData(S, S);
-  u.px = new Uint32Array(img.data.buffer);
-  u.px.fill(LUT[0]);
-  ctx.putImageData(img, 0, 0);
-  u.ctx = ctx;
-  u.img = img;
-  u.raster = createRaster();
+  u.pad = createPad(board, {
+    signal,
+    reducedMotion: game.reducedMotion,
+    input: drawer,
+    tools: u.tools,
+    canDraw: () => u.s.phase === 'malen' && !u.s.result && !(u.s.deadline && u.game.now() > u.s.deadline),
+    nextSeq: () => nextSeq(u),
+    issue: (cmd) => issue(u, cmd),
+    update: () => updateDrawing(u),
+    onStroke: () => (u.pad.stroke?.sent ? scheduleLivePoints(u) : sendLivePoints(u)),
+    onShape: (sh) => sendLiveShape(u, sh),
+  });
   u.board = {
     el: board,
-    paper: board.querySelector('.mm-paper'),
-    canvas,
-    fx: board.querySelector('.mm-fx'),
-    cursor: board.querySelector('.mm-cursor'),
+    paper: u.pad.paper,
     note: board.querySelector('.mm-note'),
     tries: board.querySelector('.mm-tries'),
     list: board.querySelector('.mm-tries-list'),
@@ -1146,11 +699,7 @@ function renderBoard(stage, s, game, u) {
     bar: board.querySelector('.mm-bar i'),
   };
 
-  if (drawer) {
-    bindTools(u, signal);
-    bindDrawing(u, signal);
-    syncTools(u);
-  } else if (!tv) bindGuess(u, signal);
+  if (!drawer && !tv) bindGuess(u, signal);
   startClock(u, signal);
   updateBoard(u);
   if (tv) return;
@@ -1159,7 +708,7 @@ function renderBoard(stage, s, game, u) {
   requestAnimationFrame(() => {
     if (signal.aborted) return;
     const top = board.querySelector('.mm-wordline').getBoundingClientRect().top;
-    const bottom = board.querySelector(drawer ? '.mm-tools' : '.mm-guess').getBoundingClientRect().bottom;
+    const bottom = board.querySelector(drawer ? '.mb-tools' : '.mm-guess').getBoundingClientRect().bottom;
     const free = innerHeight - 64; // unten rechts schwebt der Reaktionsknopf der Plattform
     let dy = 0;
     if (top < 0 || bottom - top > free - 16) dy = top - 8;
@@ -1176,6 +725,12 @@ function updateBoard(u) {
     if (u.pending.length && !u.sending) flushQueue(u);
   } else {
     for (const k of u.liveCmds.keys()) if (k <= d.seq) u.liveCmds.delete(k);
+    // Neues im gespeicherten Stand: Eine Form, die live aufgezogen wurde, ist darin schon fertig
+    // (falls ihr Befehl live verloren ging). Die nächste Live-Nachricht zeigt sie sonst gleich wieder.
+    if (d.seq !== u.seenSeq) {
+      u.seenSeq = d.seq;
+      u.pad?.showShape(null);
+    }
   }
   updateDrawing(u);
   renderTries(u);
@@ -1191,43 +746,21 @@ function currentModel(u) {
   const extra = u.drawer ? u.pending : [...u.liveCmds.values()].sort((a, b) => a.s - b.s);
   for (const cmd of extra) {
     if (cmd.s <= m.seq) continue;
-    if (!applyCmd(m, cmd)) break;
+    if (!apply(m, cmd)) break;
   }
   return m;
 }
 
 function updateDrawing(u) {
-  if (!u.raster) return;
+  if (!u.pad) return;
   const m = currentModel(u);
   u.model = m;
-  let preview = u.drawer ? u.stroke : u.livePreview;
+  let preview = u.drawer ? u.pad.stroke : u.livePreview;
   if (preview && preview.s <= m.seq) {
     preview = null;
     if (!u.drawer) u.livePreview = null;
   }
-  syncRaster(u.raster, m.ops.slice(0, m.n), preview);
-  if (!u.paintQueued) {
-    u.paintQueued = true;
-    requestAnimationFrame(() => {
-      u.paintQueued = false;
-      paint(u);
-    });
-  }
-  if (u.drawer && !u.stroke) syncCmds(u);
-}
-
-function paint(u) {
-  const r = u.raster;
-  const d = r?.dirty;
-  if (!d || !u.ctx) return;
-  r.dirty = null;
-  const { px } = u;
-  const buf = r.buf;
-  for (let y = d.y0; y <= d.y1; y++) {
-    const row = y * S;
-    for (let x = d.x0; x <= d.x1; x++) px[row + x] = LUT[buf[row + x]];
-  }
-  u.ctx.putImageData(u.img, 0, 0, d.x0, d.y0, d.x1 - d.x0 + 1, d.y1 - d.y0 + 1);
+  u.pad.sync(m, preview);
 }
 
 function renderTries(u) {
@@ -1269,7 +802,7 @@ function renderNote(u) {
   let text = '';
   if (game.tv) {
     const gave = (s.gaveUp ?? []).map((id) => game.name(id));
-    if (!s.startedAt && !u.livePreview && !u.liveCmds.size) text = `${game.name(s.drawer)} fängt gleich an.`;
+    if (!s.startedAt && !u.livePreview && !u.liveCmds.size && !u.pad?.liveShape) text = `${game.name(s.drawer)} fängt gleich an.`;
     else if (gave.length) text = `${names(gave)} ${gave.length === 1 ? 'hat' : 'haben'} aufgegeben.`;
   } else if (u.full) text = 'Das Bild ist voll. Nimm etwas zurück oder lösche alles.';
   else if (gaveUp) text = 'Du hast aufgegeben. Die anderen raten weiter.';
@@ -1315,67 +848,17 @@ function startClock(u, signal) {
   signal.addEventListener('abort', () => clearInterval(timer));
 }
 
-// --- Zeichner: Werkzeuge ---
+// --- Zeichner: Befehle speichern und live schicken ---
 
-function bindTools(u, signal) {
-  u.board.el.querySelector('.mm-tools').addEventListener(
-    'click',
-    (e) => {
-      const b = e.target.closest('button');
-      if (!b) return;
-      if (b.dataset.color) {
-        u.color = Number(b.dataset.color);
-        if (u.tool === 'radierer') u.tool = 'stift';
-      } else if (b.dataset.tool) u.tool = b.dataset.tool;
-      else if (b.dataset.size) u.size = Number(b.dataset.size);
-      else if (b.dataset.cmd) command(u, b.dataset.cmd);
-      syncTools(u);
-    },
-    { signal },
-  );
-}
+const nextSeq = (u) => Math.max(u.s.drawing.seq, u.pending[u.pending.length - 1]?.s ?? 0, u.pad?.stroke?.s ?? 0) + 1;
 
-function syncTools(u) {
-  const el = u.board.el;
-  el.style.setProperty('--mm-cur', PAINTS[u.color].paint);
-  el.dataset.tool = u.tool;
-  for (const b of el.querySelectorAll('[data-color]')) b.setAttribute('aria-pressed', String(Number(b.dataset.color) === u.color));
-  for (const b of el.querySelectorAll('[data-tool]')) b.setAttribute('aria-pressed', String(b.dataset.tool === u.tool));
-  for (const b of el.querySelectorAll('[data-size]')) b.setAttribute('aria-pressed', String(Number(b.dataset.size) === u.size));
-  syncCmds(u);
-}
-
-function syncCmds(u) {
-  const m = u.model;
-  if (!m || !u.board) return;
-  const set = (cmd, on) => {
-    const b = u.board.el.querySelector(`[data-cmd="${cmd}"]`);
-    if (b && b.disabled === on) b.disabled = !on;
-  };
-  set('u', m.n > 0);
-  set('r', m.n < m.ops.length);
-  set('c', m.n > 0 && m.ops[m.n - 1].t !== 'c');
-}
-
-function command(u, t) {
-  endStroke(u);
-  const m = u.model;
-  if (!m) return;
-  if (t === 'u' && !m.n) return;
-  if (t === 'r' && m.n >= m.ops.length) return;
-  if (t === 'c') {
-    if (!m.n || m.ops[m.n - 1].t === 'c') return;
-    tearFx(u);
-  }
-  issue(u, { t });
-}
-
-const nextSeq = (u) => Math.max(u.s.drawing.seq, u.pending[u.pending.length - 1]?.s ?? 0, u.stroke?.s ?? 0) + 1;
-
-// Neuer eigener Befehl: sofort zeigen, live an den anderen, dann (gebündelt) speichern.
+// Neuer eigener Befehl (vom Malbrett): sofort zeigen, live an die anderen, dann (gebündelt) speichern.
 function issue(u, cmd) {
   if (cmd.s === undefined) cmd.s = nextSeq(u);
-  u.full = applyCmd(currentModel(u), cmd) === 'voll';
+  clearTimeout(u.shapeTimer); // eine Form, die gerade fertig wurde, nicht nochmal als Vorschau schicken
+  u.shapeTimer = null;
+  u.liveShape = null;
+  u.full = apply(currentModel(u), cmd) === 'voll';
   u.pending.push(cmd);
   u.game.live.send({ k: 'cmd', r: u.s.round, cmd });
   updateDrawing(u);
@@ -1386,7 +869,7 @@ function issue(u, cmd) {
 // Immer nur eine Anfrage unterwegs, damit die Befehle in der richtigen Reihenfolge ankommen.
 // Was der Server schon hat (laut Stand), fällt in updateBoard aus der Liste.
 async function flushQueue(u) {
-  if (u.sending || !u.raster) return;
+  if (u.sending || !u.pad) return;
   const batch = u.pending.filter((c) => c.s > u.s.drawing.seq).slice(0, 80);
   if (!batch.length) return;
   const signal = u.stage.signal;
@@ -1403,128 +886,44 @@ async function flushQueue(u) {
   }
 }
 
-// --- Zeichner: Finger, Stift oder Maus auf der Malfläche ---
-
-function bindDrawing(u, signal) {
-  const { canvas } = u.board;
-  const canDraw = () => u.s.phase === 'malen' && !u.s.result && !(u.s.deadline && u.game.now() > u.s.deadline);
-  const pos = (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const fit = (v) => Math.min(S - 1, Math.max(0, Math.floor(v)));
-    return [fit(((e.clientX - rect.left) / rect.width) * S), fit(((e.clientY - rect.top) / rect.height) * S)];
-  };
-  const opts = { signal };
-
-  canvas.addEventListener(
-    'pointerdown',
-    (e) => {
-      if (u.pointer !== null || !canDraw() || (e.pointerType === 'mouse' && e.button !== 0)) return;
-      e.preventDefault();
-      try {
-        canvas.setPointerCapture(e.pointerId);
-      } catch {}
-      u.pointer = e.pointerId;
-      if (u.tool === 'eimer') u.fillAt = pos(e);
-      else startStroke(u, pos(e));
-    },
-    opts,
-  );
-  canvas.addEventListener(
-    'pointermove',
-    (e) => {
-      if (e.pointerType === 'mouse') moveCursor(u, e);
-      if (e.pointerId !== u.pointer || !u.stroke) return;
-      const events = e.getCoalescedEvents?.() ?? [];
-      let added = false;
-      for (const ev of events.length ? events : [e]) added = addPoint(u, pos(ev)) || added;
-      if (!added) return;
-      updateDrawing(u);
-      if (!u.liveTimer) u.liveTimer = setTimeout(() => sendLivePoints(u), 50);
-    },
-    opts,
-  );
-  const end = (e) => {
-    if (e.pointerId !== u.pointer) return;
-    u.pointer = null;
-    if (u.fillAt) {
-      const p = u.fillAt;
-      u.fillAt = null;
-      if (e.type === 'pointerup') fillAt(u, p);
-    } else endStroke(u);
-  };
-  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) canvas.addEventListener(type, end, opts);
-  canvas.addEventListener('pointerleave', () => u.board.cursor && (u.board.cursor.hidden = true), opts);
-  // iOS: die Seite nicht verschieben oder vergrößern, solange auf der Malfläche gezeichnet wird
-  const hold = (e) => canDraw() && e.cancelable && e.preventDefault();
-  canvas.addEventListener('touchstart', hold, { signal, passive: false });
-  canvas.addEventListener('touchmove', hold, { signal, passive: false });
+// Neue Punkte des laufenden Strichs live an die anderen (alle 50 ms gesammelt, der Anfang sofort)
+function scheduleLivePoints(u) {
+  if (!u.liveTimer) u.liveTimer = setTimeout(() => sendLivePoints(u), 50);
 }
 
-function moveCursor(u, e) {
-  const cur = u.board.cursor;
-  if (!cur) return;
-  if (u.tool === 'eimer') {
-    cur.hidden = true;
-    return;
-  }
-  const rect = u.board.canvas.getBoundingClientRect();
-  const d = Math.max(4, (2 * radius(u.tool === 'radierer' ? 0 : u.color, u.size) * rect.width) / S);
-  cur.hidden = false;
-  cur.style.width = cur.style.height = `${d}px`;
-  cur.style.transform = `translate(${e.clientX - rect.left - d / 2}px, ${e.clientY - rect.top - d / 2}px)`;
-}
-
-function startStroke(u, p) {
-  u.stroke = { s: nextSeq(u), c: u.tool === 'radierer' ? 0 : u.color, w: u.size, pts: [p], sent: 0 };
-  updateDrawing(u);
-  sendLivePoints(u);
-}
-
-// Neuer Punkt nur, wenn der Finger ein Stück weiter ist (hält die Zeichnung klein)
-function addPoint(u, p) {
-  const st = u.stroke;
-  const [lx, ly] = st.pts[st.pts.length - 1];
-  const min = Math.max(4, radius(st.c, st.w) * 0.3);
-  if ((p[0] - lx) ** 2 + (p[1] - ly) ** 2 < min * min) return false;
-  st.pts.push(p);
-  if (st.pts.length >= 1200) {
-    // sehr langer Strich: abschließen und nahtlos weitermachen
-    endStroke(u);
-    startStroke(u, p);
-  }
-  return true;
-}
-
-function endStroke(u) {
-  const st = u.stroke;
-  if (!st) return;
-  u.stroke = null;
-  clearTimeout(u.liveTimer);
-  u.liveTimer = null;
-  issue(u, { s: st.s, t: 's', c: st.c, w: st.w, p: encodePoints(st.pts) });
-}
-
-// Neue Punkte des laufenden Strichs live an den anderen (alle 50 ms gesammelt)
 function sendLivePoints(u) {
   clearTimeout(u.liveTimer);
   u.liveTimer = null;
-  const st = u.stroke;
+  const st = u.pad?.stroke;
   if (!st || st.sent >= st.pts.length) return;
   u.game.live.send({ k: 'pt', r: u.s.round, s: st.s, c: st.c, w: st.w, i: st.sent, p: st.pts.slice(st.sent).flat() });
   st.sent = st.pts.length;
 }
 
-function fillAt(u, [x, y]) {
-  if (u.raster.buf[y * S + x] === u.color) return;
-  rippleFx(u, x, y, u.color);
-  issue(u, { t: 'f', c: u.color, x, y });
+// Form beim Aufziehen live an die anderen (alle 50 ms die neueste); null: Vorschau verworfen
+function sendLiveShape(u, sh) {
+  if (!sh) {
+    clearTimeout(u.shapeTimer);
+    u.shapeTimer = null;
+    u.liveShape = null;
+    u.game.live.send({ k: 'off', r: u.s.round });
+    return;
+  }
+  u.liveShape = sh;
+  if (u.shapeTimer) return;
+  u.shapeTimer = setTimeout(() => {
+    u.shapeTimer = null;
+    if (u.liveShape) u.game.live.send({ k: 'sh', r: u.s.round, ...u.liveShape });
+  }, 50);
 }
 
 // --- Rater: live mitsehen ---
 
 function onLive(u, data) {
   const s = u.s;
-  if (!s || !u.raster || u.drawer || s.phase !== 'malen' || s.result || data?.r !== s.round) return;
+  const pad = u.pad;
+  if (!s || !pad || u.drawer || s.phase !== 'malen' || s.result || data?.r !== s.round) return;
+  const tvNote = () => u.game.tv && renderNote(u); // Bildschirm: „fängt gleich an“ verschwindet mit dem ersten Strich
   if (data.k === 'cmd') {
     const cmd = data.cmd;
     if (!cmd || typeof cmd.s !== 'number' || cmd.s <= s.drawing.seq) return;
@@ -1532,17 +931,18 @@ function onLive(u, data) {
     if (known && JSON.stringify(known) === JSON.stringify(cmd)) return;
     u.liveCmds.set(cmd.s, cmd);
     if (u.livePreview && u.livePreview.s <= cmd.s) u.livePreview = null;
-    if (cmd.t === 'c') tearFx(u);
+    pad.showShape(null);
+    if (cmd.t === 'c') pad.tear();
     updateDrawing(u);
-    if (u.game.tv) renderNote(u);
-    if (cmd.t === 'f' && isInt(cmd.x, 0, S - 1) && isInt(cmd.y, 0, S - 1) && isInt(cmd.c, 1, COLORS - 1)) rippleFx(u, cmd.x, cmd.y, cmd.c);
+    tvNote();
+    if (cmd.t === 'f' && isInt(cmd.x, 0, S - 1) && isInt(cmd.y, 0, S - 1) && isInt(cmd.c, 1, PALETTE.length - 1)) pad.ripple(cmd.x, cmd.y, cmd.c);
   } else if (data.k === 'pt') {
     const p = data.p;
-    if (!Array.isArray(p) || p.length % 2 || p.length > 4000 || !isInt(data.c, 0, COLORS - 1) || !isInt(data.w, 0, 2)) return;
+    if (!Array.isArray(p) || p.length % 2 || p.length > 4000 || !isInt(data.c, 0, PALETTE.length - 1) || !isInt(data.w, 0, PEN.length - 1)) return;
     if (typeof data.s !== 'number' || data.s <= (u.model?.seq ?? s.drawing.seq)) return;
     if (data.i === 0) {
       u.livePreview = { s: data.s, c: data.c, w: data.w, pts: [] };
-      if (u.game.tv) renderNote(u); // Bildschirm: „fängt gleich an“ verschwindet mit dem ersten Strich
+      tvNote();
     }
     const pv = u.livePreview;
     if (!pv || pv.s !== data.s || data.i !== pv.pts.length) return; // Lücke: auf den fertigen Strich warten
@@ -1551,6 +951,14 @@ function onLive(u, data) {
       pv.pts.push([p[i], p[i + 1]]);
     }
     updateDrawing(u);
+  } else if (data.k === 'sh') {
+    pad.showShape(data);
+    tvNote();
+  } else if (data.k === 'off') {
+    u.livePreview = null;
+    pad.showShape(null);
+    updateDrawing(u);
+    tvNote();
   }
 }
 
@@ -1590,41 +998,6 @@ function bindGuess(u, signal) {
     },
     { signal },
   );
-}
-
-// --- Effekte auf der Malfläche ---
-
-// Eimer: ein Ring in der Farbe läuft vom Klick aus auseinander
-function rippleFx(u, x, y, c) {
-  if (u.game.reducedMotion || !u.board) return;
-  const ring = document.createElement('i');
-  ring.className = 'mm-ripple';
-  ring.style.cssText = `left:${(x / S) * 100}%;top:${(y / S) * 100}%;--c:${PAINTS[c].paint}`;
-  u.board.fx.append(ring);
-  ring.addEventListener('animationend', () => ring.remove());
-}
-
-// Alles löschen: das alte Blatt reißt ab und fällt weg
-function tearFx(u) {
-  if (u.game.reducedMotion || !u.board) return;
-  const sheet = document.createElement('canvas');
-  sheet.width = sheet.height = 500;
-  sheet.getContext('2d').drawImage(u.board.canvas, 0, 0, 500, 500);
-  sheet.className = 'mm-sheet';
-  u.board.fx.append(sheet);
-  sheet
-    .animate(
-      [
-        { transform: 'none', opacity: 1 },
-        { transform: 'translate(-3%, 4%) rotate(-4deg)', opacity: 1, offset: 0.35 },
-        { transform: 'translate(-8%, 28%) rotate(-11deg)', opacity: 0 },
-      ],
-      { duration: 520, easing: 'cubic-bezier(.6,0,.2,1)' },
-    )
-    .finished.then(
-      () => sheet.remove(),
-      () => sheet.remove(),
-    );
 }
 
 // --- Ende: Galerie ---
@@ -1720,65 +1093,13 @@ export const style = `
   .mm-bar i { display: block; height: 100%; background: var(--ink); transform-origin: left; transition: transform 250ms linear, background-color 200ms; }
   .mm-bar.low i { background: var(--bad); }
 
-  .mm-paper {
-    position: relative; width: 100%; aspect-ratio: 1; background: #fff;
-    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
-  }
-  .mm-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-  .is-drawer .mm-canvas { touch-action: none; cursor: none; }
-  .is-drawer[data-tool="eimer"] .mm-canvas { cursor: crosshair; }
+  .mm-board.is-drawer { width: min(100%, 560px, max(300px, 100svh - 380px)); } /* Werkzeuge brauchen Platz darunter */
+  .mm-paper { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   .mm-frame { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
   .mm-frame rect { fill: none; stroke: var(--ink); stroke-width: .5; stroke-dasharray: 1; stroke-dashoffset: 1; animation: mm-draw 640ms cubic-bezier(.6,0,.2,1) 80ms forwards; }
-  .mm-fx { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
-  .mm-cursor {
-    position: absolute; left: 0; top: 0; pointer-events: none; border-radius: 50%;
-    border: 1.5px solid var(--ink); box-shadow: 0 0 0 1px #fff;
-  }
-  .mm-ripple {
-    position: absolute; width: 36%; aspect-ratio: 1; border-radius: 50%; border: 3px solid var(--c);
-    transform: translate(-50%, -50%) scale(0); animation: mm-ripple 520ms cubic-bezier(.2,.8,.2,1) forwards;
-  }
-  @keyframes mm-ripple { 60% { opacity: 1; } to { transform: translate(-50%, -50%) scale(1); opacity: 0; } }
-  .mm-sheet { position: absolute; inset: 0; width: 100%; height: 100%; transform-origin: 0 0; }
 
-  /* Werkzeuge */
-  .mm-tools { display: grid; gap: 10px; }
-  .mm-crayons { display: flex; height: 58px; overflow: hidden; border-bottom: 2px solid var(--ink); }
-  .mm-crayon {
-    flex: 1; min-width: 0; position: relative; appearance: none; border: 0; background: none; padding: 0; cursor: pointer;
-    display: flex; justify-content: center; align-items: flex-start;
-  }
-  .mm-crayon svg {
-    width: 23px; height: 58px; transform: translateY(16px);
-    transition: transform 200ms cubic-bezier(.2,.8,.2,1);
-  }
-  .mm-crayon:hover svg { transform: translateY(11px); }
-  .mm-crayon[aria-pressed="true"] svg { transform: translateY(2px); }
-  .mm-crayon:active svg { transform: translateY(6px) scale(.96); }
-  .is-drawer[data-tool="radierer"] .mm-crayon[aria-pressed="true"] svg { transform: translateY(11px); }
-  .mm-crayon:focus-visible { box-shadow: inset 0 0 0 2px var(--ink); }
-  .mm-board .mm-crayons .mm-crayon svg { animation: mm-crayon 420ms cubic-bezier(.2,.8,.2,1) calc(260ms + var(--i) * 60ms) backwards; }
-  @keyframes mm-crayon { from { transform: translateY(60px); } }
-
-  .mm-toolrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-  .mm-seg { display: flex; gap: 4px; }
-  .mm-tool {
-    appearance: none; width: 44px; height: 44px; padding: 5px; display: grid; place-items: center; cursor: pointer;
-    border: 2px solid transparent; border-radius: var(--radius); background: none; color: var(--ink);
-    transition: background-color 120ms ease-out, border-color 120ms ease-out, transform 120ms ease-out;
-    animation: mm-rise 300ms cubic-bezier(.2,.8,.2,1) calc(420ms + var(--i) * 50ms) backwards;
-  }
-  .mm-tool svg { width: 32px; height: 32px; overflow: visible; }
-  .mm-tool:hover { background: var(--wash); }
-  .mm-tool:active { transform: scale(.96); }
-  .mm-tool[aria-pressed="true"] { border-color: var(--ink); background: var(--wash); }
-  .mm-size i { width: var(--d); height: var(--d); border-radius: 50%; background: var(--mm-cur); box-shadow: 0 0 0 1.5px var(--ink); }
-  .is-drawer[data-tool="radierer"] .mm-size i { background: #fff; }
-  .mm-cmds { justify-content: flex-start; gap: 6px; }
-  .mm-cmd { min-height: 44px; padding: 6px 10px; gap: 4px; font-size: var(--t-sm); flex: 0 1 auto; }
-  .mm-cmd svg { width: 22px; height: 22px; flex: none; }
-  .mm-cmd[data-cmd="c"] { margin-left: auto; }
-  .mm-cmd:active:not(:disabled) { transform: scale(.96); }
+  /* Malbrett (lib/malbrett.js) */
+  ${MALBRETT_CSS}
 
   /* Raten */
   .mm-guess .row { gap: 8px; }

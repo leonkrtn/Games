@@ -125,7 +125,8 @@ dem Fernseher gleich an. Live-Vorschauen (Montagsmaler) mitten in einem langsame
 
 Manches kommt im echten Spiel selten oder erst spät (Sonderrunde, volle Hände, Endwertung zu sechst,
 Gleichstand). `pruefstand.mjs` zeichnet ein Spiel mit einem selbst gebauten Zustand im Browser, ohne
-Server und Konten, mit den echten Schriften und `globals.css`:
+Server und Konten, mit den echten Schriften und `globals.css` (Spiele, die reine Module aus `lib/` importieren, z.B. die
+Malspiele, gehen auch):
 
 ```js
 import * as G from '/home/user/Games/games/flip-7.js';

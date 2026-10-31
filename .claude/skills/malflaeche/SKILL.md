@@ -1,18 +1,64 @@
 ---
 name: malflaeche
-description: Spiele bauen, in denen gemalt wird, ob einer malt und die anderen live zusehen oder alle gleichzeitig geheim malen (Malfläche mit Farben, Dicken, Eimer, Radierer, Zurück/Vor), dazu die erweiterte Malfläche lib/malen.js (Formen, Eimer, der fast geschlossene Flächen füllt, Zoomen mit zwei Fingern, Malen über Stunden auf mehreren Geräten). Wie die Zeichnung gespeichert, live übertragen und in jedem Browser gleich gemalt wird, wie die Malfläche auf dem Handy nicht scrollt und wie man das testet. Laden, bevor eine Malfläche gebaut oder geändert wird. Vorbilder sind games/montagsmaler.js, games/kunstkritik.js und das Tagesbild (lib/malen.js, components/tagesbild-board.js).
+description: Spiele bauen, in denen gemalt wird, ob einer malt und die anderen live zusehen oder alle gleichzeitig geheim malen. Gemeinsame Malfläche lib/malen.js (Befehle, Raster, vierundzwanzig Farben, fünf Dicken, Formen, Eimer, der fast geschlossene Flächen füllt) und Malbrett für Spiele lib/malbrett.js (Werkzeuge, Malkasten, Zoomen mit zwei Fingern, Zurück/Vor, Effekte), dazu Malen über Stunden auf mehreren Geräten (Tagesbild). Wie die Zeichnung gespeichert, live übertragen und in jedem Browser gleich gemalt wird, wie alte Zeichnungen umgeschrieben werden, wie die Malfläche auf dem Handy nicht scrollt und wie man das testet. Laden, bevor eine Malfläche gebaut oder geändert wird. Vorbilder sind games/montagsmaler.js, games/kunstkritik.js und das Tagesbild (components/tagesbild-board.js).
 ---
 
 # Malfläche mit Live-Übertragung
 
-Vorbild: `games/montagsmaler.js`. Die Teile dort lassen sich übernehmen (Raster, Befehle, Eingabe,
-Live-Vorschau); hier steht, warum sie so gebaut sind.
+Ein neues Malspiel baut nichts davon selbst: Befehle und Raster kommen aus `lib/malen.js`, Werkzeuge, Eingabe
+und Zoomen aus `lib/malbrett.js` (Abschnitt „Malbrett für Spiele“). Vorbilder: `games/montagsmaler.js` (einer malt,
+die anderen sehen live zu) und `games/kunstkritik.js` (alle malen gleichzeitig geheim). Hier steht, warum die
+Teile so gebaut sind.
+
+## Malbrett für Spiele: `lib/malbrett.js`
+
+Spiele dürfen reine Module aus `lib/` importieren, mit relativem Pfad (`'../lib/malen.js'`, nicht `@/lib/…`:
+`npm run check` lädt die Spiele direkt in Node). So binden Montagsmaler und Kunstkritik das Malbrett ein:
+
+```js
+import { applyCmd, emptyDrawing, finalOps, paintRaster, rasterOf } from '../lib/malen.js';
+import { MALBRETT_CSS, createPad, defaultTools, paperHtml, toolsHtml } from '../lib/malbrett.js';
+const LIMITS = { ops: 1000, chars: 30_000 };            // kleiner als beim Tagesbild: der Zustand wird bei jedem Zug gespeichert
+const apply = (d, cmd) => applyCmd(d, cmd, LIMITS);       // auf dem Server und im Browser dieselben Grenzen
+// render: HTML einmal pro Phase, das Spiel legt eigene Teile (Rahmen, Countdown) mit `extra` über das Blatt
+stage.innerHTML = `… ${paperHtml({ cls: 'kk-paper', input: true, extra: rahmen })} ${toolsHtml()} …`;
+u.pad = createPad(board, {
+  signal, reducedMotion: game.reducedMotion, input: true,
+  tools: u.tools,                     // defaultTools() einmal pro Partie: Farbe und Werkzeug bleiben über die Runden
+  canDraw: () => …,                   // Zeit läuft, Phase stimmt
+  nextSeq: () => …,                   // max(gespeichert, offene Befehle, pad.stroke?.s) + 1
+  issue: (cmd) => …,                  // Nummer vergeben, in pending, live schicken, speichern
+  update: () => u.pad.sync(stand),    // stand = gespeichert + offene (bzw. live angekommene) Befehle
+  onStroke, onShape,                  // nur für Live (Montagsmaler)
+});
+```
+
+- Das Brett macht: Raster und Leinwand, Werkzeugknöpfe (`data-tool`, `data-color`, `data-size`, `data-zoom`,
+  `data-cmd`), Finger, Stift und Maus, Formen mit Vorschau, Zoomen, Strg+Z/Strg+Y, Effekte (`pad.ripple`, `pad.tear`
+  auch für Zuschauer), `pad.finish()` (Strich abschließen, Form verwerfen, wenn die Zeit um ist).
+- Das Spiel macht: Stand und offene Befehle, Speichern, Live, Texte. Zuschauer (Rater, Bildschirm) bekommen
+  `createPad(…, { input: false })` und rufen nur `sync` (mit `preview` = live entstehender Strich) und `showShape`.
+- Werkzeuge: schmal untereinander (Art; Malkasten mit drei Reihen zu acht; Dicken und Lupen; Zurück, Vor, Alles
+  löschen), ab 500 px Breite des Bretts (Container-Abfrage) Lupen neben den Werkzeugen und Zurück neben den Dicken.
+  Auf dem Handy etwas flacher. Brettbreite beim Zeichner `max(300px, 100svh - 380px)`: Ab 780 px Höhe passen Blatt
+  und Werkzeuge zusammen ins Bild, darunter (iPhone SE) muss man kurz scrollen; ein kleineres Blatt wäre schlimmer.
+- Formen live (Montagsmaler): `{ k: 'sh', r, kind, c, w, a, b }` höchstens alle 50 ms beim Aufziehen, beim Zuschauer
+  als Vorschau auf der zweiten Leinwand (`showShape`, prüft die Daten mit `cleanShape`). Weg ist sie, wenn ein Befehl
+  kommt, bei `{ k: 'off', r }` (verworfene Form, gerade begonnener Strich, der zum Zoomen wurde) und wenn der
+  gespeicherte Stand weiterzählt (falls der Befehl live verloren ging). Beim Abschließen einen noch wartenden
+  Vorschau-Timer löschen, sonst kommt die Form nach dem Befehl nochmal als Vorschau an.
+- **Alte Zeichnungen umschreiben:** Die Spiele hatten bis Oktober 2026 sieben Farben (Papier, Schwarz, Rot, Blau,
+  Grün, Gelb, Braun) und drei Dicken. Neue Partien tragen `mal: 2` im Zustand; ohne schreibt `upgrade(s)` alle
+  gespeicherten Schritte mit `fromSmallPalette` (lib/malen.js) um: in `tick` (laufende Partien, wird gespeichert)
+  und in `view` auf einer flachen Kopie (fertige Partien laufen nicht mehr durch `tick`). `view` darf den Zustand
+  nicht ändern, deshalb `upgrade({ ...state })`, und `upgrade` ersetzt Listen, statt sie zu verändern. Der neue
+  Eimer kann alte Füllungen anders malen (er schließt Lücken); das ist hingenommen.
 
 ## Zeichnung = Liste von Befehlen
 
 - Der Zeichner erzeugt Befehle mit laufender Nummer `s` (= bisherige `seq` + 1): Strich
-  `{ t: 's', c, w, p }`, Füllen `{ t: 'f', c, x, y }`, Alles löschen `{ t: 'c' }`, Zurück `{ t: 'u' }`,
-  Vor `{ t: 'r' }`.
+  `{ t: 's', c, w, p }`, Form `{ t: 'l', c, w, p }`, Füllen `{ t: 'f', c, x, y }`, Alles löschen `{ t: 'c' }`,
+  Zurück `{ t: 'u' }`, Vor `{ t: 'r' }`.
 - Gespeichert wird `drawing = { ops, n, seq }`: `ops.slice(0, n)` ist zu sehen, der Rest ist der
   Vor-Stapel. Ein neuer Strich schneidet den Vor-Stapel ab. `applyCmd(d, cmd)` macht das und läuft
   **gleich auf dem Server und in beiden Browsern**.
@@ -86,7 +132,7 @@ hier die ganze Fläche und dort nicht: Die Bilder laufen auseinander. Deshalb ei
 - Während eines Strichs keine anderen Befehle: Werkzeugknöpfe schließen erst den Strich ab.
 - Beim Wechsel ins Malen Malfläche und Werkzeuge ganz ins Bild scrollen.
 
-## Erweiterte Malfläche: `lib/malen.js` (Tagesbild)
+## Gemeinsame Malfläche: `lib/malen.js` (Tagesbild und Malspiele)
 
 Dieselben Befehle und dasselbe Raster wie oben, als eigenes Modul (Server und Browser, keine Imports), dazu:
 
@@ -143,6 +189,11 @@ Zusätzlich zum Skill `spiel-testen`:
   laden; das Bild muss trotzdem gleich ankommen. Die abgebrochenen Anfragen stehen dann als
   `ERR_FAILED` in den Konsolenfehlern, das ist erwartet.
 - Live-Vorschau: den Rater mitten in einem langsamen Strich fotografieren.
-- Geschwindigkeit: Spieldatei in den Scratchpad kopieren, `export { createRaster, syncRaster, … }`
-  anhängen und in Node eine große Zeichnung (300 Striche) malen, einmal zurück, viele zurück, wieder vor.
-  Einmal zurück muss deutlich unter 20 ms bleiben.
+- Geschwindigkeit: `createRaster`, `syncRaster` und `applyOp` aus `lib/malen.js` in Node importieren und eine
+  große Zeichnung (300 Striche) malen, einmal zurück, viele zurück, wieder vor. Einmal zurück muss deutlich unter
+  20 ms bleiben.
+- Formen, Eimer und Zoom im Browser: Werkzeug und Farbe anklicken (`[data-tool="rechteck"]`, `[data-color="14"]`),
+  dann `touchPath` von Ecke zu Ecke; eine Form langsam aufziehen (`steps: 40`) und dabei Rater und Fernseher
+  fotografieren (Vorschau der Form). Zoomen mit `pinch` auf dem Blatt, danach malen, `[data-zoom="fit"]`.
+- Prüfstand: Er liefert neben `games/` auch `lib/*.js` aus, Malspiele lassen sich dort mit Befehlen im Zustand
+  zeichnen (Formen mit `encodePoints(shapePoints('kreis', a, b))`).

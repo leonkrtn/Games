@@ -122,6 +122,8 @@ async function start() {
       return res.end(JSON.stringify(current));
     }
     if (url.pathname.startsWith('/games/')) return serve(res, path.join(ROOT, url.pathname));
+    // Spiele dürfen reine Module aus lib/ importieren (Malspiele: lib/malen.js, lib/malbrett.js)
+    if (url.pathname.startsWith('/lib/') && url.pathname.endsWith('.js')) return serve(res, path.join(ROOT, path.normalize(url.pathname)));
     if (url.pathname === '/globals.css') return serve(res, path.join(ROOT, 'app/globals.css'));
     if (url.pathname.startsWith('/fonts/')) return serve(res, path.join(ROOT, 'node_modules/@fontsource-variable', url.pathname.slice(7)));
     res.writeHead(200, { 'content-type': 'text/html' });
