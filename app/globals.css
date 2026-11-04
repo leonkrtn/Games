@@ -1189,7 +1189,8 @@ textarea:focus {
   bottom: calc(12px + env(safe-area-inset-bottom));
   z-index: 9;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 6px;
   transition: opacity 160ms ease-out, transform 160ms ease-out;
 }
@@ -1233,9 +1234,9 @@ textarea:focus {
   transform: scale(0.96);
 }
 .react-tray {
-  display: flex;
-  gap: 2px;
-  padding: 3px;
+  display: grid;
+  gap: 6px;
+  padding: 3px 3px 5px;
   border: 2px solid var(--ink);
   border-radius: var(--radius-m);
   background: var(--paper);
@@ -1252,7 +1253,43 @@ textarea:focus {
   background: none;
   cursor: pointer;
   transition: transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1), background-color 120ms ease-out, opacity 160ms ease-out;
-  animation: react-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) calc(var(--i) * 30ms) backwards;
+  animation: react-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) calc(min(var(--i), 12) * 16ms) backwards;
+}
+/* Gesichter als Raster; die Sprüche brechen in dessen Breite um (contain: ohne eigene Breite) */
+.react-faces {
+  display: grid;
+  grid-template-columns: repeat(6, 42px);
+  gap: 2px;
+}
+.react-words {
+  contain: inline-size;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 2px;
+}
+.react-word {
+  appearance: none;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--t-md);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1), background-color 120ms ease-out, opacity 160ms ease-out;
+  animation: react-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) calc(min(var(--i), 12) * 16ms) backwards;
+}
+.react-word:hover {
+  background: var(--wash);
+}
+.react-word:active {
+  transform: scale(0.96);
 }
 .react-face .face {
   width: 32px;
@@ -1266,7 +1303,8 @@ textarea:focus {
   transform: scale(0.92);
 }
 /* Nach dem Schicken eine Sekunde Pause */
-.react-tray.cool .react-face {
+.react-tray.cool .react-face,
+.react-tray.cool .react-word {
   opacity: 0.4;
 }
 @keyframes react-in {
@@ -1294,6 +1332,37 @@ textarea:focus {
   width: 64px;
   height: 64px;
 }
+/* Spruch als Sprechblase in der Farbe des Absenders, der Zipfel zeigt auf den Namen */
+.react-bubble {
+  position: relative;
+  margin-bottom: 8px;
+  padding: 6px 12px 7px;
+  border: 2px solid var(--pc);
+  border-radius: var(--radius-m);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--t-2xl);
+  line-height: 1;
+  white-space: nowrap;
+}
+.react-bubble::before,
+.react-bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  border: 9px solid transparent;
+  border-top-color: var(--pc);
+  border-bottom: 0;
+  transform: translateX(-50%);
+}
+.react-bubble::after {
+  border-width: 6px;
+  border-bottom: 0;
+  border-top-color: var(--paper);
+}
 .react-name {
   max-width: 40vw;
   padding: 1px 6px;
@@ -1314,6 +1383,21 @@ textarea:focus {
   align-self: center;
   animation: react-pop 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
+/* Spruch neben dem Namen: klein, gekürzt, damit der Name noch Platz hat */
+.team-react.word-mark {
+  width: auto;
+  height: auto;
+  max-width: 6.5em;
+  padding: 1px 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--t-sm);
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 @keyframes react-pop {
   from {
     opacity: 0;
@@ -1326,19 +1410,29 @@ textarea:focus {
   margin-top: 22px;
 }
 .react-row {
-  display: flex;
-  gap: 4px;
+  display: grid;
+  gap: 8px;
+}
+.react-dock .react-faces {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 .react-dock .react-face {
-  width: 50px;
-  height: 50px;
+  width: auto;
+  height: 46px;
   animation: none;
 }
 .react-dock .react-face .face {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
 }
-.react-row.cool .react-face {
+.react-dock .react-words {
+  padding: 0;
+}
+.react-dock .react-word {
+  animation: none;
+}
+.react-row.cool .react-face,
+.react-row.cool .react-word {
   opacity: 0.4;
 }
 @media (min-width: 880px) {
@@ -1354,6 +1448,7 @@ textarea:focus {
 }
 @media (prefers-reduced-motion: reduce) {
   .react-face,
+  .react-word,
   .team-react {
     animation: none;
   }
@@ -1723,6 +1818,10 @@ html.tv-mode .react-fly {
 html.tv-mode .react-fly .face {
   width: 13vh;
   height: 13vh;
+}
+html.tv-mode .react-bubble {
+  font-size: var(--t-3xl);
+  border-width: 3px;
 }
 html.tv-mode .react-name {
   font-size: var(--t-lg);

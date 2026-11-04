@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { account, roomApi } from './api';
 import GameView from './GameView';
-import Reactions, { Face, ReactionDock, useReactions } from './Reactions';
+import Reactions, { Mark, ReactionDock, useReactions } from './Reactions';
 import Screen from './Screen';
 import { createLive, relay } from './live';
 import { countWord } from './Home';
@@ -250,7 +250,7 @@ function Scoreboard({ snap, online, recent = {} }) {
                 <span className="marker" style={{ color: playerColor(snap.players, p.id) }} aria-hidden="true" />
                 <span className="team-label">{p.name}</span>
                 {p.id === snap.me && <small>du</small>}
-                {recent[p.id] && <Face id={recent[p.id].face} key={recent[p.id].key} className="team-react" />}
+                {recent[p.id] && <Mark id={recent[p.id].face} key={recent[p.id].key} className="team-react" />}
               </div>
               {away && <span className="team-away">gerade nicht da</span>}
             </div>
