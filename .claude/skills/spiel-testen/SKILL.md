@@ -240,6 +240,10 @@ kommen damit nicht weit (`r.log` bleibt leer). Dann die Abfolge im Prüfstand ba
 mit Bildern und Noten, Montagsmaler mit Wort, Strichen und Tipps). Was beim Laden rutscht (Schriften, Anmeldung,
 Startkarte), zählt nicht.
 
+Spiele, in denen man Karten oder Felder antippt (Cabo: Karten merken, tauschen, ansehen), kommen mit `groessen.cjs` nicht über die erste Phase hinaus. Dann ein eigenes Skript mit `start()` schreiben: in einer Schleife für jede Seite die Phase lesen (`data-phase` am Spiel), die antippbaren Elemente sammeln (`.cb-card.can`) und die freien Knöpfe (`.cb-bar button:not(:disabled)`), passend zur Phase eins wählen, bis `#result` erscheint. Wichtig: auch Phasen bedenken, in denen es keinen freien Knopf gibt, nur antippbare Karten, sonst bleibt das Skript stehen und es sieht aus wie ein hängendes Spiel. Vorbild: `cabo-spielen.cjs` in diesem Ordner (Phase, Karten, Knöpfe, Zufall mit Gewichten, Fotos von Handy und Fernseher).
+
+`series()` mit vielen Schritten, zwölf Größen und zwei Spielerzahlen dauert länger als zwanzig Minuten: nur die Schritte nehmen, die neue Ansichten zeigen, und jede Spielerzahl als eigenen Lauf im Hintergrund starten (Ausgabe direkt in eine Datei, nicht durch `tail`, sonst sieht man bis zum Ende nichts).
+
 Lesen der Befunde: „Bildschirm scrollt: 870 > 720, unten: …“ nennt, was unten herausragt. „verschoben (dx, dy)“ mit
 großem dy bei einem Phasenwechsel (anderer Abschnitt, Kopf blendet aus) ist erlaubt; dasselbe innerhalb einer Phase
 nicht. Meldungen zu Rückseiten gedrehter Karten, zu Text nur für Vorleser und zu gewollt gekürzten Zeilen
